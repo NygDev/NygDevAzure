@@ -62,14 +62,24 @@ jobs:
           echo "UBUNTU_OFFER=$LATEST_OFFER" >> $GITHUB_ENV
 
       - name: 'Terraform Init'
-        working-directory: NygDevAzure/terraform
+        working-directory: terraform
         run: terraform init
 
       - name: 'Terraform Plan'
-        working-directory: NygDevAzure/terraform
+        working-directory: terraform
         run: |
+          set +e
           terraform plan \
             -var="home_ip=$HOME_IP" \
             -var="ssh_public_key=$SSH_PUBLIC_KEY" \
             -var="ubuntu_offer=$UBUNTU_OFFER" \
             -detailed-exitcode
+          PLAN_EXIT=$?
+          set -e
+          if [ $PLAN_EXIT -eq 1 ]; then
+            echo "::error::Terraform plan failed"
+            exit 1
+          elif [ $PLAN_EXIT -eq 2 ]; then
+            echo "::warning::Drift detected — infrastructure differs from desired state"
+            exit 2
+          fi
