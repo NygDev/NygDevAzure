@@ -19,7 +19,7 @@ variable "ssh_public_key" {
 variable "vm_name" {
   description = "Name of the virtual machine"
   type        = string
-  default     = "rpgvm"
+  default     = "rpg-vm"
 }
 
 variable "vm_size" {
@@ -37,13 +37,13 @@ variable "admin_username" {
 variable "network_resource_group" {
   description = "Resource group containing network resources"
   type        = string
-  default     = "NygDevNetwork"
+  default     = "rg-nygdev-network"
 }
 
 variable "vm_resource_group" {
   description = "Resource group for VM resources"
   type        = string
-  default     = "RPG"
+  default     = "rg-rpg"
 }
 
 variable "ubuntu_offer" {
