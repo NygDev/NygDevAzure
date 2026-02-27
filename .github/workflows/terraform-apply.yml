@@ -45,7 +45,7 @@ jobs:
       - name: 'Retrieve SSH Public Key'
         run: |
           SSH_KEY=$(az sshkey show \
-            --resource-group FreeServices \
+            --resource-group rg-nygdev-security \
             --name NygDev \
             --query publicKey \
             --output tsv)
