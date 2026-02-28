@@ -58,7 +58,7 @@ resource "azurerm_linux_virtual_machine" "rpg" {
 # Reference the existing persistent data disk
 data "azurerm_managed_disk" "foundry" {
   name                = "foundrydata"
-  resource_group_name = "FOUNDRY"
+  resource_group_name = "rg-nygdev-data"
 }
 
 # Attach it to the VM
