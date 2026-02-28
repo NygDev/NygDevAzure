@@ -1,4 +1,3 @@
-Terraform reconfigure · YML
 name: Terraform Reconfigure Backend
 "on": workflow_dispatch
 
