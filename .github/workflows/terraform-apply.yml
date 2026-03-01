@@ -53,16 +53,16 @@ jobs:
           echo "$SSH_KEY" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
-      - name: 'Find Latest Ubuntu Daily Offer'
-        run: |
-          LATEST_OFFER=$(az vm image list-offers \
-            --publisher Canonical \
-            --location norwayeast \
-            --query "[?contains(name, 'daily') && contains(name, 'ubuntu-')].name" \
-            --output tsv \
-            | sort -V \
-            | tail -1)
-          echo "UBUNTU_OFFER=$LATEST_OFFER" >> $GITHUB_ENV
+      # - name: 'Find Latest Ubuntu Daily Offer'
+      #   run: |
+      #     LATEST_OFFER=$(az vm image list-offers \
+      #       --publisher Canonical \
+      #       --location norwayeast \
+      #       --query "[?contains(name, 'daily') && contains(name, 'ubuntu-')].name" \
+      #       --output tsv \
+      #       | sort -V \
+      #       | tail -1)
+      #     echo "UBUNTU_OFFER=$LATEST_OFFER" >> $GITHUB_ENV
 
       - name: 'Terraform Init'
         working-directory: terraform
@@ -74,7 +74,6 @@ jobs:
           terraform plan \
             -var="home_ip=$HOME_IP" \
             -var="ssh_public_key=$SSH_PUBLIC_KEY" \
-            -var="ubuntu_offer=$UBUNTU_OFFER" \
             -var="admin_username=${{ secrets.AZURE_VM_USERNAME }}" \
             -out=tfplan
 
