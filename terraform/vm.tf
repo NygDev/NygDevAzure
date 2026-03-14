@@ -4,13 +4,6 @@ resource "azurerm_resource_group" "rpg" {
   location = var.location
 }
 
-# Disk Access resource for private OS disk networking
-resource "azurerm_disk_access" "rpg" {
-  name                = "${var.vm_name}-disk-access"
-  resource_group_name = azurerm_resource_group.rpg.name
-  location            = var.location
-}
-
 # Network Interface
 resource "azurerm_network_interface" "vm" {
   name                = "${var.vm_name}-nic"
@@ -48,8 +41,6 @@ resource "azurerm_linux_virtual_machine" "rpg" {
     caching              = "ReadWrite"
     storage_account_type = "StandardSSD_LRS"
     disk_size_gb         = 30
-    network_access_policy = "AllowPrivate"
-    disk_access_id        = azurerm_disk_access.rpg.id
   }
 
   source_image_reference {
