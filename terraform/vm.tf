@@ -4,12 +4,18 @@ resource "azurerm_resource_group" "rpg" {
   location = var.location
 }
 
+# Disk Access resource for private OS disk networking
+resource "azurerm_disk_access" "rpg" {
+  name                = "${var.vm_name}-disk-access"
+  resource_group_name = azurerm_resource_group.rpg.name
+  location            = var.location
+}
+
 # Network Interface
 resource "azurerm_network_interface" "vm" {
   name                = "${var.vm_name}-nic"
   location            = var.location
   resource_group_name = azurerm_resource_group.rpg.name
-
   ip_configuration {
     name                          = "ipconfig1"
     subnet_id                     = azurerm_subnet.rpg.id
@@ -28,7 +34,6 @@ resource "azurerm_linux_virtual_machine" "rpg" {
   disable_password_authentication = true
   provision_vm_agent              = false
   allow_extension_operations      = false
-
   network_interface_ids = [
     azurerm_network_interface.vm.id
   ]
@@ -43,6 +48,8 @@ resource "azurerm_linux_virtual_machine" "rpg" {
     caching              = "ReadWrite"
     storage_account_type = "StandardSSD_LRS"
     disk_size_gb         = 30
+    network_access_policy = "AllowPrivate"
+    disk_access_id        = azurerm_disk_access.rpg.id
   }
 
   source_image_reference {
@@ -74,10 +81,8 @@ resource "azurerm_dev_test_global_vm_shutdown_schedule" "rpg" {
   virtual_machine_id = azurerm_linux_virtual_machine.rpg.id
   location           = var.location
   enabled            = true
-
   daily_recurrence_time = "2300"
   timezone              = "W. Europe Standard Time"
-
   notification_settings {
     enabled = false
   }
