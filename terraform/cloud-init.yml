@@ -53,7 +53,7 @@ runcmd:
     [Service]
     User=srv_foundry
     Group=srv_foundry
-    ExecStart=/usr/bin/node /foundry/foundryvtt/main.js --dataPath=/foundry/foundrydata
+    ExecStart=/foundry/foundryvtt/foundryvtt --dataPath=/foundry/foundrydata
     Restart=on-failure
     RestartSec=5
 
