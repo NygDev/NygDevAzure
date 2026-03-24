@@ -9,7 +9,7 @@ resource "azurerm_cosmosdb_account" "db" {
   resource_group_name = azurerm_resource_group.databases.name
   kind                = "GlobalDocumentDB"
   offer_type          = "Standard"
-  enable_free_tier    = true
+  free_tier_enabled    = true
   local_authentication_disabled = true
 
   consistency_policy {
