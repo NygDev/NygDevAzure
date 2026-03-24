@@ -10,6 +10,7 @@ resource "azurerm_cosmosdb_account" "db" {
   kind                = "GlobalDocumentDB"
   offer_type          = "Standard"
   enable_free_tier    = true
+  local_authentication_disabled = true
 
   consistency_policy {
     consistency_level = "Eventual"
@@ -34,8 +35,17 @@ resource "azurerm_cosmosdb_sql_container" "primary" {
   account_name        = azurerm_cosmosdb_account.db.name
   database_name       = azurerm_cosmosdb_sql_database.db.name
   partition_key_paths = ["/partition"]
+  partition_key_version = 2
 
   indexing_policy {
     indexing_mode = "none"
   }
+}
+
+resource "azurerm_cosmosdb_sql_role_assignment" "my_user" {
+  resource_group_name = azurerm_resource_group.databases.name
+  account_name        = azurerm_cosmosdb_account.db.name
+  role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
+  principal_id        = var.entra_owner_objectid
+  scope               = azurerm_cosmosdb_account.db.id
 }
