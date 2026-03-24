@@ -51,3 +51,9 @@ variable "ubuntu_offer" {
   type        = string
   default     = "ubuntu-25_10"
 }
+
+variable "db_resource_group" {
+description  = "Free tier databases"
+type         = string
+default      = "rg-nygdev-db"
+}
