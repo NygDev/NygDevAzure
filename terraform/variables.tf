@@ -57,3 +57,9 @@ description  = "Free tier databases"
 type         = string
 default      = "rg-nygdev-db"
 }
+
+variable "entra_owner_objectid" {
+  description = "Object ID of the Entra owner user"
+  type        = string
+  sensitive   = true
+}
