@@ -7,7 +7,7 @@ resource "azurerm_resource_group" "rpg" {
 # Network Interface
 resource "azurerm_network_interface" "vm" {
   name                = "${var.vm_name}-nic"
-  location            = var.location
+  location            = azurerm_resource_group.rpg.location
   resource_group_name = azurerm_resource_group.rpg.name
   ip_configuration {
     name                          = "ipconfig1"
@@ -20,7 +20,7 @@ resource "azurerm_network_interface" "vm" {
 # Virtual Machine
 resource "azurerm_linux_virtual_machine" "rpg" {
   name                            = var.vm_name
-  location                        = var.location
+  location                        = azurerm_resource_group.rpg.location
   resource_group_name             = azurerm_resource_group.rpg.name
   size                            = var.vm_size
   admin_username                  = var.admin_username
@@ -56,7 +56,7 @@ resource "azurerm_linux_virtual_machine" "rpg" {
 # Reference the existing persistent data disk
 data "azurerm_managed_disk" "foundry" {
   name                = "foundrydata"
-  resource_group_name = "rg-nygdev-data"
+  resource_group_name = local.data_resource_group
 }
 
 # Attach it to the VM
@@ -70,7 +70,7 @@ resource "azurerm_virtual_machine_data_disk_attachment" "foundry" {
 # Auto-shutdown schedule at 11 PM Oslo time
 resource "azurerm_dev_test_global_vm_shutdown_schedule" "rpg" {
   virtual_machine_id = azurerm_linux_virtual_machine.rpg.id
-  location           = var.location
+  location           = azurerm_resource_group.rpg.location
   enabled            = true
   daily_recurrence_time = "2300"
   timezone              = "W. Europe Standard Time"

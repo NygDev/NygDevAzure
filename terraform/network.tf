@@ -6,19 +6,17 @@ resource "azurerm_resource_group" "network" {
 
 # Public IP
 resource "azurerm_public_ip" "foundry" {
-  name                    = "rpg-pip"
-  location                = var.location
-  resource_group_name     = azurerm_resource_group.network.name
-  allocation_method       = "Static"
-  sku                     = "Standard"
-  domain_name_label       = "rpg"
-  idle_timeout_in_minutes = 4
+  name                = "rpg-pip"
+  location            = azurerm_resource_group.network.location
+  resource_group_name = azurerm_resource_group.network.name
+  allocation_method   = "Static"
+  domain_name_label   = "rpg"
 }
 
 # Network Security Group
 resource "azurerm_network_security_group" "nygdev" {
   name                = "nygdev-nsg"
-  location            = var.location
+  location            = azurerm_resource_group.network.location
   resource_group_name = azurerm_resource_group.network.name
 
   security_rule {
@@ -49,7 +47,7 @@ resource "azurerm_network_security_group" "nygdev" {
 # Virtual Network
 resource "azurerm_virtual_network" "nygdev" {
   name                = "nygdev-vnet"
-  location            = var.location
+  location            = azurerm_resource_group.network.location
   resource_group_name = azurerm_resource_group.network.name
   address_space       = ["10.0.0.0/24"]
 }

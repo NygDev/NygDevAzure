@@ -1,3 +1,7 @@
+locals {
+  data_resource_group = "rg-nygdev-data"
+}
+
 variable "location" {
   description = "Azure region for resources"
   type        = string
@@ -53,9 +57,9 @@ variable "ubuntu_offer" {
 }
 
 variable "db_resource_group" {
-description  = "Free tier databases"
-type         = string
-default      = "rg-nygdev-db"
+  description = "Free tier databases"
+  type        = string
+  default     = "rg-nygdev-db"
 }
 
 variable "entra_owner_objectid" {
