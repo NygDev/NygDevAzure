@@ -23,13 +23,15 @@ resource "azurerm_cosmosdb_account" "db" {
 }
 
 resource "azurerm_cosmosdb_sql_database" "db" {
-  name         = "db"
-  account_name = azurerm_cosmosdb_account.db.name
-  throughput   = 1000
+  name                = "db"
+  resource_group_name = azurerm_resource_group.databases.name
+  account_name        = azurerm_cosmosdb_account.db.name
+  throughput          = 1000
 }
 
 resource "azurerm_cosmosdb_sql_container" "primary" {
   name                  = "primary"
+  resource_group_name   = azurerm_resource_group.databases.name
   account_name          = azurerm_cosmosdb_account.db.name
   database_name         = azurerm_cosmosdb_sql_database.db.name
   partition_key_paths   = ["/partition"]
@@ -41,8 +43,9 @@ resource "azurerm_cosmosdb_sql_container" "primary" {
 }
 
 resource "azurerm_cosmosdb_sql_role_assignment" "my_user" {
-  account_name       = azurerm_cosmosdb_account.db.name
-  role_definition_id = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
-  principal_id       = var.entra_owner_objectid
-  scope              = azurerm_cosmosdb_account.db.id
+  resource_group_name = azurerm_resource_group.databases.name
+  account_name        = azurerm_cosmosdb_account.db.name
+  role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
+  principal_id        = var.entra_owner_objectid
+  scope               = azurerm_cosmosdb_account.db.id
 }
