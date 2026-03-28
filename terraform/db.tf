@@ -4,12 +4,12 @@ resource "azurerm_resource_group" "databases" {
 }
 
 resource "azurerm_cosmosdb_account" "db" {
-  name                = "nygdev-cosmos-db"
-  location            = azurerm_resource_group.databases.location
-  resource_group_name = azurerm_resource_group.databases.name
-  kind                = "GlobalDocumentDB"
-  offer_type          = "Standard"
-  free_tier_enabled    = true
+  name                          = "nygdev-cosmos-db"
+  location                      = azurerm_resource_group.databases.location
+  resource_group_name           = azurerm_resource_group.databases.name
+  kind                          = "GlobalDocumentDB"
+  offer_type                    = "Standard"
+  free_tier_enabled             = true
   local_authentication_disabled = true
 
   consistency_policy {
@@ -23,18 +23,16 @@ resource "azurerm_cosmosdb_account" "db" {
 }
 
 resource "azurerm_cosmosdb_sql_database" "db" {
-  name                = "db"
-  resource_group_name = azurerm_resource_group.databases.name
-  account_name        = azurerm_cosmosdb_account.db.name
-  throughput          = 1000
+  name         = "db"
+  account_name = azurerm_cosmosdb_account.db.name
+  throughput   = 1000
 }
 
 resource "azurerm_cosmosdb_sql_container" "primary" {
-  name                = "primary"
-  resource_group_name = azurerm_resource_group.databases.name
-  account_name        = azurerm_cosmosdb_account.db.name
-  database_name       = azurerm_cosmosdb_sql_database.db.name
-  partition_key_paths = ["/partition"]
+  name                  = "primary"
+  account_name          = azurerm_cosmosdb_account.db.name
+  database_name         = azurerm_cosmosdb_sql_database.db.name
+  partition_key_paths   = ["/partition"]
   partition_key_version = 2
 
   indexing_policy {
@@ -43,9 +41,8 @@ resource "azurerm_cosmosdb_sql_container" "primary" {
 }
 
 resource "azurerm_cosmosdb_sql_role_assignment" "my_user" {
-  resource_group_name = azurerm_resource_group.databases.name
-  account_name        = azurerm_cosmosdb_account.db.name
-  role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
-  principal_id        = var.entra_owner_objectid
-  scope               = azurerm_cosmosdb_account.db.id
+  account_name       = azurerm_cosmosdb_account.db.name
+  role_definition_id = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
+  principal_id       = var.entra_owner_objectid
+  scope              = azurerm_cosmosdb_account.db.id
 }
