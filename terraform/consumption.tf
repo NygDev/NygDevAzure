@@ -20,7 +20,7 @@ resource "azurerm_storage_account" "consumption" {
 # Storage container for Flex Consumption deployment packages
 resource "azurerm_storage_container" "consumption" {
   name                  = "deploymentpackage"
-  storage_account_name  = azurerm_storage_account.consumption.name
+  storage_account_id    = azurerm_storage_account.consumption.id
   container_access_type = "private"
 }
 
@@ -43,6 +43,8 @@ resource "azurerm_function_app_flex_consumption" "nygdev" {
   storage_container_endpoint  = "${azurerm_storage_account.consumption.primary_blob_endpoint}${azurerm_storage_container.consumption.name}"
   storage_authentication_type = "StorageAccountConnectionString"
   storage_access_key          = azurerm_storage_account.consumption.primary_access_key
+  instance_memory_in_mb       = 512
+  maximum_instance_count      = 1
   runtime_name                = "dotnet-isolated"
   runtime_version             = "10.0"
 
