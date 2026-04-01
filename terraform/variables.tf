@@ -62,6 +62,18 @@ variable "db_resource_group" {
   default     = "rg-nygdev-db"
 }
 
+variable "consumption_resource_group" {
+  description = "Resource group for consumption-tier serverless resources (Function Apps, Logic Apps)"
+  type        = string
+  default     = "rg-nygdev-consumption"
+}
+
+variable "function_app_name" {
+  description = "Name of the consumption Function App (must be globally unique in Azure)"
+  type        = string
+  default     = "func-nygdev"
+}
+
 variable "entra_owner_objectid" {
   description = "Object ID of the Entra owner user"
   type        = string

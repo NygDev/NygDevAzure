@@ -27,3 +27,13 @@ output "vm_id" {
   description = "ID of the virtual machine"
   value       = azurerm_linux_virtual_machine.rpg.id
 }
+
+output "consumption_resource_group_name" {
+  description = "Name of the consumption resource group"
+  value       = azurerm_resource_group.consumption.name
+}
+
+output "function_app_hostname" {
+  description = "Default hostname of the consumption Function App"
+  value       = azurerm_linux_function_app.nygdev.default_hostname
+}
