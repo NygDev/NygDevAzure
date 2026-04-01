@@ -14,14 +14,6 @@ resource "azurerm_storage_account" "consumption" {
 
   blob_properties {
     versioning_enabled = false
-
-    delete_retention_policy {
-      days = 0
-    }
-
-    container_delete_retention_policy {
-      days = 0
-    }
   }
 }
 
@@ -47,13 +39,12 @@ resource "azurerm_function_app_flex_consumption" "nygdev" {
   location                    = azurerm_resource_group.consumption.location
   resource_group_name         = azurerm_resource_group.consumption.name
   service_plan_id             = azurerm_service_plan.consumption.id
-  storage_account_name        = azurerm_storage_account.consumption.name
-  storage_account_access_key  = azurerm_storage_account.consumption.primary_access_key
+  storage_container_type      = "blobContainer"
+  storage_container_endpoint  = "${azurerm_storage_account.consumption.primary_blob_endpoint}${azurerm_storage_container.consumption.name}"
   storage_authentication_type = "StorageAccountConnectionString"
-  storage_container_name      = azurerm_storage_container.consumption.name
+  storage_access_key          = azurerm_storage_account.consumption.primary_access_key
+  runtime_name                = "dotnet-isolated"
+  runtime_version             = "10.0"
 
-  runtime {
-    name    = "dotnet-isolated"
-    version = "10"
-  }
+  site_config {}
 }
