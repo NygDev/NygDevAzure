@@ -31,8 +31,8 @@ resource "azurerm_storage_container" "consumption_ps" {
   container_access_type = "private"
 }
 
-# Flex Consumption (FC1) Linux App Service Plan
-resource "azurerm_service_plan" "consumption" {
+# Flex Consumption (FC1) Linux App Service Plan — dotnet
+resource "azurerm_service_plan" "consumption_dotnet" {
   name                = "asp-nygdev-consumption"
   location            = azurerm_resource_group.consumption.location
   resource_group_name = azurerm_resource_group.consumption.name
@@ -47,6 +47,26 @@ resource "azurerm_service_plan" "consumption_ps" {
   resource_group_name = azurerm_resource_group.consumption.name
   os_type             = "Linux"
   sku_name            = "FC1"
+}
+
+# Linux Flex Consumption Function App — dotnet-isolated .NET 10
+resource "azurerm_function_app_flex_consumption" "nygdev_dotnet" {
+  name                        = var.function_app_name
+  location                    = azurerm_resource_group.consumption.location
+  resource_group_name         = azurerm_resource_group.consumption.name
+  service_plan_id             = azurerm_service_plan.consumption_dotnet.id
+  storage_container_type      = "blobContainer"
+  storage_container_endpoint  = "${azurerm_storage_account.consumption.primary_blob_endpoint}${azurerm_storage_container.consumption.name}"
+  storage_authentication_type = "StorageAccountConnectionString"
+  storage_access_key          = azurerm_storage_account.consumption.primary_access_key
+  instance_memory_in_mb       = 512
+  maximum_instance_count      = 1
+  http_concurrency            = 1
+  runtime_name                = "dotnet-isolated"
+  runtime_version             = "10.0"
+  enabled                     = false
+
+  site_config {}
 }
 
 # Linux Flex Consumption Function App — PowerShell 7.4
@@ -64,25 +84,7 @@ resource "azurerm_function_app_flex_consumption" "nygdev_ps" {
   http_concurrency            = 1
   runtime_name                = "powershell"
   runtime_version             = "7.4"
-
-  site_config {}
-}
-
-# Linux Flex Consumption Function App — C# .NET 10 isolated worker
-resource "azurerm_function_app_flex_consumption" "nygdev" {
-  name                        = var.function_app_name
-  location                    = azurerm_resource_group.consumption.location
-  resource_group_name         = azurerm_resource_group.consumption.name
-  service_plan_id             = azurerm_service_plan.consumption.id
-  storage_container_type      = "blobContainer"
-  storage_container_endpoint  = "${azurerm_storage_account.consumption.primary_blob_endpoint}${azurerm_storage_container.consumption.name}"
-  storage_authentication_type = "StorageAccountConnectionString"
-  storage_access_key          = azurerm_storage_account.consumption.primary_access_key
-  instance_memory_in_mb       = 512
-  maximum_instance_count      = 1
-  http_concurrency            = 1
-  runtime_name                = "dotnet-isolated"
-  runtime_version             = "10.0"
+  enabled                     = false
 
   site_config {}
 }

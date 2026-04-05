@@ -35,5 +35,5 @@ output "consumption_resource_group_name" {
 
 output "function_app_hostname" {
   description = "Default hostname of the consumption Function App"
-  value       = azurerm_function_app_flex_consumption.nygdev.default_hostname
+  value       = azurerm_function_app_flex_consumption.nygdev_dotnet.default_hostname
 }
