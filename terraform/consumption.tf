@@ -40,11 +40,6 @@ resource "azurerm_service_plan" "consumption_dotnet" {
   sku_name            = "FC1"
 }
 
-moved {
-  from = azurerm_service_plan.consumption
-  to   = azurerm_service_plan.consumption_dotnet
-}
-
 # Dedicated FC1 plan for PowerShell Function App (FC1 allows only one app per plan)
 resource "azurerm_service_plan" "consumption_ps" {
   name                = "asp-nygdev-consumption-ps"
@@ -71,11 +66,6 @@ resource "azurerm_function_app_flex_consumption" "nygdev_dotnet" {
   runtime_version             = "10.0"
 
   site_config {}
-}
-
-moved {
-  from = azurerm_function_app_flex_consumption.nygdev
-  to   = azurerm_function_app_flex_consumption.nygdev_dotnet
 }
 
 # Linux Flex Consumption Function App — PowerShell 7.4
