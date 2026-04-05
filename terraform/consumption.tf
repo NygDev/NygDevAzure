@@ -33,7 +33,7 @@ resource "azurerm_storage_container" "consumption_ps" {
 
 # Flex Consumption (FC1) Linux App Service Plan — dotnet
 resource "azurerm_service_plan" "consumption_dotnet" {
-  name                = "asp-nygdev-consumption"
+  name                = "asp-nygdev-consumption-dotnet"
   location            = azurerm_resource_group.consumption.location
   resource_group_name = azurerm_resource_group.consumption.name
   os_type             = "Linux"
