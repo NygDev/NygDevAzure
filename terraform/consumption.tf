@@ -64,7 +64,7 @@ resource "azurerm_function_app_flex_consumption" "nygdev_dotnet" {
   http_concurrency            = 1
   runtime_name                = "dotnet-isolated"
   runtime_version             = "10.0"
-  enabled                     = false
+  enabled                     = true
 
   site_config {}
 }
@@ -84,7 +84,11 @@ resource "azurerm_function_app_flex_consumption" "nygdev_ps" {
   http_concurrency            = 1
   runtime_name                = "powershell"
   runtime_version             = "7.4"
-  enabled                     = false
+  enabled                     = true
+
+  identity {
+    type = "SystemAssigned"
+  }
 
   site_config {}
 }
