@@ -1,7 +1,3 @@
-locals {
-  data_resource_group = "rg-nygdev-data"
-}
-
 variable "location" {
   description = "Azure region for resources"
   type        = string
