@@ -74,6 +74,12 @@ variable "function_app_name" {
   default     = "func-nygdev"
 }
 
+variable "function_app_ps_name" {
+  description = "Name of the PowerShell Function App (must be globally unique in Azure)"
+  type        = string
+  default     = "func-nygdev-ps"
+}
+
 variable "entra_owner_objectid" {
   description = "Object ID of the Entra owner user"
   type        = string
