@@ -40,12 +40,21 @@ resource "azurerm_service_plan" "consumption" {
   sku_name            = "FC1"
 }
 
+# Dedicated FC1 plan for PowerShell Function App (FC1 allows only one app per plan)
+resource "azurerm_service_plan" "consumption_ps" {
+  name                = "asp-nygdev-consumption-ps"
+  location            = azurerm_resource_group.consumption.location
+  resource_group_name = azurerm_resource_group.consumption.name
+  os_type             = "Linux"
+  sku_name            = "FC1"
+}
+
 # Linux Flex Consumption Function App — PowerShell 7.4
 resource "azurerm_function_app_flex_consumption" "nygdev_ps" {
   name                        = var.function_app_ps_name
   location                    = azurerm_resource_group.consumption.location
   resource_group_name         = azurerm_resource_group.consumption.name
-  service_plan_id             = azurerm_service_plan.consumption.id
+  service_plan_id             = azurerm_service_plan.consumption_ps.id
   storage_container_type      = "blobContainer"
   storage_container_endpoint  = "${azurerm_storage_account.consumption.primary_blob_endpoint}${azurerm_storage_container.consumption_ps.name}"
   storage_authentication_type = "StorageAccountConnectionString"
