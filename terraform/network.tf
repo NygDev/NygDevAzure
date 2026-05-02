@@ -2,6 +2,7 @@
 resource "azurerm_resource_group" "network" {
   name     = var.network_resource_group
   location = var.location
+  tags     = local.common_tags
 }
 
 # Public IP
@@ -11,6 +12,7 @@ resource "azurerm_public_ip" "foundry" {
   resource_group_name = azurerm_resource_group.network.name
   allocation_method   = "Static"
   domain_name_label   = "rpg"
+  tags                = local.common_tags
 }
 
 # Network Security Group
@@ -42,6 +44,8 @@ resource "azurerm_network_security_group" "nygdev" {
     source_address_prefix      = var.home_ip
     destination_address_prefix = "*"
   }
+
+  tags = local.common_tags
 }
 
 # Virtual Network
@@ -50,6 +54,7 @@ resource "azurerm_virtual_network" "nygdev" {
   location            = azurerm_resource_group.network.location
   resource_group_name = azurerm_resource_group.network.name
   address_space       = ["10.0.0.0/24"]
+  tags                = local.common_tags
 }
 
 # Subnet

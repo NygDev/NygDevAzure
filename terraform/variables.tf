@@ -1,3 +1,9 @@
+variable "subscription_id" {
+  description = "Azure subscription ID"
+  type        = string
+  sensitive   = true
+}
+
 variable "location" {
   description = "Azure region for resources"
   type        = string
@@ -25,7 +31,7 @@ variable "vm_name" {
 variable "vm_size" {
   description = "Size of the virtual machine"
   type        = string
-  default     = "Standard_B2s"
+  default     = "Standard_B2pls_v2"
 }
 
 variable "admin_username" {
