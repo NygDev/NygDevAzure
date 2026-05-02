@@ -32,9 +32,9 @@ jobs:
           zip -r ../psfunctionapp.zip .
 
       - name: Deploy to Azure Functions (Flex Consumption)
-        uses: azure/functions-action@v2
-        with:
-          app-name: func-nygdev-ps
-          package: psfunctionapp.zip
-          sku: flexconsumption
-          remote-build: false
+        run: |
+          az functionapp deploy \
+            --resource-group rg-nygdev-consumption \
+            --name func-nygdev-ps \
+            --src-path psfunctionapp.zip \
+            --type zip
