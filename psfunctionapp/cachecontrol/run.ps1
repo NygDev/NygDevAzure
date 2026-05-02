@@ -2,9 +2,10 @@ using namespace System.Net
 
 param($Request, $TriggerMetadata)
 
+Disable-AzContextAutosave -Scope Process
 Connect-AzAccount -Identity
 
-$context = New-AzStorageContext -StorageAccountName "nygdevcdn"
+$context = New-AzStorageContext -StorageAccountName "nygdevcdn" -UseConnectedAccount
 $blobs = Get-AzStorageBlob -Context $context -Container "foundry"
 
 $mediaExtensions = "\.(jpg|jpeg|png|gif|webp|mp4|webm|mp3|ogg|wav)$"
