@@ -30,6 +30,11 @@ resource "azurerm_cosmosdb_account" "db" {
   tags = local.common_tags
 }
 
+backup {
+  type              = "Continuous"
+  tier              = "Continuous30Days"
+}
+
 resource "azurerm_cosmosdb_sql_database" "db" {
   name                = "db"
   resource_group_name = azurerm_resource_group.databases.name
