@@ -33,8 +33,7 @@ jobs:
 
       - name: Deploy to Azure Functions (Flex Consumption)
         run: |
-          az functionapp deploy \
+          az functionapp deployment source config-zip \
             --resource-group rg-nygdev-consumption \
             --name func-nygdev-ps \
-            --src-path psfunctionapp.zip \
-            --type zip
+            --src psfunctionapp.zip
