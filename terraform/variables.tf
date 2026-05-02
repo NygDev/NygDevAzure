@@ -31,7 +31,7 @@ variable "vm_name" {
 variable "vm_size" {
   description = "Size of the virtual machine"
   type        = string
-  default     = "Standard_B2pls_v2"
+  default     = "Standard_B2s"
 }
 
 variable "admin_username" {
