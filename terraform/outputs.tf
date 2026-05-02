@@ -37,3 +37,8 @@ output "function_app_hostname" {
   description = "Default hostname of the consumption Function App"
   value       = azurerm_function_app_flex_consumption.this["dotnet"].default_hostname
 }
+
+output "app_insights_name" {
+  description = "Name of the Application Insights instance for consumption function apps"
+  value       = azurerm_application_insights.consumption.name
+}
