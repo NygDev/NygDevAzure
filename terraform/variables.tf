@@ -49,7 +49,7 @@ variable "vm_resource_group" {
 variable "ubuntu_offer" {
   description = "Ubuntu image offer name"
   type        = string
-  default     = "ubuntu-25_10"
+  default     = "ubuntu-26_04"
 }
 
 variable "db_resource_group" {
