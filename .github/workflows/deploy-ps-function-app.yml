@@ -1,0 +1,40 @@
+name: Deploy PS Function App
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'psfunctionapp/**'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: NygDevAzure
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Az CLI login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Package function app
+        run: |
+          cd psfunctionapp
+          zip -r ../psfunctionapp.zip .
+
+      - name: Deploy to Azure Functions (Flex Consumption)
+        uses: azure/functions-action@v2
+        with:
+          app-name: func-nygdev-ps
+          package: psfunctionapp.zip
+          sku: flexconsumption
+          remote-build: false
