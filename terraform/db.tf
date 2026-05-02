@@ -1,6 +1,7 @@
 resource "azurerm_resource_group" "databases" {
   name     = var.db_resource_group
   location = var.location
+  tags     = local.common_tags
 }
 
 resource "azurerm_cosmosdb_account" "db" {
@@ -11,6 +12,11 @@ resource "azurerm_cosmosdb_account" "db" {
   offer_type                    = "Standard"
   free_tier_enabled             = true
   local_authentication_disabled = true
+  burst_capacity_enabled        = true
+
+  capacity {
+    total_throughput_limit = 1000
+  }
 
   consistency_policy {
     consistency_level = "Eventual"
@@ -20,6 +26,8 @@ resource "azurerm_cosmosdb_account" "db" {
     location          = azurerm_resource_group.databases.location
     failover_priority = 0
   }
+
+  tags = local.common_tags
 }
 
 resource "azurerm_cosmosdb_sql_database" "db" {

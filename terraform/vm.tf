@@ -2,6 +2,7 @@
 resource "azurerm_resource_group" "rpg" {
   name     = var.vm_resource_group
   location = var.location
+  tags     = local.common_tags
 }
 
 # Network Interface
@@ -15,6 +16,8 @@ resource "azurerm_network_interface" "vm" {
     private_ip_address_allocation = "Dynamic"
     public_ip_address_id          = azurerm_public_ip.foundry.id
   }
+
+  tags = local.common_tags
 }
 
 # Virtual Machine
@@ -51,6 +54,8 @@ resource "azurerm_linux_virtual_machine" "rpg" {
   }
 
   custom_data = base64encode(file("${path.module}/cloud-init.yml"))
+
+  tags = local.common_tags
 }
 
 # Reference the existing persistent data disk

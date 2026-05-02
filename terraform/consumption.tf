@@ -2,6 +2,7 @@
 resource "azurerm_resource_group" "consumption" {
   name     = var.consumption_resource_group
   location = var.location
+  tags     = local.common_tags
 }
 
 # Storage account required by Function Apps
@@ -11,6 +12,19 @@ resource "azurerm_storage_account" "consumption" {
   location                 = azurerm_resource_group.consumption.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
+
+  blob_properties {
+    versioning_enabled  = false
+    change_feed_enabled = false
+    delete_retention_policy {
+      days = 1
+    }
+    container_delete_retention_policy {
+      days = 1
+    }
+  }
+
+  tags = local.common_tags
 }
 
 # Storage containers for Flex Consumption deployment packages
@@ -23,52 +37,72 @@ resource "azurerm_storage_container" "consumption" {
 
 # FC1 Linux App Service Plans (one per Function App — FC1 allows only one app per plan)
 resource "azurerm_service_plan" "consumption" {
-  for_each            = toset(["dotnet", "ps"])
-  name                = "asp-nygdev-consumption-${each.key}"
+  for_each = {
+    dotnet     = "asp-nygdev-consumption-dotnet"
+    powershell = "asp-nygdev-consumption-ps"
+  }
+  name                = each.value
   location            = azurerm_resource_group.consumption.location
   resource_group_name = azurerm_resource_group.consumption.name
   os_type             = "Linux"
   sku_name            = "FC1"
+  tags                = local.common_tags
 }
 
-# Linux Flex Consumption Function App — dotnet-isolated .NET 10
-resource "azurerm_function_app_flex_consumption" "nygdev_dotnet" {
-  name                        = var.function_app_name
+locals {
+  apps = {
+    dotnet = {
+      name            = var.function_app_name
+      runtime_name    = "dotnet-isolated"
+      runtime_version = "10.0"
+      container       = "deploymentpackage"
+    }
+    powershell = {
+      name            = var.function_app_ps_name
+      runtime_name    = "powershell"
+      runtime_version = "7.4"
+      container       = "deploymentpackage-ps"
+    }
+  }
+}
+
+# Flex Consumption Function Apps
+resource "azurerm_function_app_flex_consumption" "this" {
+  for_each                    = local.apps
+  name                        = each.value.name
   location                    = azurerm_resource_group.consumption.location
   resource_group_name         = azurerm_resource_group.consumption.name
-  service_plan_id             = azurerm_service_plan.consumption["dotnet"].id
+  service_plan_id             = azurerm_service_plan.consumption[each.key].id
   storage_container_type      = "blobContainer"
-  storage_container_endpoint  = "${azurerm_storage_account.consumption.primary_blob_endpoint}${azurerm_storage_container.consumption["deploymentpackage"].name}"
+  storage_container_endpoint  = "${azurerm_storage_account.consumption.primary_blob_endpoint}${azurerm_storage_container.consumption[each.value.container].name}"
   storage_authentication_type = "StorageAccountConnectionString"
   storage_access_key          = azurerm_storage_account.consumption.primary_access_key
   instance_memory_in_mb       = 512
   maximum_instance_count      = 1
   http_concurrency            = 1
-  runtime_name                = "dotnet-isolated"
-  runtime_version             = "10.0"
-
-  site_config {}
-}
-
-# Linux Flex Consumption Function App — PowerShell 7.4
-resource "azurerm_function_app_flex_consumption" "nygdev_ps" {
-  name                        = var.function_app_ps_name
-  location                    = azurerm_resource_group.consumption.location
-  resource_group_name         = azurerm_resource_group.consumption.name
-  service_plan_id             = azurerm_service_plan.consumption["ps"].id
-  storage_container_type      = "blobContainer"
-  storage_container_endpoint  = "${azurerm_storage_account.consumption.primary_blob_endpoint}${azurerm_storage_container.consumption["deploymentpackage-ps"].name}"
-  storage_authentication_type = "StorageAccountConnectionString"
-  storage_access_key          = azurerm_storage_account.consumption.primary_access_key
-  instance_memory_in_mb       = 512
-  maximum_instance_count      = 1
-  http_concurrency            = 1
-  runtime_name                = "powershell"
-  runtime_version             = "7.4"
+  runtime_name                = each.value.runtime_name
+  runtime_version             = each.value.runtime_version
 
   identity {
     type = "SystemAssigned"
   }
 
   site_config {}
+
+  tags = local.common_tags
+}
+
+moved {
+  from = azurerm_function_app_flex_consumption.nygdev_dotnet
+  to   = azurerm_function_app_flex_consumption.this["dotnet"]
+}
+
+moved {
+  from = azurerm_function_app_flex_consumption.nygdev_ps
+  to   = azurerm_function_app_flex_consumption.this["powershell"]
+}
+
+moved {
+  from = azurerm_service_plan.consumption["ps"]
+  to   = azurerm_service_plan.consumption["powershell"]
 }
