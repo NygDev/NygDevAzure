@@ -94,8 +94,7 @@ resource "azurerm_function_app_flex_consumption" "this" {
   service_plan_id             = azurerm_service_plan.consumption[each.key].id
   storage_container_type      = "blobContainer"
   storage_container_endpoint  = "${azurerm_storage_account.consumption.primary_blob_endpoint}${azurerm_storage_container.consumption[each.value.container].name}"
-  storage_authentication_type = "StorageAccountConnectionString"
-  storage_access_key          = azurerm_storage_account.consumption.primary_access_key
+  storage_authentication_type = "SystemAssignedIdentity"
   instance_memory_in_mb       = 512
   maximum_instance_count      = 1
   http_concurrency            = 1
@@ -117,6 +116,16 @@ resource "azurerm_function_app_flex_consumption" "this" {
   }
 
   tags = local.common_tags
+}
+
+# Each Function App's system-assigned identity needs Storage Blob Data Owner on the
+# deployment package storage so the Flex Consumption runtime can fetch its zip and
+# manage deployment leases without a shared access key.
+resource "azurerm_role_assignment" "func_deployment_storage" {
+  for_each             = local.apps
+  scope                = azurerm_storage_account.consumption.id
+  role_definition_name = "Storage Blob Data Owner"
+  principal_id         = azurerm_function_app_flex_consumption.this[each.key].identity[0].principal_id
 }
 
 moved {
