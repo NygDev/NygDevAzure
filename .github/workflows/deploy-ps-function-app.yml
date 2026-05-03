@@ -19,17 +19,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Bundle Az modules into package
+        shell: pwsh
+        run: |
+          Save-Module -Name Az.Accounts -Path psfunctionapp/Modules -Repository PSGallery -Force
+          Save-Module -Name Az.Storage  -Path psfunctionapp/Modules -Repository PSGallery -Force
+
+      - name: Package function app
+        run: |
+          cd psfunctionapp
+          zip -r ../psfunctionapp.zip .
+
       - name: Az CLI login
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Package function app
-        run: |
-          cd psfunctionapp
-          zip -r ../psfunctionapp.zip .
 
       - name: Deploy to Azure Functions (Flex Consumption)
         run: |
