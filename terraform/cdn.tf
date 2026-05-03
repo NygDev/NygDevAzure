@@ -27,3 +27,11 @@ resource "azurerm_eventgrid_system_topic_event_subscription" "cachecontrolauto" 
     function_id = "${azurerm_function_app_flex_consumption.this["powershell"].id}/functions/cachecontrolauto"
   }
 }
+
+# The PS function calls Connect-AzAccount -Identity and writes blob headers on the
+# foundry container. Scoped to the container (not the whole account) for least privilege.
+resource "azurerm_role_assignment" "ps_func_nygdevcdn_foundry" {
+  scope                = "${data.azurerm_storage_account.nygdevcdn.id}/blobServices/default/containers/foundry"
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = azurerm_function_app_flex_consumption.this["powershell"].identity[0].principal_id
+}
