@@ -64,6 +64,12 @@ variable "db_resource_group" {
   default     = "rg-nygdev-db"
 }
 
+variable "cdn_resource_group" {
+  description = "Resource group containing the nygdevcdn storage account"
+  type        = string
+  default     = "rg-nygdev-web"
+}
+
 variable "consumption_resource_group" {
   description = "Resource group for consumption-tier serverless resources (Function Apps, Logic Apps)"
   type        = string
