@@ -66,6 +66,24 @@ locals {
   }
 }
 
+resource "azurerm_log_analytics_workspace" "consumption" {
+  name                = "log-nygdev-consumption"
+  location            = azurerm_resource_group.consumption.location
+  resource_group_name = azurerm_resource_group.consumption.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+  tags                = local.common_tags
+}
+
+resource "azurerm_application_insights" "consumption" {
+  name                = "appi-nygdev-consumption"
+  location            = azurerm_resource_group.consumption.location
+  resource_group_name = azurerm_resource_group.consumption.name
+  workspace_id        = azurerm_log_analytics_workspace.consumption.id
+  application_type    = "web"
+  tags                = local.common_tags
+}
+
 # Flex Consumption Function Apps
 resource "azurerm_function_app_flex_consumption" "this" {
   for_each                    = local.apps
@@ -88,6 +106,10 @@ resource "azurerm_function_app_flex_consumption" "this" {
   }
 
   site_config {}
+
+  app_settings = {
+    APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
+  }
 
   tags = local.common_tags
 }
