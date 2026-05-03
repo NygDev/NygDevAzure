@@ -105,7 +105,11 @@ resource "azurerm_function_app_flex_consumption" "this" {
     type = "SystemAssigned"
   }
 
-  site_config {}
+  site_config {
+    cors {
+      allowed_origins = ["https://portal.azure.com"]
+    }
+  }
 
   app_settings = {
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
