@@ -93,3 +93,15 @@ variable "entra_owner_objectid" {
   type        = string
   sensitive   = true
 }
+
+variable "tenant_id" {
+  description = "Azure AD tenant ID"
+  type        = string
+  sensitive   = true
+}
+
+variable "function_app_logger_name" {
+  description = "Name of the logger Function App (must be globally unique in Azure)"
+  type        = string
+  default     = "func-nygdev-logger"
+}
