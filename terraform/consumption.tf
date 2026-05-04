@@ -106,8 +106,10 @@ resource "azurerm_function_app_flex_consumption" "this" {
   }
 
   app_settings = {
-    APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
-    AzureWebJobsStorage__serviceUri       = azurerm_storage_account.consumption.primary_blob_endpoint
+    APPLICATIONINSIGHTS_CONNECTION_STRING  = azurerm_application_insights.consumption.connection_string
+    AzureWebJobsStorage__blobServiceUri   = azurerm_storage_account.consumption.primary_blob_endpoint
+    AzureWebJobsStorage__queueServiceUri  = azurerm_storage_account.consumption.primary_queue_endpoint
+    AzureWebJobsStorage__tableServiceUri  = azurerm_storage_account.consumption.primary_table_endpoint
   }
 
   tags = local.common_tags
@@ -139,8 +141,10 @@ resource "azurerm_function_app_flex_consumption" "logger" {
   }
 
   app_settings = {
-    APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
-    AzureWebJobsStorage__serviceUri       = azurerm_storage_account.consumption.primary_blob_endpoint
+    APPLICATIONINSIGHTS_CONNECTION_STRING  = azurerm_application_insights.consumption.connection_string
+    AzureWebJobsStorage__blobServiceUri   = azurerm_storage_account.consumption.primary_blob_endpoint
+    AzureWebJobsStorage__queueServiceUri  = azurerm_storage_account.consumption.primary_queue_endpoint
+    AzureWebJobsStorage__tableServiceUri  = azurerm_storage_account.consumption.primary_table_endpoint
   }
 
   auth_settings_v2 {
