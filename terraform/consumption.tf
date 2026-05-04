@@ -29,7 +29,7 @@ resource "azurerm_storage_account" "consumption" {
 
 # Storage containers for Flex Consumption deployment packages
 resource "azurerm_storage_container" "consumption" {
-  for_each              = toset(["deploymentpackage", "deploymentpackage-ps", "deploymentpackage-logger"])
+  for_each              = toset(["deploymentpackage-ps", "deploymentpackage-logger"])
   name                  = each.key
   storage_account_id    = azurerm_storage_account.consumption.id
   container_access_type = "private"
@@ -38,7 +38,6 @@ resource "azurerm_storage_container" "consumption" {
 # FC1 Linux App Service Plans (one per Function App — FC1 allows only one app per plan)
 resource "azurerm_service_plan" "consumption" {
   for_each = {
-    dotnet     = "asp-nygdev-consumption-dotnet"
     powershell = "asp-nygdev-consumption-ps"
     logger     = "asp-nygdev-consumption-logger"
   }
@@ -52,12 +51,6 @@ resource "azurerm_service_plan" "consumption" {
 
 locals {
   apps = {
-    dotnet = {
-      name            = var.function_app_name
-      runtime_name    = "dotnet-isolated"
-      runtime_version = "10.0"
-      container       = "deploymentpackage"
-    }
     powershell = {
       name            = var.function_app_ps_name
       runtime_name    = "powershell"
@@ -165,11 +158,6 @@ resource "azurerm_function_app_flex_consumption" "logger" {
   }
 
   tags = local.common_tags
-}
-
-moved {
-  from = azurerm_function_app_flex_consumption.nygdev_dotnet
-  to   = azurerm_function_app_flex_consumption.this["dotnet"]
 }
 
 moved {
