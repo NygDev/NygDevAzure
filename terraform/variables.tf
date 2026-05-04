@@ -76,12 +76,6 @@ variable "consumption_resource_group" {
   default     = "rg-nygdev-consumption"
 }
 
-variable "function_app_name" {
-  description = "Name of the consumption Function App (must be globally unique in Azure)"
-  type        = string
-  default     = "func-nygdev-dotnet"
-}
-
 variable "function_app_ps_name" {
   description = "Name of the PowerShell Function App (must be globally unique in Azure)"
   type        = string
