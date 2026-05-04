@@ -139,6 +139,8 @@ resource "azurerm_function_app_flex_consumption" "logger" {
 
   app_settings = {
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
+    AzureWebJobsStorage__accountName      = azurerm_storage_account.consumption.name
+    AzureWebJobsStorage__credential       = "managedidentity"
   }
 
   auth_settings_v2 {
