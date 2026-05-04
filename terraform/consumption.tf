@@ -149,7 +149,7 @@ resource "azurerm_function_app_flex_consumption" "logger" {
 
   auth_settings_v2 {
     auth_enabled           = true
-    require_authentication = true
+    require_authentication = false
     default_provider       = "azureActiveDirectory"
 
     active_directory_v2 {
