@@ -29,7 +29,7 @@ resource "azurerm_storage_account" "consumption" {
 
 # Storage containers for Flex Consumption deployment packages
 resource "azurerm_storage_container" "consumption" {
-  for_each              = toset(["deploymentpackage", "deploymentpackage-ps"])
+  for_each              = toset(["deploymentpackage", "deploymentpackage-ps", "deploymentpackage-logger"])
   name                  = each.key
   storage_account_id    = azurerm_storage_account.consumption.id
   container_access_type = "private"
@@ -40,6 +40,7 @@ resource "azurerm_service_plan" "consumption" {
   for_each = {
     dotnet     = "asp-nygdev-consumption-dotnet"
     powershell = "asp-nygdev-consumption-ps"
+    logger     = "asp-nygdev-consumption-logger"
   }
   name                = each.value
   location            = azurerm_resource_group.consumption.location
@@ -113,6 +114,54 @@ resource "azurerm_function_app_flex_consumption" "this" {
 
   app_settings = {
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
+  }
+
+  tags = local.common_tags
+}
+
+# Logger Function App — dotnet-isolated with Azure AD authentication
+resource "azurerm_function_app_flex_consumption" "logger" {
+  name                        = var.function_app_logger_name
+  location                    = azurerm_resource_group.consumption.location
+  resource_group_name         = azurerm_resource_group.consumption.name
+  service_plan_id             = azurerm_service_plan.consumption["logger"].id
+  storage_container_type      = "blobContainer"
+  storage_container_endpoint  = "${azurerm_storage_account.consumption.primary_blob_endpoint}${azurerm_storage_container.consumption["deploymentpackage-logger"].name}"
+  storage_authentication_type = "SystemAssignedIdentity"
+  instance_memory_in_mb       = 512
+  maximum_instance_count      = 1
+  http_concurrency            = 1
+  runtime_name                = "dotnet-isolated"
+  runtime_version             = "10.0"
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  site_config {
+    cors {
+      allowed_origins = ["https://portal.azure.com"]
+    }
+  }
+
+  app_settings = {
+    APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
+  }
+
+  auth_settings_v2 {
+    auth_enabled           = true
+    require_authentication = true
+    default_provider       = "azureActiveDirectory"
+
+    active_directory_v2 {
+      client_id            = "3b099f85-b92c-4f7a-ad5c-addd588d57ac"
+      tenant_auth_endpoint = "https://login.microsoftonline.com/${var.tenant_id}/v2.0"
+      allowed_audiences    = ["api://3b099f85-b92c-4f7a-ad5c-addd588d57ac"]
+    }
+
+    login {
+      token_store_enabled = false
+    }
   }
 
   tags = local.common_tags

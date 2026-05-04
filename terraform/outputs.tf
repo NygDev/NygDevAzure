@@ -42,3 +42,8 @@ output "app_insights_name" {
   description = "Name of the Application Insights instance for consumption function apps"
   value       = azurerm_application_insights.consumption.name
 }
+
+output "logger_function_app_hostname" {
+  description = "Default hostname of the logger Function App"
+  value       = azurerm_function_app_flex_consumption.logger.default_hostname
+}
