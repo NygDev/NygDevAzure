@@ -18,18 +18,28 @@ public class HttpTrigger
     }
 
     [Function("HttpTrigger")]
-    public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequest req)
+    public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequest req)
     {
-        const string id = "test";
-        const string partition = "405c6fb5-46c6-42f9-a9f6-a04e7da13840";
+        var partition = req.Headers["X-MS-CLIENT-PRINCIPAL-ID"].FirstOrDefault();
+        if (string.IsNullOrEmpty(partition))
+        {
+            _logger.LogWarning("Request received with no authenticated principal.");
+            return new UnauthorizedResult();
+        }
 
-        _logger.LogInformation("Writing {Id} to CosmosDB", id);
+        var body = await System.Text.Json.JsonSerializer.DeserializeAsync<IdPayload>(req.Body);
+        if (string.IsNullOrEmpty(body?.Id))
+            return new BadRequestObjectResult("Request body must contain {\"id\": \"<value>\"}");
+
+        _logger.LogInformation("Writing {Id} for principal {Partition}", body.Id, partition);
 
         var container = _cosmosClient.GetContainer("db", "primary");
 
-        var document = new { id, partition };
+        var document = new { id = body.Id, partition };
         await container.UpsertItemAsync(document, new PartitionKey(partition));
 
-        return new OkObjectResult($"Written {id}");
+        return new OkObjectResult($"Written {body.Id}");
     }
+
+    private record IdPayload([property: System.Text.Json.Serialization.JsonPropertyName("id")] string Id);
 }
