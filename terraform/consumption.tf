@@ -107,7 +107,6 @@ resource "azurerm_function_app_flex_consumption" "this" {
 
   app_settings = {
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
-    AzureWebJobsStorage__accountName      = azurerm_storage_account.consumption.name
   }
 
   tags = local.common_tags
@@ -141,7 +140,6 @@ resource "azurerm_function_app_flex_consumption" "logger" {
 
   app_settings = {
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
-    AzureWebJobsStorage__accountName      = azurerm_storage_account.consumption.name
     CosmosDb__AccountEndpoint             = azurerm_cosmosdb_account.db.endpoint
   }
 
