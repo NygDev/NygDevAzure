@@ -81,13 +81,6 @@ resource "azurerm_storage_container" "azadmin" {
   container_access_type = "private"
 }
 
-# Grant the azadmin function app's managed identity access to the storage account
-resource "azurerm_role_assignment" "azadmin_storage" {
-  scope                = azurerm_storage_account.consumption.id
-  role_definition_name = "Storage Blob Data Owner"
-  principal_id         = azurerm_function_app_flex_consumption.azadmin.identity[0].principal_id
-}
-
 # Azure admin automation — PowerShell 7.4 on Flex Consumption
 resource "azurerm_function_app_flex_consumption" "azadmin" {
   name                = "func-nygdev-azadmin"
@@ -97,11 +90,8 @@ resource "azurerm_function_app_flex_consumption" "azadmin" {
 
   storage_container_type      = "blobContainer"
   storage_container_endpoint  = "${azurerm_storage_account.consumption.primary_blob_endpoint}${azurerm_storage_container.azadmin.name}"
-  storage_authentication_type = "SystemAssignedIdentity"
-
-  identity {
-    type = "SystemAssigned"
-  }
+  storage_authentication_type = "StorageAccountConnectionString"
+  storage_access_key          = azurerm_storage_account.consumption.primary_access_key
 
   runtime_name    = "powershell"
   runtime_version = "7.4"
