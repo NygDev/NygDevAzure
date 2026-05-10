@@ -103,6 +103,10 @@ resource "azurerm_function_app_flex_consumption" "azadmin" {
     type = "SystemAssigned"
   }
 
+  app_settings = {
+    APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
+  }
+
   site_config {}
 
   tags = local.common_tags
@@ -142,6 +146,10 @@ resource "azurerm_function_app_flex_consumption" "logger" {
 
   identity {
     type = "SystemAssigned"
+  }
+
+  app_settings = {
+    APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
   }
 
   site_config {}
