@@ -45,3 +45,31 @@ resource "azurerm_application_insights" "consumption" {
   application_type    = "web"
   tags                = local.common_tags
 }
+
+# ---------------------------------------------------------------------------
+# Flex Consumption plans (SKU: FC1)
+# Free grant: 100,000 executions + 250,000 GB-s compute per month per
+# subscription — no baseline cost, you only pay for what you use beyond that.
+# Both runtimes (PowerShell 7.x and .NET 10 isolated) run on Linux under
+# Flex Consumption.
+# ---------------------------------------------------------------------------
+
+# Intended for PowerShell 7.x function apps
+resource "azurerm_service_plan" "flex_ps" {
+  name                = "asp-nygdev-flex-ps"
+  resource_group_name = azurerm_resource_group.consumption.name
+  location            = azurerm_resource_group.consumption.location
+  os_type             = "Linux"
+  sku_name            = "FC1"
+  tags                = local.common_tags
+}
+
+# Intended for .NET 10 isolated-worker function apps
+resource "azurerm_service_plan" "flex_dotnet" {
+  name                = "asp-nygdev-flex-dotnet"
+  resource_group_name = azurerm_resource_group.consumption.name
+  location            = azurerm_resource_group.consumption.location
+  os_type             = "Linux"
+  sku_name            = "FC1"
+  tags                = local.common_tags
+}
