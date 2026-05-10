@@ -1,0 +1,86 @@
+name: Terraform Plan
+
+on:
+  push:
+    branches-ignore: [main]
+    paths:
+      - 'terraform/**'
+  pull_request:
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    environment: NygDevAzure
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      TF_VAR_entra_owner_objectid: ${{ secrets.ENTRA_OWNER_OBJECTID }}
+      TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      TF_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Az CLI login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.1
+          terraform_wrapper: false
+
+      - name: Retrieve Home IP from Key Vault
+        run: |
+          HOME_IP=$(az keyvault secret show \
+            --vault-name ${{ secrets.AZURE_KEYVAULT_NAME }} \
+            --name HomeIP \
+            --query value \
+            --output tsv)
+          echo "::add-mask::$HOME_IP"
+          echo "HOME_IP=$HOME_IP" >> $GITHUB_ENV
+
+      - name: Retrieve SSH Public Key
+        run: |
+          SSH_KEY=$(az sshkey show \
+            --resource-group rg-nygdev-security \
+            --name nygdev-ed25519 \
+            --query publicKey \
+            --output tsv)
+          echo "SSH_PUBLIC_KEY<<EOF" >> $GITHUB_ENV
+          echo "$SSH_KEY" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - run: mkdir -p $TF_PLUGIN_CACHE_DIR
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: ${{ runner.os }}-tf-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: ${{ runner.os }}-tf-
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: terraform
+        run: |
+          terraform plan \
+            -var="home_ip=$HOME_IP" \
+            -var="ssh_public_key=$SSH_PUBLIC_KEY" \
+            -var="admin_username=${{ secrets.AZURE_VM_USERNAME }}" \
+            -no-color
