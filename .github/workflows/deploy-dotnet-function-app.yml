@@ -25,7 +25,7 @@ jobs:
 
       - name: Publish function app
         run: |
-          dotnet publish dotnetloggerapp \
+          dotnet publish dotnetloggerapp/dotnetloggerapp.csproj \
             --configuration Release \
             --output publish
 
