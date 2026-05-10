@@ -207,5 +207,4 @@ resource "azurerm_role_assignment" "function_app_storage" {
   scope                = azurerm_storage_account.consumption.id
   role_definition_id   = "${data.azurerm_subscription.current.id}/providers/Microsoft.Authorization/roleDefinitions/${each.value.role_id}"
   principal_id         = each.value.principal_id
-  skip_service_principal_aad_replication_delay = false
 }
