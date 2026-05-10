@@ -99,6 +99,10 @@ resource "azurerm_function_app_flex_consumption" "azadmin" {
   instance_memory_in_mb  = 512
   maximum_instance_count = 1
 
+  app_settings = {
+    APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
+  }
+
   site_config {}
 
   tags = local.common_tags
