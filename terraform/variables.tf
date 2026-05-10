@@ -76,12 +76,6 @@ variable "consumption_resource_group" {
   default     = "rg-nygdev-consumption"
 }
 
-variable "function_app_ps_name" {
-  description = "Name of the PowerShell Function App (must be globally unique in Azure)"
-  type        = string
-  default     = "func-nygdev-ps"
-}
-
 variable "entra_owner_objectid" {
   description = "Object ID of the Entra owner user"
   type        = string
@@ -92,10 +86,4 @@ variable "tenant_id" {
   description = "Azure AD tenant ID"
   type        = string
   sensitive   = true
-}
-
-variable "function_app_logger_name" {
-  description = "Name of the logger Function App (must be globally unique in Azure)"
-  type        = string
-  default     = "func-nygdev-logger"
 }
