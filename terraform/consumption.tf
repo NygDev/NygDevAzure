@@ -74,24 +74,32 @@ resource "azurerm_service_plan" "flex_dotnet" {
   tags                = local.common_tags
 }
 
+# Deployment artifact container for the azadmin function app
+resource "azurerm_storage_container" "azadmin" {
+  name                  = "azadmin-deploy"
+  storage_account_id    = azurerm_storage_account.consumption.id
+  container_access_type = "private"
+}
+
 # Azure admin automation — PowerShell 7.4 on Flex Consumption
-resource "azurerm_linux_function_app" "azadmin" {
-  name                          = "func-nygdev-azadmin"
-  resource_group_name           = azurerm_resource_group.consumption.name
-  location                      = azurerm_resource_group.consumption.location
-  service_plan_id               = azurerm_service_plan.flex_ps.id
-  storage_account_name          = azurerm_storage_account.consumption.name
-  storage_uses_managed_identity = true
+resource "azurerm_function_app_flex_consumption" "azadmin" {
+  name                = "func-nygdev-azadmin"
+  resource_group_name = azurerm_resource_group.consumption.name
+  location            = azurerm_resource_group.consumption.location
+  service_plan_id     = azurerm_service_plan.flex_ps.id
 
-  identity {
-    type = "SystemAssigned"
-  }
+  storage_container_type      = "blobContainer"
+  storage_container_endpoint  = "${azurerm_storage_account.consumption.primary_blob_endpoint}${azurerm_storage_container.azadmin.name}"
+  storage_authentication_type = "StorageAccountConnectionString"
+  storage_access_key          = azurerm_storage_account.consumption.primary_access_key
 
-  site_config {
-    application_stack {
-      powershell_core_version = "7.4"
-    }
-  }
+  runtime_name    = "powershell"
+  runtime_version = "7.4"
+
+  instance_memory_in_mb  = 512
+  maximum_instance_count = 1
+
+  site_config {}
 
   tags = local.common_tags
 }
