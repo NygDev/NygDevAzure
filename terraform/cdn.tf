@@ -12,18 +12,3 @@ resource "azurerm_eventgrid_system_topic" "nygdevcdn_blob" {
   tags                   = local.common_tags
 }
 
-resource "azurerm_eventgrid_system_topic_event_subscription" "cachecontrolauto" {
-  name                = "evgs-nygdevcdn-cachecontrolauto"
-  system_topic        = azurerm_eventgrid_system_topic.nygdevcdn_blob.name
-  resource_group_name = var.cdn_resource_group
-
-  included_event_types = ["Microsoft.Storage.BlobCreated"]
-
-  subject_filter {
-    subject_begins_with = "/blobServices/default/containers/foundry/"
-  }
-
-  azure_function_endpoint {
-    function_id = "${azurerm_function_app_flex_consumption.this["powershell"].id}/functions/cachecontrolauto"
-  }
-}
