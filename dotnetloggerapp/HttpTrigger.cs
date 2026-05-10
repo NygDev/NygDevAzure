@@ -18,22 +18,18 @@ public class HttpTrigger
     }
 
     [Function("HttpTrigger")]
-    public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", "post")] HttpRequest req)
+    public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequest req)
     {
-        var objectId = req.Headers["X-MS-CLIENT-PRINCIPAL-ID"].FirstOrDefault();
-        if (string.IsNullOrEmpty(objectId))
-        {
-            _logger.LogWarning("Request received with no authenticated principal.");
-            return new UnauthorizedResult();
-        }
+        const string id = "test";
+        const string partition = "405c6fb5-46c6-42f9-a9f6-a04e7da13840";
 
-        _logger.LogInformation("Writing TestInvoke for user {ObjectId}", objectId);
+        _logger.LogInformation("Writing {Id} to CosmosDB", id);
 
         var container = _cosmosClient.GetContainer("db", "primary");
 
-        var document = new { id = "TestInvoke", partition = objectId };
-        await container.UpsertItemAsync(document, new PartitionKey(objectId));
+        var document = new { id, partition };
+        await container.UpsertItemAsync(document, new PartitionKey(partition));
 
-        return new OkObjectResult($"Written TestInvoke for {objectId}");
+        return new OkObjectResult($"Written {id}");
     }
 }

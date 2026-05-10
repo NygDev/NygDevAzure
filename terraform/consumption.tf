@@ -150,6 +150,7 @@ resource "azurerm_function_app_flex_consumption" "logger" {
 
   app_settings = {
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
+    CosmosDb__AccountEndpoint             = azurerm_cosmosdb_account.db.endpoint
   }
 
   site_config {}
