@@ -18,7 +18,7 @@ public class HttpTrigger
     }
 
     [Function("HttpTrigger")]
-    public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequest req)
+    public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequest req)
     {
         const string id = "test";
         const string partition = "405c6fb5-46c6-42f9-a9f6-a04e7da13840";

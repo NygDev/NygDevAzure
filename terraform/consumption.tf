@@ -153,7 +153,14 @@ resource "azurerm_function_app_flex_consumption" "logger" {
     CosmosDb__AccountEndpoint             = azurerm_cosmosdb_account.db.endpoint
   }
 
-  site_config {}
+  site_config {
+    cors {
+      allowed_origins = [
+        "https://portal.azure.com",
+        "https://ms.portal.azure.com",
+      ]
+    }
+  }
 
   tags = local.common_tags
 }
