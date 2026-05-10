@@ -41,5 +41,5 @@ jobs:
         run: |
           az functionapp deployment source config-zip \
             --resource-group rg-nygdev-consumption \
-            --name func-nygdev-ps \
+            --name func-nygdev-azadmin \
             --src psfunctionapp.zip
