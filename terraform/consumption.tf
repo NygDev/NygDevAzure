@@ -99,6 +99,10 @@ resource "azurerm_function_app_flex_consumption" "azadmin" {
   instance_memory_in_mb  = 512
   maximum_instance_count = 1
 
+  identity {
+    type = "SystemAssigned"
+  }
+
   app_settings = {
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
   }
@@ -106,6 +110,13 @@ resource "azurerm_function_app_flex_consumption" "azadmin" {
   site_config {}
 
   tags = local.common_tags
+}
+
+# Grant azadmin blob contributor on the CDN storage account
+resource "azurerm_role_assignment" "azadmin_cdn_storage" {
+  scope                = data.azurerm_storage_account.nygdevcdn.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = azurerm_function_app_flex_consumption.azadmin.identity[0].principal_id
 }
 
 # Deployment artifact container for the logger function app
@@ -133,6 +144,10 @@ resource "azurerm_function_app_flex_consumption" "logger" {
   instance_memory_in_mb  = 512
   maximum_instance_count = 1
 
+  identity {
+    type = "SystemAssigned"
+  }
+
   app_settings = {
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
   }
@@ -140,4 +155,13 @@ resource "azurerm_function_app_flex_consumption" "logger" {
   site_config {}
 
   tags = local.common_tags
+}
+
+# Grant logger built-in data contributor on the Cosmos DB account
+resource "azurerm_cosmosdb_sql_role_assignment" "logger_cosmos" {
+  resource_group_name = azurerm_resource_group.databases.name
+  account_name        = azurerm_cosmosdb_account.db.name
+  role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
+  principal_id        = azurerm_function_app_flex_consumption.logger.identity[0].principal_id
+  scope               = azurerm_cosmosdb_account.db.id
 }
