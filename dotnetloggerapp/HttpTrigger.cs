@@ -18,14 +18,10 @@ public class HttpTrigger
     }
 
     [Function("HttpTrigger")]
-    public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequest req)
+    public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequest req)
     {
-        var partition = req.Headers["X-MS-CLIENT-PRINCIPAL-ID"].FirstOrDefault();
-        if (string.IsNullOrEmpty(partition))
-        {
-            _logger.LogWarning("Request received with no authenticated principal.");
-            return new UnauthorizedResult();
-        }
+        var partition = req.Headers["X-MS-CLIENT-PRINCIPAL-ID"].FirstOrDefault()
+            ?? "anonymous";
 
         var body = await System.Text.Json.JsonSerializer.DeserializeAsync<IdPayload>(req.Body);
         if (string.IsNullOrEmpty(body?.Id))

@@ -1,9 +1,10 @@
-$token = az account get-access-token `
-    --resource api://3b099f85-b92c-4f7a-ad5c-addd588d57ac `
-    --query accessToken -o tsv
+$token = ConvertFrom-SecureString -SecureString (Get-AzAccessToken -ResourceUrl "api://b871e062-cdbf-417c-8e91-6d23d0189ce5").Token -AsPlainText
 
 $response = Invoke-RestMethod `
     -Uri "https://func-nygdev-logger.azurewebsites.net/api/HttpTrigger" `
-    -Headers @{ Authorization = "Bearer $token" }
+    -Method Post `
+    -Headers @{ Authorization = "Bearer $token" } `
+    -ContentType "application/json" `
+    -Body '{"id":"test-from-ps"}'
 
 Write-Output $response
