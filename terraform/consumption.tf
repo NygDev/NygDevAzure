@@ -175,3 +175,37 @@ moved {
   from = azurerm_service_plan.consumption["ps"]
   to   = azurerm_service_plan.consumption["powershell"]
 }
+
+# Storage RBAC for Function Apps using SystemAssignedIdentity storage auth
+# Required roles: Blob Data Owner (host lock + deployment), Queue + Table Data Contributor (runtime)
+locals {
+  storage_roles = {
+    "Storage Blob Data Owner"          = "b7e6dc6d-f1e8-4753-8033-0f276bb0955b"
+    "Storage Queue Data Contributor"   = "974c5e8b-45b9-4653-ba55-5f855dd0fb88"
+    "Storage Table Data Contributor"   = "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3"
+  }
+
+  function_app_principal_ids = {
+    powershell = azurerm_function_app_flex_consumption.this["powershell"].identity[0].principal_id
+    logger     = azurerm_function_app_flex_consumption.logger.identity[0].principal_id
+  }
+}
+
+resource "azurerm_role_assignment" "function_app_storage" {
+  for_each = {
+    for pair in flatten([
+      for app_key, principal_id in local.function_app_principal_ids : [
+        for role_name, role_id in local.storage_roles : {
+          key          = "${app_key}-${role_name}"
+          principal_id = principal_id
+          role_id      = role_id
+        }
+      ]
+    ]) : pair.key => pair
+  }
+
+  scope                = azurerm_storage_account.consumption.id
+  role_definition_id   = "${data.azurerm_subscription.current.id}/providers/Microsoft.Authorization/roleDefinitions/${each.value.role_id}"
+  principal_id         = each.value.principal_id
+  skip_service_principal_aad_replication_delay = false
+}

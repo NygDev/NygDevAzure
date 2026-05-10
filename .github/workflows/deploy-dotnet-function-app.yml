@@ -43,7 +43,22 @@ jobs:
 
       - name: Deploy to Azure Functions (Flex Consumption)
         run: |
+          # Exit code 3 means the deployment succeeded but the post-deploy host-key
+          # health check failed — expected when storage uses SystemAssignedIdentity.
           az functionapp deployment source config-zip \
             --resource-group rg-nygdev-consumption \
             --name func-nygdev-logger \
-            --src dotnetloggerapp.zip
+            --src dotnetloggerapp.zip || { code=$?; [ $code -eq 3 ] && echo "Deployment succeeded (host-key health check skipped)" || exit $code; }
+
+      - name: Verify app is running
+        run: |
+          for i in {1..6}; do
+            state=$(az functionapp show \
+              --resource-group rg-nygdev-consumption \
+              --name func-nygdev-logger \
+              --query "state" -o tsv)
+            echo "App state: $state"
+            [ "$state" = "Running" ] && exit 0
+            sleep 10
+          done
+          echo "App did not reach Running state in time" && exit 1
