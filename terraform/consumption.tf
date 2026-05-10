@@ -73,3 +73,25 @@ resource "azurerm_service_plan" "flex_dotnet" {
   sku_name            = "FC1"
   tags                = local.common_tags
 }
+
+# Azure admin automation — PowerShell 7.4 on Flex Consumption
+resource "azurerm_linux_function_app" "azadmin" {
+  name                          = "func-nygdev-azadmin"
+  resource_group_name           = azurerm_resource_group.consumption.name
+  location                      = azurerm_resource_group.consumption.location
+  service_plan_id               = azurerm_service_plan.flex_ps.id
+  storage_account_name          = azurerm_storage_account.consumption.name
+  storage_uses_managed_identity = true
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  site_config {
+    application_stack {
+      powershell_core_version = "7.4"
+    }
+  }
+
+  tags = local.common_tags
+}
