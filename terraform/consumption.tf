@@ -107,3 +107,37 @@ resource "azurerm_function_app_flex_consumption" "azadmin" {
 
   tags = local.common_tags
 }
+
+# Deployment artifact container for the logger function app
+resource "azurerm_storage_container" "logger" {
+  name                  = "logger-deploy"
+  storage_account_id    = azurerm_storage_account.consumption.id
+  container_access_type = "private"
+}
+
+# Daily logger — .NET 10 isolated on Flex Consumption
+resource "azurerm_function_app_flex_consumption" "logger" {
+  name                = "func-nygdev-logger"
+  resource_group_name = azurerm_resource_group.consumption.name
+  location            = azurerm_resource_group.consumption.location
+  service_plan_id     = azurerm_service_plan.flex_dotnet.id
+
+  storage_container_type      = "blobContainer"
+  storage_container_endpoint  = "${azurerm_storage_account.consumption.primary_blob_endpoint}${azurerm_storage_container.logger.name}"
+  storage_authentication_type = "StorageAccountConnectionString"
+  storage_access_key          = azurerm_storage_account.consumption.primary_access_key
+
+  runtime_name    = "dotnet-isolated"
+  runtime_version = "10.0"
+
+  instance_memory_in_mb  = 512
+  maximum_instance_count = 1
+
+  app_settings = {
+    APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
+  }
+
+  site_config {}
+
+  tags = local.common_tags
+}
