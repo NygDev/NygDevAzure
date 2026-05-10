@@ -134,7 +134,8 @@ resource "azurerm_function_app_flex_consumption" "logger" {
 
   site_config {
     cors {
-      allowed_origins = ["https://portal.azure.com"]
+      allowed_origins     = ["https://portal.azure.com"]
+      support_credentials = true
     }
   }
 
