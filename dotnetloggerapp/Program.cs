@@ -9,6 +9,7 @@ var builder = FunctionsApplication.CreateBuilder(args);
 
 builder.ConfigureFunctionsWebApplication();
 
+// Cosmos uses the function app's managed identity (or `az login` locally).
 builder.Services.AddSingleton(_ =>
 {
     var endpoint = Environment.GetEnvironmentVariable("CosmosDb__AccountEndpoint")
