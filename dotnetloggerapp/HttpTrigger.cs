@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.Resource;
 
 namespace NygDev.logtest;
@@ -33,8 +34,10 @@ public class HttpTrigger
 
         var user = req.HttpContext.User;
 
-        // Cosmos partition: the user's object id. Stable per user, per tenant.
-        var partition = user.FindFirst("oid")?.Value
+        // Cosmos partition: the user's object id. GetObjectId() checks both the
+        // short ("oid") and long URI claim names, so it works regardless of
+        // claim-mapping state.
+        var partition = user.GetObjectId()
             ?? throw new InvalidOperationException("Token has no 'oid' claim.");
 
         // Document id: the unique token identifier issued by Entra.
@@ -51,9 +54,9 @@ public class HttpTrigger
             id = tokenId,
             partition,
             receivedAt = DateTimeOffset.UtcNow,
-            subject = user.FindFirst("sub")?.Value,
+            subject = user.GetNameIdentifierId(),
             preferredName = user.FindFirst("preferred_username")?.Value,
-            tenantId = user.FindFirst("tid")?.Value,
+            tenantId = user.GetTenantId(),
             issuer = user.FindFirst("iss")?.Value,
             audience = user.FindFirst("aud")?.Value,
             roles = user.FindAll("roles").Select(c => c.Value).ToArray(),
