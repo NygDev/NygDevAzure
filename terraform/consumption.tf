@@ -151,6 +151,11 @@ resource "azurerm_function_app_flex_consumption" "logger" {
   app_settings = {
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
     CosmosDb__AccountEndpoint             = azurerm_cosmosdb_account.db.endpoint
+
+    "AzureAd__Instance"        = "https://login.microsoftonline.com/"
+    "AzureAd__TenantId"        = var.tenant_id
+    "AzureAd__ClientId"        = "b871e062-cdbf-417c-8e91-6d23d0189ce5"
+    "AzureAd__Audience"        = "api://b871e062-cdbf-417c-8e91-6d23d0189ce5"
   }
 
   site_config {
