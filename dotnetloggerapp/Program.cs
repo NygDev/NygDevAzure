@@ -7,18 +7,21 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Identity.Web;
 using NygDev.logtest;
-using Microsoft.IdentityModel.JsonWebTokens;
-
-JsonWebTokenHandler.DefaultMapInboundClaims = false;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 builder.ConfigureFunctionsWebApplication();
 
-builder.UseMiddleware<JwtAuthMiddleware>();   // <-- the new bit
+builder.UseMiddleware<JwtAuthMiddleware>();
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAd"));
+
+// Keep JWT claim names as-is ("oid", "tid", "scp" — not their long URI forms).
+// PostConfigure runs after MIW's own setup, so this is the final say.
+builder.Services.PostConfigure<JwtBearerOptions>(
+    JwtBearerDefaults.AuthenticationScheme,
+    options => options.MapInboundClaims = false);
 
 builder.Services.AddAuthorization();
 
