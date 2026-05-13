@@ -155,7 +155,6 @@ resource "azurerm_function_app_flex_consumption" "logger" {
     "AzureAd__Instance"        = "https://login.microsoftonline.com/"
     "AzureAd__TenantId"        = var.tenant_id
     "AzureAd__ClientId"        = "b871e062-cdbf-417c-8e91-6d23d0189ce5"
-    "AzureAd__Audience"        = "api://b871e062-cdbf-417c-8e91-6d23d0189ce5"
   }
 
   site_config {
