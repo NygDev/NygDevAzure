@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Cosmos;
@@ -8,10 +7,9 @@ using Microsoft.Identity.Web.Resource;
 
 namespace NygDev.logtest;
 
-[Authorize]                         // require a valid Entra token
-// [Authorize(Roles = "gym.log")]   // ...and the app role, if you want that gate
 public class HttpTrigger
 {
+    // Delegated scope the calling client must have on the user's behalf.
     private const string RequiredScope = "user_impersonation";
 
     private readonly ILogger<HttpTrigger> _logger;
@@ -27,30 +25,41 @@ public class HttpTrigger
     public async Task<IActionResult> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequest req)
     {
+        // Auth is enforced by JwtAuthMiddleware before we get here.
+        // HttpContext.User is a validated ClaimsPrincipal.
+
         // Throws 403 if the token's scp claim doesn't include the required scope.
         req.HttpContext.VerifyUserHasAnyAcceptedScope(RequiredScope);
 
         var user = req.HttpContext.User;
-        var partition = user.FindFirst("oid")?.Value ?? "unknown";
-        var tokenId   = user.FindFirst("uti")?.Value
-                     ?? user.FindFirst("jti")?.Value
-                     ?? Guid.NewGuid().ToString();
+
+        // Cosmos partition: the user's object id. Stable per user, per tenant.
+        var partition = user.FindFirst("oid")?.Value
+            ?? throw new InvalidOperationException("Token has no 'oid' claim.");
+
+        // Document id: the unique token identifier issued by Entra.
+        var tokenId = user.FindFirst("uti")?.Value
+            ?? user.FindFirst("jti")?.Value
+            ?? Guid.NewGuid().ToString();
 
         _logger.LogInformation(
-            "Authenticated {User} ({Oid}). Storing token id {Id}.",
+            "Authenticated {User} ({Oid}); writing token id {Id}.",
             user.Identity?.Name, partition, tokenId);
 
         var document = new
         {
-            id           = tokenId,
+            id = tokenId,
             partition,
-            receivedAt   = DateTimeOffset.UtcNow,
-            subject      = user.FindFirst("sub")?.Value,
+            receivedAt = DateTimeOffset.UtcNow,
+            subject = user.FindFirst("sub")?.Value,
             preferredName = user.FindFirst("preferred_username")?.Value,
-            roles        = user.FindAll("roles").Select(c => c.Value).ToArray(),
-            scopes       = user.FindFirst("scp")?.Value?.Split(' '),
-            // claims are now trustworthy because the middleware validated the signature
-            claims       = user.Claims.ToDictionary(c => c.Type, c => c.Value)
+            tenantId = user.FindFirst("tid")?.Value,
+            issuer = user.FindFirst("iss")?.Value,
+            audience = user.FindFirst("aud")?.Value,
+            roles = user.FindAll("roles").Select(c => c.Value).ToArray(),
+            scopes = user.FindFirst("scp")?.Value?.Split(' ',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            claims = user.Claims.ToDictionary(c => c.Type, c => c.Value)
         };
 
         var container = _cosmosClient.GetContainer("db", "primary");
