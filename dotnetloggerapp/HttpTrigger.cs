@@ -1,16 +1,19 @@
-using System.Text;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
-using Microsoft.Net.Http.Headers;
-using Newtonsoft.Json.Linq;
+using Microsoft.Identity.Web.Resource;
 
 namespace NygDev.logtest;
 
+[Authorize]                         // require a valid Entra token
+// [Authorize(Roles = "gym.log")]   // ...and the app role, if you want that gate
 public class HttpTrigger
 {
+    private const string RequiredScope = "user_impersonation";
+
     private readonly ILogger<HttpTrigger> _logger;
     private readonly CosmosClient _cosmosClient;
 
@@ -22,69 +25,37 @@ public class HttpTrigger
 
     [Function("HttpTrigger")]
     public async Task<IActionResult> Run(
-        [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequest req)
     {
-        // Token comes from the caller, e.g.
-        //   Authorization: Bearer eyJ0eXAi...
-        var authHeader = req.Headers[HeaderNames.Authorization].ToString();
-        if (string.IsNullOrWhiteSpace(authHeader) ||
-            !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-        {
-            return new BadRequestObjectResult("Missing 'Authorization: Bearer <token>' header.");
-        }
+        // Throws 403 if the token's scp claim doesn't include the required scope.
+        req.HttpContext.VerifyUserHasAnyAcceptedScope(RequiredScope);
 
-        var rawToken = authHeader["Bearer ".Length..].Trim();
-
-        // Decode the JWT (no signature validation - example only).
-        JObject? header = null;
-        JObject? claims = null;
-        var parts = rawToken.Split('.');
-        if (parts.Length >= 2)
-        {
-            header = JObject.Parse(Encoding.UTF8.GetString(Base64UrlDecode(parts[0])));
-            claims = JObject.Parse(Encoding.UTF8.GetString(Base64UrlDecode(parts[1])));
-        }
-        else
-        {
-            return new BadRequestObjectResult("Authorization header does not contain a JWT.");
-        }
-
-        // Partition by the user's object id (oid claim) when present.
-        var partition = claims?["oid"]?.ToString()
-            ?? "unknown";
-
-        // Use the token's unique identifier as the document id when available.
-        //   uti = Entra-issued unique token id (one per issuance)
-        //   jti = standard JWT id
-        var id = claims?["uti"]?.ToString()
-            ?? claims?["jti"]?.ToString()
-            ?? Guid.NewGuid().ToString();
+        var user = req.HttpContext.User;
+        var partition = user.FindFirst("oid")?.Value ?? "unknown";
+        var tokenId   = user.FindFirst("uti")?.Value
+                     ?? user.FindFirst("jti")?.Value
+                     ?? Guid.NewGuid().ToString();
 
         _logger.LogInformation(
-            "Storing token id {Id} for partition {Partition}, issuer {Issuer}",
-            id, partition, claims?["iss"]);
+            "Authenticated {User} ({Oid}). Storing token id {Id}.",
+            user.Identity?.Name, partition, tokenId);
 
         var document = new
         {
-            id,
+            id           = tokenId,
             partition,
-            receivedAt = DateTimeOffset.UtcNow,
-            accessToken = rawToken,
-            header,
-            claims
+            receivedAt   = DateTimeOffset.UtcNow,
+            subject      = user.FindFirst("sub")?.Value,
+            preferredName = user.FindFirst("preferred_username")?.Value,
+            roles        = user.FindAll("roles").Select(c => c.Value).ToArray(),
+            scopes       = user.FindFirst("scp")?.Value?.Split(' '),
+            // claims are now trustworthy because the middleware validated the signature
+            claims       = user.Claims.ToDictionary(c => c.Type, c => c.Value)
         };
 
         var container = _cosmosClient.GetContainer("db", "primary");
         await container.UpsertItemAsync(document, new PartitionKey(partition));
 
-        return new OkObjectResult(new { id = document.id, partition });
-    }
-
-    private static byte[] Base64UrlDecode(string input)
-    {
-        var padding = (4 - input.Length % 4) % 4;
-        var base64 = input.Replace('-', '+').Replace('_', '/')
-            + new string('=', padding);
-        return Convert.FromBase64String(base64);
+        return new OkObjectResult(new { id = tokenId, partition });
     }
 }
