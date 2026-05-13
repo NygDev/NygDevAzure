@@ -7,6 +7,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Identity.Web;
 using NygDev.logtest;
+using Microsoft.IdentityModel.JsonWebTokens;
+
+JsonWebTokenHandler.DefaultMapInboundClaims = false;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 builder.ConfigureFunctionsWebApplication();
