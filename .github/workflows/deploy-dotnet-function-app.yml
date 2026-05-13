@@ -1,46 +1,37 @@
 name: Deploy Dotnet Function App
-
 on:
   push:
     branches: [main]
     paths:
       - 'dotnetloggerapp/**'
   workflow_dispatch:
-
 permissions:
   id-token: write
   contents: read
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: NygDevAzure
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-
       - name: Publish function app
         run: |
           dotnet publish dotnetloggerapp/dotnetloggerapp.csproj \
             --configuration Release \
             --output publish
-
       - name: Package function app
         run: |
           cd publish
           zip -r ../dotnetloggerapp.zip .
-
       - name: Az CLI login
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
       - name: Deploy to Azure Functions (Flex Consumption)
         run: |
           # Exit code 3 means the deployment succeeded but the post-deploy host-key
@@ -49,16 +40,20 @@ jobs:
             --resource-group rg-nygdev-consumption \
             --name func-nygdev-logger \
             --src dotnetloggerapp.zip || { code=$?; [ $code -eq 3 ] && echo "Deployment succeeded (host-key health check skipped)" || exit $code; }
-
       - name: Verify app is running
         run: |
-          for i in {1..6}; do
-            state=$(az functionapp show \
-              --resource-group rg-nygdev-consumption \
-              --name func-nygdev-logger \
-              --query "state" -o tsv)
-            echo "App state: $state"
-            [ "$state" = "Running" ] && exit 0
+          host=$(az functionapp show \
+            --resource-group rg-nygdev-consumption \
+            --name func-nygdev-logger \
+            --query defaultHostName -o tsv)
+          echo "Probing https://$host/"
+          for i in {1..12}; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://$host/" || echo "000")
+            echo "Attempt $i: HTTP $code"
+            # 200 = served something, 401 = auth required (host up), 404 = no root route (host up)
+            case "$code" in
+              200|401|404) echo "App is responding"; exit 0 ;;
+            esac
             sleep 10
           done
-          echo "App did not reach Running state in time" && exit 1
+          echo "App did not respond in time"; exit 1
