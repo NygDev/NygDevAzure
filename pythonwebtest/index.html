@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Function Auth Test</title>
+  <!-- MSAL v5 (pinned). Bump version intentionally; check https://www.npmjs.com/package/@azure/msal-browser -->
+  <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@5.9.0/lib/msal-browser.min.js"></script>
+  <style>
+    :root {
+      --bg: #0e1116;
+      --panel: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --ok: #3fb950;
+      --err: #f85149;
+      --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--mono);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 48px 16px;
+    }
+    .card {
+      width: 100%;
+      max-width: 720px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+    }
+    h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+    .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+    .row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    button {
+      font-family: var(--mono);
+      font-size: 13px;
+      background: var(--accent);
+      color: #0e1116;
+      border: 0;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:hover { filter: brightness(1.1); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .status { font-size: 12px; color: var(--muted); margin-bottom: 12px; min-height: 16px; }
+    .status.ok { color: var(--ok); }
+    .status.err { color: var(--err); }
+    pre {
+      background: #0a0d12;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      font-size: 12px;
+      overflow: auto;
+      max-height: 400px;
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin: 16px 0 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>func-nygdev-logger / HttpTrigger</h1>
+    <div class="sub">POST with bearer token from Microsoft Entra ID — MSAL v5 redirect flow</div>
+
+    <div class="row">
+      <button id="run" disabled>Run test</button>
+      <button id="signout" class="secondary">Sign out</button>
+    </div>
+
+    <div id="status" class="status">Initialising…</div>
+
+    <div class="label">Response</div>
+    <pre id="out">—</pre>
+  </div>
+
+  <script>
+    // -------- CONFIG -------- //
+    const TENANT_ID    = "0533c1fa-9751-48df-b526-d82df80a8797";
+    const CLIENT_ID    = "b871e062-cdbf-417c-8e91-6d23d0189ce5";
+    const API_APP_ID   = "b871e062-cdbf-417c-8e91-6d23d0189ce5";
+    const FUNCTION_URL = "https://func-nygdev-logger.azurewebsites.net/api/HttpTrigger";
+    // ------------------------ //
+
+    const scopes = [`api://${API_APP_ID}/.default`];
+
+    const pca = new msal.PublicClientApplication({
+      auth: {
+        clientId: CLIENT_ID,
+        authority: `https://login.microsoftonline.com/${TENANT_ID}`,
+        redirectUri: window.location.origin,
+        // Stay on this page after the IdP redirects back; don't bounce
+        // around to whatever URL initiated the login.
+        navigateToLoginRequestUrl: false
+      },
+      cache: { cacheLocation: "localStorage" }
+    });
+
+    const statusEl   = document.getElementById("status");
+    const outEl      = document.getElementById("out");
+    const runBtn     = document.getElementById("run");
+    const signoutBtn = document.getElementById("signout");
+
+    function setStatus(msg, kind = "") {
+      statusEl.textContent = msg;
+      statusEl.className = "status " + kind;
+    }
+
+    async function callFunction() {
+      setStatus("Acquiring token…");
+      const account = pca.getAllAccounts()[0];
+      if (!account) throw new Error("No account — sign in first.");
+
+      let token;
+      try {
+        const r = await pca.acquireTokenSilent({ scopes, account });
+        token = r.accessToken;
+      } catch (e) {
+        // Silent failed (consent needed, scope changed, refresh expired, etc).
+        // Fall back to interactive redirect — page navigates away.
+        if (e instanceof msal.InteractionRequiredAuthError) {
+          sessionStorage.setItem("pending-action", "run-test");
+          await pca.acquireTokenRedirect({ scopes, account });
+          return; // page is navigating
+        }
+        throw e;
+      }
+
+      setStatus("Calling function…");
+      const res = await fetch(FUNCTION_URL, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + token,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ id: "test-from-browser" })
+      });
+      const text = await res.text();
+      let body;
+      try { body = JSON.stringify(JSON.parse(text), null, 2); }
+      catch { body = text; }
+      outEl.textContent = `HTTP ${res.status} ${res.statusText}\n\n${body}`;
+      setStatus(res.ok ? "Success." : `Request failed (${res.status}).`,
+                res.ok ? "ok" : "err");
+    }
+
+    runBtn.addEventListener("click", async () => {
+      runBtn.disabled = true;
+      outEl.textContent = "—";
+      try {
+        const account = pca.getAllAccounts()[0];
+        if (!account) {
+          // No session yet — kick off interactive redirect, remembering
+          // that we wanted to run the test once we get back.
+          sessionStorage.setItem("pending-action", "run-test");
+          setStatus("Redirecting to sign in…");
+          await pca.loginRedirect({ scopes });
+          return; // navigating away
+        }
+        await callFunction();
+      } catch (e) {
+        outEl.textContent = String(e.stack || e);
+        setStatus("Error: " + e.message, "err");
+      } finally {
+        runBtn.disabled = false;
+      }
+    });
+
+    signoutBtn.addEventListener("click", async () => {
+      const account = pca.getAllAccounts()[0];
+      if (!account) { setStatus("No active account."); return; }
+      // Redirect-style sign-out — page navigates away.
+      await pca.logoutRedirect({ account, postLogoutRedirectUri: window.location.origin });
+    });
+
+    // ---- Page-load handler: process any redirect response, then either
+    //      auto-run the pending action or show idle state. ----
+    (async () => {
+      try {
+        await pca.initialize();
+        const response = await pca.handleRedirectPromise();
+
+        if (response && response.account) {
+          // Just came back from a successful redirect login or token acquisition.
+          pca.setActiveAccount(response.account);
+        }
+
+        const acct = pca.getAllAccounts()[0];
+        runBtn.disabled = false;
+
+        if (acct && sessionStorage.getItem("pending-action") === "run-test") {
+          sessionStorage.removeItem("pending-action");
+          setStatus(`Signed in as ${acct.username}. Running test…`);
+          await callFunction();
+          return;
+        }
+
+        setStatus(acct ? `Signed in as ${acct.username}. Ready.` : "Not signed in. Click Run test to sign in.");
+      } catch (e) {
+        setStatus("MSAL init failed: " + e.message, "err");
+        runBtn.disabled = true;
+      }
+    })();
+  </script>
+</body>
+</html>
