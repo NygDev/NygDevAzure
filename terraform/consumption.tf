@@ -162,7 +162,8 @@ resource "azurerm_function_app_flex_consumption" "logger" {
       allowed_origins = [
         "https://portal.azure.com",
         "https://ms.portal.azure.com",
-        "http://localhost:8000"
+        "http://localhost:8000",
+        "https://nygdevcdn.z1.web.core.windows.net"
       ]
     }
   }
