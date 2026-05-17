@@ -13,6 +13,26 @@ public class HttpTrigger
     // Delegated scope the calling client must have on the user's behalf.
     private const string RequiredScope = "user_impersonation";
 
+    // RFC 7519 §4.1 — these are NumericDate values (seconds since epoch).
+    private static readonly HashSet<string> NumericClaims =
+        new(StringComparer.Ordinal) { "iat", "nbf", "exp" };
+
+    // Claims that are always JSON arrays per their defining spec.
+    // aud is handled separately (string-or-array per RFC 7519 §4.1.3).
+    private static readonly HashSet<string> ArrayClaims =
+        new(StringComparer.Ordinal) { "roles", "groups", "amr", "wids" };
+
+    private static object FormatClaim(string type, string[] values)
+    {
+        if (values.Length > 1 || ArrayClaims.Contains(type))
+            return values;
+
+        if (NumericClaims.Contains(type) && long.TryParse(values[0], out var n))
+            return n;
+
+        return values[0];
+    }
+
     private readonly ILogger<HttpTrigger> _logger;
     private readonly CosmosClient _cosmosClient;
 
@@ -58,13 +78,16 @@ public class HttpTrigger
             preferredName = user.FindFirst("preferred_username")?.Value,
             tenantId = user.GetTenantId(),
             issuer = user.FindFirst("iss")?.Value,
-            audience = user.FindAll("aud").Select(c => c.Value).ToArray(),
+            // aud: string when single audience, array when multiple (RFC 7519 §4.1.3).
+            audience = (object)FormatClaim("aud", user.FindAll("aud").Select(c => c.Value).ToArray()),
             roles = user.FindAll("roles").Select(c => c.Value).ToArray(),
             scopes = user.FindFirst("scp")?.Value?.Split(' ',
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             claims = user.Claims
                 .GroupBy(c => c.Type)
-                .ToDictionary(g => g.Key, g => g.Select(c => c.Value).ToArray())
+                .ToDictionary(
+                    g => g.Key,
+                    g => FormatClaim(g.Key, g.Select(c => c.Value).ToArray()))
         };
 
         var container = _cosmosClient.GetContainer("db", "primary");
