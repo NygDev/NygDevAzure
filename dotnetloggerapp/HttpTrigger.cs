@@ -74,7 +74,7 @@ public class HttpTrigger
             id = tokenId,
             partition,
             receivedAt = DateTimeOffset.UtcNow,
-            subject = user.GetNameIdentifierId(),
+            subject = user.FindFirst("sub")?.Value,
             preferredName = user.FindFirst("preferred_username")?.Value,
             tenantId = user.GetTenantId(),
             issuer = user.FindFirst("iss")?.Value,
