@@ -29,9 +29,14 @@
       justify-content: center;
       padding: 48px 16px;
     }
-    .card {
+    .stack {
       width: 100%;
       max-width: 720px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .card {
       background: var(--panel);
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -73,6 +78,21 @@
       white-space: pre-wrap;
       word-break: break-word;
     }
+    textarea {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: #0a0d12;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      color: var(--text);
+      width: 100%;
+      resize: vertical;
+      min-height: 140px;
+      outline: none;
+      margin-bottom: 12px;
+    }
+    textarea:focus { border-color: var(--accent); }
     .label {
       font-size: 11px;
       text-transform: uppercase;
@@ -83,27 +103,56 @@
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>func-nygdev-logger / HttpTrigger</h1>
-    <div class="sub">POST with bearer token from Microsoft Entra ID — MSAL v5 redirect flow</div>
+  <div class="stack">
 
-    <div class="row">
-      <button id="run" disabled>Run test</button>
-      <button id="signout" class="secondary">Sign out</button>
+    <!-- HttpTrigger card -->
+    <div class="card">
+      <h1>HttpTrigger</h1>
+      <div class="sub">POST with bearer token — logs token claims to Cosmos</div>
+
+      <div class="row">
+        <button id="run" disabled>Run test</button>
+        <button id="signout" class="secondary">Sign out</button>
+      </div>
+
+      <div id="status" class="status">Initialising…</div>
+
+      <div class="label">Response</div>
+      <pre id="out">—</pre>
     </div>
 
-    <div id="status" class="status">Initialising…</div>
+    <!-- LogLiftSession card -->
+    <div class="card">
+      <h1>LogLiftSession</h1>
+      <div class="sub">POST any JSON body — written to Cosmos with your user id as partition</div>
 
-    <div class="label">Response</div>
-    <pre id="out">—</pre>
+      <div class="label">Request body</div>
+      <textarea id="lift-body">{
+  "exercise": "squat",
+  "sets": [
+    { "reps": 5, "weightKg": 100 }
+  ]
+}</textarea>
+
+      <div class="row">
+        <button id="lift-run" disabled>Send</button>
+      </div>
+
+      <div id="lift-status" class="status"></div>
+
+      <div class="label">Response</div>
+      <pre id="lift-out">—</pre>
+    </div>
+
   </div>
 
   <script>
     // -------- CONFIG -------- //
-    const TENANT_ID    = "0533c1fa-9751-48df-b526-d82df80a8797";
-    const CLIENT_ID    = "b871e062-cdbf-417c-8e91-6d23d0189ce5";
-    const API_APP_ID   = "b871e062-cdbf-417c-8e91-6d23d0189ce5";
-    const FUNCTION_URL = "https://func-nygdev-logger.azurewebsites.net/api/HttpTrigger";
+    const TENANT_ID       = "0533c1fa-9751-48df-b526-d82df80a8797";
+    const CLIENT_ID       = "b871e062-cdbf-417c-8e91-6d23d0189ce5";
+    const API_APP_ID      = "b871e062-cdbf-417c-8e91-6d23d0189ce5";
+    const HTTPTRIGGER_URL = "https://func-nygdev-logger.azurewebsites.net/api/HttpTrigger";
+    const LOGLIFT_URL     = "https://func-nygdev-logger.azurewebsites.net/api/LogLiftSession";
     // ------------------------ //
 
     const scopes = [`api://${API_APP_ID}/.default`];
@@ -113,8 +162,6 @@
         clientId: CLIENT_ID,
         authority: `https://login.microsoftonline.com/${TENANT_ID}`,
         redirectUri: window.location.origin,
-        // Stay on this page after the IdP redirects back; don't bounce
-        // around to whatever URL initiated the login.
         navigateToLoginRequestUrl: false
       },
       cache: { cacheLocation: "localStorage" }
@@ -124,105 +171,135 @@
     const outEl      = document.getElementById("out");
     const runBtn     = document.getElementById("run");
     const signoutBtn = document.getElementById("signout");
+    const liftStatus = document.getElementById("lift-status");
+    const liftOut    = document.getElementById("lift-out");
+    const liftRun    = document.getElementById("lift-run");
+    const liftBody   = document.getElementById("lift-body");
 
-    function setStatus(msg, kind = "") {
-      statusEl.textContent = msg;
-      statusEl.className = "status " + kind;
+    function setStatus(el, msg, kind = "") {
+      el.textContent = msg;
+      el.className = "status " + kind;
     }
 
-    async function callFunction() {
-      setStatus("Acquiring token…");
-      const account = pca.getAllAccounts()[0];
-      if (!account) throw new Error("No account — sign in first.");
-
-      let token;
-      try {
-        const r = await pca.acquireTokenSilent({ scopes, account });
-        token = r.accessToken;
-      } catch (e) {
-        // Silent failed (consent needed, scope changed, refresh expired, etc).
-        // Fall back to interactive redirect — page navigates away.
-        if (e instanceof msal.InteractionRequiredAuthError) {
-          sessionStorage.setItem("pending-action", "run-test");
-          await pca.acquireTokenRedirect({ scopes, account });
-          return; // page is navigating
-        }
-        throw e;
-      }
-
-      setStatus("Calling function…");
-      const res = await fetch(FUNCTION_URL, {
-        method: "POST",
-        headers: {
-          "Authorization": "Bearer " + token,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ id: "test-from-browser" })
-      });
-      const text = await res.text();
+    function renderResponse(preEl, res, text) {
       let body;
       try { body = JSON.stringify(JSON.parse(text), null, 2); }
       catch { body = text; }
-      outEl.textContent = `HTTP ${res.status} ${res.statusText}\n\n${body}`;
-      setStatus(res.ok ? "Success." : `Request failed (${res.status}).`,
-                res.ok ? "ok" : "err");
+      preEl.textContent = `HTTP ${res.status} ${res.statusText}\n\n${body}`;
+    }
+
+    async function acquireToken(pendingAction) {
+      const account = pca.getAllAccounts()[0];
+      if (!account) {
+        sessionStorage.setItem("pending-action", pendingAction);
+        await pca.loginRedirect({ scopes });
+        return null; // navigating away
+      }
+      try {
+        const r = await pca.acquireTokenSilent({ scopes, account });
+        return r.accessToken;
+      } catch (e) {
+        if (e instanceof msal.InteractionRequiredAuthError) {
+          sessionStorage.setItem("pending-action", pendingAction);
+          await pca.acquireTokenRedirect({ scopes, account });
+          return null; // navigating away
+        }
+        throw e;
+      }
+    }
+
+    async function callHttpTrigger() {
+      setStatus(statusEl, "Acquiring token…");
+      const token = await acquireToken("run-test");
+      if (!token) return;
+
+      setStatus(statusEl, "Calling function…");
+      const res = await fetch(HTTPTRIGGER_URL, {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ id: "test-from-browser" })
+      });
+      const text = await res.text();
+      renderResponse(outEl, res, text);
+      setStatus(statusEl, res.ok ? "Success." : `Request failed (${res.status}).`, res.ok ? "ok" : "err");
+    }
+
+    async function callLogLiftSession() {
+      let parsed;
+      try {
+        parsed = JSON.parse(liftBody.value);
+      } catch {
+        setStatus(liftStatus, "Invalid JSON in request body.", "err");
+        return;
+      }
+
+      setStatus(liftStatus, "Acquiring token…");
+      const token = await acquireToken("log-lift");
+      if (!token) return;
+
+      setStatus(liftStatus, "Sending…");
+      const res = await fetch(LOGLIFT_URL, {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify(parsed)
+      });
+      const text = await res.text();
+      renderResponse(liftOut, res, text);
+      setStatus(liftStatus, res.ok ? "Success." : `Request failed (${res.status}).`, res.ok ? "ok" : "err");
     }
 
     runBtn.addEventListener("click", async () => {
       runBtn.disabled = true;
       outEl.textContent = "—";
-      try {
-        const account = pca.getAllAccounts()[0];
-        if (!account) {
-          // No session yet — kick off interactive redirect, remembering
-          // that we wanted to run the test once we get back.
-          sessionStorage.setItem("pending-action", "run-test");
-          setStatus("Redirecting to sign in…");
-          await pca.loginRedirect({ scopes });
-          return; // navigating away
-        }
-        await callFunction();
-      } catch (e) {
-        outEl.textContent = String(e.stack || e);
-        setStatus("Error: " + e.message, "err");
-      } finally {
-        runBtn.disabled = false;
-      }
+      try { await callHttpTrigger(); }
+      catch (e) { outEl.textContent = String(e.stack || e); setStatus(statusEl, "Error: " + e.message, "err"); }
+      finally { runBtn.disabled = false; }
+    });
+
+    liftRun.addEventListener("click", async () => {
+      liftRun.disabled = true;
+      liftOut.textContent = "—";
+      try { await callLogLiftSession(); }
+      catch (e) { liftOut.textContent = String(e.stack || e); setStatus(liftStatus, "Error: " + e.message, "err"); }
+      finally { liftRun.disabled = false; }
     });
 
     signoutBtn.addEventListener("click", async () => {
       const account = pca.getAllAccounts()[0];
-      if (!account) { setStatus("No active account."); return; }
-      // Redirect-style sign-out — page navigates away.
+      if (!account) { setStatus(statusEl, "No active account."); return; }
       await pca.logoutRedirect({ account, postLogoutRedirectUri: window.location.origin });
     });
 
-    // ---- Page-load handler: process any redirect response, then either
-    //      auto-run the pending action or show idle state. ----
+    // ---- Page-load: process redirect response, then auto-run any pending action. ----
     (async () => {
       try {
         await pca.initialize();
         const response = await pca.handleRedirectPromise();
-
-        if (response && response.account) {
-          // Just came back from a successful redirect login or token acquisition.
-          pca.setActiveAccount(response.account);
-        }
+        if (response?.account) pca.setActiveAccount(response.account);
 
         const acct = pca.getAllAccounts()[0];
         runBtn.disabled = false;
+        liftRun.disabled = false;
 
-        if (acct && sessionStorage.getItem("pending-action") === "run-test") {
+        const pending = sessionStorage.getItem("pending-action");
+        if (acct && pending) {
           sessionStorage.removeItem("pending-action");
-          setStatus(`Signed in as ${acct.username}. Running test…`);
-          await callFunction();
+          if (pending === "run-test") {
+            setStatus(statusEl, `Signed in as ${acct.username}. Running test…`);
+            await callHttpTrigger();
+          } else if (pending === "log-lift") {
+            setStatus(liftStatus, `Signed in as ${acct.username}. Sending…`);
+            await callLogLiftSession();
+          }
           return;
         }
 
-        setStatus(acct ? `Signed in as ${acct.username}. Ready.` : "Not signed in. Click Run test to sign in.");
+        const msg = acct ? `Signed in as ${acct.username}. Ready.` : "Not signed in. Click a button to sign in.";
+        setStatus(statusEl, msg);
       } catch (e) {
-        setStatus("MSAL init failed: " + e.message, "err");
+        setStatus(statusEl, "MSAL init failed: " + e.message, "err");
         runBtn.disabled = true;
+        liftRun.disabled = true;
       }
     })();
   </script>
