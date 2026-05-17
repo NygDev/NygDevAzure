@@ -121,6 +121,21 @@
       <pre id="out">—</pre>
     </div>
 
+    <!-- GetExercises card -->
+    <div class="card">
+      <h1>GetExercises</h1>
+      <div class="sub">GET — returns the user's exercise list, seeding defaults if none exists</div>
+
+      <div class="row">
+        <button id="exercises-run" disabled>Get exercises</button>
+      </div>
+
+      <div id="exercises-status" class="status"></div>
+
+      <div class="label">Response</div>
+      <pre id="exercises-out">—</pre>
+    </div>
+
     <!-- LogLiftSession card -->
     <div class="card">
       <h1>LogLiftSession</h1>
@@ -151,8 +166,9 @@
     const TENANT_ID       = "0533c1fa-9751-48df-b526-d82df80a8797";
     const CLIENT_ID       = "b871e062-cdbf-417c-8e91-6d23d0189ce5";
     const API_APP_ID      = "b871e062-cdbf-417c-8e91-6d23d0189ce5";
-    const HTTPTRIGGER_URL = "https://func-nygdev-logger.azurewebsites.net/api/HttpTrigger";
-    const LOGLIFT_URL     = "https://func-nygdev-logger.azurewebsites.net/api/LogLiftSession";
+    const HTTPTRIGGER_URL  = "https://func-nygdev-logger.azurewebsites.net/api/HttpTrigger";
+    const LOGLIFT_URL      = "https://func-nygdev-logger.azurewebsites.net/api/LogLiftSession";
+    const GETEXERCISES_URL = "https://func-nygdev-logger.azurewebsites.net/api/GetExercises";
     // ------------------------ //
 
     const scopes = [`api://${API_APP_ID}/.default`];
@@ -171,10 +187,13 @@
     const outEl      = document.getElementById("out");
     const runBtn     = document.getElementById("run");
     const signoutBtn = document.getElementById("signout");
-    const liftStatus = document.getElementById("lift-status");
-    const liftOut    = document.getElementById("lift-out");
-    const liftRun    = document.getElementById("lift-run");
-    const liftBody   = document.getElementById("lift-body");
+    const liftStatus      = document.getElementById("lift-status");
+    const liftOut         = document.getElementById("lift-out");
+    const liftRun         = document.getElementById("lift-run");
+    const liftBody        = document.getElementById("lift-body");
+    const exercisesStatus = document.getElementById("exercises-status");
+    const exercisesOut    = document.getElementById("exercises-out");
+    const exercisesRun    = document.getElementById("exercises-run");
 
     function setStatus(el, msg, kind = "") {
       el.textContent = msg;
@@ -224,6 +243,20 @@
       setStatus(statusEl, res.ok ? "Success." : `Request failed (${res.status}).`, res.ok ? "ok" : "err");
     }
 
+    async function callGetExercises() {
+      setStatus(exercisesStatus, "Acquiring token…");
+      const token = await acquireToken("get-exercises");
+      if (!token) return;
+
+      setStatus(exercisesStatus, "Fetching…");
+      const res = await fetch(GETEXERCISES_URL, {
+        headers: { "Authorization": "Bearer " + token }
+      });
+      const text = await res.text();
+      renderResponse(exercisesOut, res, text);
+      setStatus(exercisesStatus, res.ok ? "Success." : `Request failed (${res.status}).`, res.ok ? "ok" : "err");
+    }
+
     async function callLogLiftSession() {
       let parsed;
       try {
@@ -256,6 +289,14 @@
       finally { runBtn.disabled = false; }
     });
 
+    exercisesRun.addEventListener("click", async () => {
+      exercisesRun.disabled = true;
+      exercisesOut.textContent = "—";
+      try { await callGetExercises(); }
+      catch (e) { exercisesOut.textContent = String(e.stack || e); setStatus(exercisesStatus, "Error: " + e.message, "err"); }
+      finally { exercisesRun.disabled = false; }
+    });
+
     liftRun.addEventListener("click", async () => {
       liftRun.disabled = true;
       liftOut.textContent = "—";
@@ -280,6 +321,7 @@
         const acct = pca.getAllAccounts()[0];
         runBtn.disabled = false;
         liftRun.disabled = false;
+        exercisesRun.disabled = false;
 
         const pending = sessionStorage.getItem("pending-action");
         if (acct && pending) {
@@ -287,6 +329,9 @@
           if (pending === "run-test") {
             setStatus(statusEl, `Signed in as ${acct.username}. Running test…`);
             await callHttpTrigger();
+          } else if (pending === "get-exercises") {
+            setStatus(exercisesStatus, `Signed in as ${acct.username}. Fetching…`);
+            await callGetExercises();
           } else if (pending === "log-lift") {
             setStatus(liftStatus, `Signed in as ${acct.username}. Sending…`);
             await callLogLiftSession();
@@ -300,6 +345,7 @@
         setStatus(statusEl, "MSAL init failed: " + e.message, "err");
         runBtn.disabled = true;
         liftRun.disabled = true;
+        exercisesRun.disabled = true;
       }
     })();
   </script>
