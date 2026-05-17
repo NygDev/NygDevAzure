@@ -1,5 +1,5 @@
-const CACHE = 'gym-logger-v1';
-const SHELL = ['/', '/manifest.json', '/icon.png'];
+const CACHE = 'gym-logger-v2';
+const SHELL = ['/', '/db.js', '/manifest.json', '/icon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)));

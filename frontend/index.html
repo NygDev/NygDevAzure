@@ -321,8 +321,13 @@
             headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
             body: JSON.stringify(item.body)
           });
-          if (res.ok) await dequeue(item.localId);
-          else break; // server-side error — stop, leave for next retry
+          if (res.ok) {
+            await dequeue(item.localId);
+          } else if (res.status >= 500) {
+            break; // transient server error — retry later
+          } else {
+            await dequeue(item.localId); // 4xx: unrecoverable, discard
+          }
         } catch {
           break; // network gone again — stop
         }
@@ -348,10 +353,6 @@
     }
 
     async function callGetExercises() {
-      setStatus(exercisesStatus, "Acquiring token…");
-      const token = await acquireToken("get-exercises");
-      if (!token) return;
-
       if (!navigator.onLine) {
         const cached = await getCached("exercises");
         if (cached) {
@@ -362,6 +363,10 @@
         }
         return;
       }
+
+      setStatus(exercisesStatus, "Acquiring token…");
+      const token = await acquireToken("get-exercises");
+      if (!token) return;
 
       setStatus(exercisesStatus, "Fetching…");
       try {
@@ -396,11 +401,8 @@
       const localId = await enqueue(LOGLIFT_URL, parsed);
       await updatePendingBadge();
 
-      const token = await acquireTokenSilent();
-      if (!token) {
-        setStatus(liftStatus, "Queued — will sync when signed in.", "warn");
-        return;
-      }
+      const token = await acquireToken("log-lift");
+      if (!token) return; // redirecting to login; item is already queued
 
       setStatus(liftStatus, "Sending…");
       try {
@@ -486,8 +488,11 @@
             setStatus(exercisesStatus, `Signed in as ${acct.username}. Fetching…`);
             await callGetExercises();
           } else if (pending === "log-lift") {
-            setStatus(liftStatus, `Signed in as ${acct.username}. Sending…`);
-            await callLogLiftSession();
+            setStatus(liftStatus, `Signed in as ${acct.username}. Sending queued item…`);
+            await drainQueue();
+            const remaining = await getQueue();
+            await updatePendingBadge();
+            setStatus(liftStatus, remaining.length === 0 ? "Sent." : "Queued — retrying later.", remaining.length === 0 ? "ok" : "warn");
           }
           return;
         }
