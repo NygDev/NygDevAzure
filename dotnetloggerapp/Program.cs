@@ -23,8 +23,6 @@ builder.Services.PostConfigure<JwtBearerOptions>(
     JwtBearerDefaults.AuthenticationScheme,
     options => options.MapInboundClaims = false);
 
-builder.Services.AddAuthorization();
-
 builder.Services.AddSingleton(_ =>
 {
     var endpoint = Environment.GetEnvironmentVariable("CosmosDb__AccountEndpoint")
