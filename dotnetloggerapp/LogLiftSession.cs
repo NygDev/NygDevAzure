@@ -47,6 +47,7 @@ public class LogLiftSession
         doc["id"] = id;
         doc["type"] = "lift";
         doc["partition"] = partition;
+        doc["receivedAt"] = DateTimeOffset.UtcNow;
 
         _logger.LogInformation("Writing lift session {Id} for {Oid}.", id, partition);
 

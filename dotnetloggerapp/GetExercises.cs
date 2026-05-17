@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.Resource;
 using Newtonsoft.Json;
+using System.Text.Json.Serialization;
 
 namespace NygDev.logtest;
 
@@ -57,6 +58,6 @@ public class GetExercises
 }
 
 public record ExerciseList(
-    [property: JsonProperty("id")]        string   Id,
-    [property: JsonProperty("partition")] string   Partition,
-    [property: JsonProperty("exercises")] string[] Exercises);
+    [property: JsonProperty("id")]         [property: JsonPropertyName("id")]        string   Id,
+    [property: JsonProperty("partition")]  [property: JsonPropertyName("partition")] string   Partition,
+    [property: JsonProperty("exercises")]  [property: JsonPropertyName("exercises")] string[] Exercises);
