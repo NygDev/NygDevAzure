@@ -64,7 +64,11 @@ public class HttpTrigger
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             claims = user.Claims
                 .GroupBy(c => c.Type)
-                .ToDictionary(g => g.Key, g => g.Select(c => c.Value).ToArray())
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Skip(1).Any()
+                        ? (object)g.Select(c => c.Value).ToArray()
+                        : g.First().Value)
         };
 
         var container = _cosmosClient.GetContainer("db", "primary");
