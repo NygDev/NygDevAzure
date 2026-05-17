@@ -43,8 +43,9 @@ public class LogLiftSession
             return new BadRequestObjectResult(new { error = "Request body must be valid JSON." });
         }
 
-        var id = Guid.NewGuid().ToString();
+        var id = $"lift_{Guid.CreateVersion7()}";
         doc["id"] = id;
+        doc["type"] = "lift";
         doc["partition"] = partition;
 
         _logger.LogInformation("Writing lift session {Id} for {Oid}.", id, partition);
