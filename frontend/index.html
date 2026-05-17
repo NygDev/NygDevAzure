@@ -9,6 +9,7 @@
   <link rel="apple-touch-icon" href="icon.png">
   <!-- MSAL v5 (pinned). Bump version intentionally; check https://www.npmjs.com/package/@azure/msal-browser -->
   <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@5.9.0/lib/msal-browser.min.js"></script>
+  <script src="db.js"></script>
   <style>
     :root {
       --bg: #0e1116;
@@ -19,6 +20,7 @@
       --accent: #58a6ff;
       --ok: #3fb950;
       --err: #f85149;
+      --warn: #d29922;
       --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
     }
     * { box-sizing: border-box; }
@@ -39,6 +41,31 @@
       display: flex;
       flex-direction: column;
       gap: 16px;
+    }
+    .net-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--muted);
+      padding: 0 2px;
+    }
+    .net-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--ok);
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .net-dot.offline { background: var(--err); }
+    .pending-badge {
+      background: var(--warn);
+      color: #0e1116;
+      border-radius: 10px;
+      padding: 1px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      display: none;
     }
     .card {
       background: var(--panel);
@@ -68,8 +95,9 @@
       border: 1px solid var(--border);
     }
     .status { font-size: 12px; color: var(--muted); margin-bottom: 12px; min-height: 16px; }
-    .status.ok { color: var(--ok); }
-    .status.err { color: var(--err); }
+    .status.ok   { color: var(--ok); }
+    .status.err  { color: var(--err); }
+    .status.warn { color: var(--warn); }
     pre {
       background: #0a0d12;
       border: 1px solid var(--border);
@@ -109,6 +137,13 @@
 <body>
   <div class="stack">
 
+    <!-- Network status bar -->
+    <div class="net-bar">
+      <div id="net-dot" class="net-dot"></div>
+      <span id="net-label">Online</span>
+      <span id="pending-badge" class="pending-badge"></span>
+    </div>
+
     <!-- HttpTrigger card -->
     <div class="card">
       <h1>HttpTrigger</h1>
@@ -143,7 +178,7 @@
     <!-- LogLiftSession card -->
     <div class="card">
       <h1>LogLiftSession</h1>
-      <div class="sub">POST any JSON body — written to Cosmos with your user id as partition</div>
+      <div class="sub">POST any JSON body — queued locally and synced to Cosmos</div>
 
       <div class="label">Request body</div>
       <textarea id="lift-body">{
@@ -167,9 +202,9 @@
 
   <script>
     // -------- CONFIG -------- //
-    const TENANT_ID       = "0533c1fa-9751-48df-b526-d82df80a8797";
-    const CLIENT_ID       = "b871e062-cdbf-417c-8e91-6d23d0189ce5";
-    const API_APP_ID      = "b871e062-cdbf-417c-8e91-6d23d0189ce5";
+    const TENANT_ID        = "0533c1fa-9751-48df-b526-d82df80a8797";
+    const CLIENT_ID        = "b871e062-cdbf-417c-8e91-6d23d0189ce5";
+    const API_APP_ID       = "b871e062-cdbf-417c-8e91-6d23d0189ce5";
     const HTTPTRIGGER_URL  = "https://func-nygdev-logger.azurewebsites.net/api/HttpTrigger";
     const LOGLIFT_URL      = "https://func-nygdev-logger.azurewebsites.net/api/LogLiftSession";
     const GETEXERCISES_URL = "https://func-nygdev-logger.azurewebsites.net/api/GetExercises";
@@ -187,10 +222,13 @@
       cache: { cacheLocation: "localStorage" }
     });
 
-    const statusEl   = document.getElementById("status");
-    const outEl      = document.getElementById("out");
-    const runBtn     = document.getElementById("run");
-    const signoutBtn = document.getElementById("signout");
+    let msalReady = false;
+
+    // ---- DOM refs ---- //
+    const statusEl        = document.getElementById("status");
+    const outEl           = document.getElementById("out");
+    const runBtn          = document.getElementById("run");
+    const signoutBtn      = document.getElementById("signout");
     const liftStatus      = document.getElementById("lift-status");
     const liftOut         = document.getElementById("lift-out");
     const liftRun         = document.getElementById("lift-run");
@@ -198,10 +236,35 @@
     const exercisesStatus = document.getElementById("exercises-status");
     const exercisesOut    = document.getElementById("exercises-out");
     const exercisesRun    = document.getElementById("exercises-run");
+    const netDot          = document.getElementById("net-dot");
+    const netLabel        = document.getElementById("net-label");
+    const pendingBadge    = document.getElementById("pending-badge");
 
+    // ---- Network status ---- //
+    function updateNetworkStatus() {
+      const online = navigator.onLine;
+      netDot.className  = "net-dot" + (online ? "" : " offline");
+      netLabel.textContent = online ? "Online" : "Offline";
+    }
+
+    async function updatePendingBadge() {
+      const q = await getQueue();
+      if (q.length > 0) {
+        pendingBadge.textContent = `${q.length} pending`;
+        pendingBadge.style.display = "";
+      } else {
+        pendingBadge.style.display = "none";
+      }
+    }
+
+    updateNetworkStatus();
+    window.addEventListener("online",  () => { updateNetworkStatus(); drainQueue(); });
+    window.addEventListener("offline", updateNetworkStatus);
+
+    // ---- Helpers ---- //
     function setStatus(el, msg, kind = "") {
       el.textContent = msg;
-      el.className = "status " + kind;
+      el.className   = "status " + kind;
     }
 
     function renderResponse(preEl, res, text) {
@@ -211,33 +274,70 @@
       preEl.textContent = `HTTP ${res.status} ${res.statusText}\n\n${body}`;
     }
 
+    // Redirect-capable token acquisition for user-initiated actions.
     async function acquireToken(pendingAction) {
       const account = pca.getAllAccounts()[0];
       if (!account) {
-        sessionStorage.setItem("pending-action", pendingAction);
+        if (pendingAction) sessionStorage.setItem("pending-action", pendingAction);
         await pca.loginRedirect({ scopes });
-        return null; // navigating away
+        return null;
       }
       try {
-        const r = await pca.acquireTokenSilent({ scopes, account });
-        return r.accessToken;
+        return (await pca.acquireTokenSilent({ scopes, account })).accessToken;
       } catch (e) {
         if (e instanceof msal.InteractionRequiredAuthError) {
-          sessionStorage.setItem("pending-action", pendingAction);
+          if (pendingAction) sessionStorage.setItem("pending-action", pendingAction);
           await pca.acquireTokenRedirect({ scopes, account });
-          return null; // navigating away
+          return null;
         }
         throw e;
       }
     }
 
+    // Silent-only — used for background sync; never redirects.
+    async function acquireTokenSilent() {
+      if (!msalReady) return null;
+      const account = pca.getAllAccounts()[0];
+      if (!account) return null;
+      try {
+        return (await pca.acquireTokenSilent({ scopes, account })).accessToken;
+      } catch {
+        return null;
+      }
+    }
+
+    // ---- Sync queue ---- //
+    async function drainQueue() {
+      const pending = await getQueue();
+      if (!pending.length) return;
+
+      const token = await acquireTokenSilent();
+      if (!token) return;
+
+      for (const item of pending) {
+        try {
+          const res = await fetch(item.url, {
+            method: "POST",
+            headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+            body: JSON.stringify(item.body)
+          });
+          if (res.ok) await dequeue(item.localId);
+          else break; // server-side error — stop, leave for next retry
+        } catch {
+          break; // network gone again — stop
+        }
+      }
+      await updatePendingBadge();
+    }
+
+    // ---- Function calls ---- //
     async function callHttpTrigger() {
       setStatus(statusEl, "Acquiring token…");
       const token = await acquireToken("run-test");
       if (!token) return;
 
       setStatus(statusEl, "Calling function…");
-      const res = await fetch(HTTPTRIGGER_URL, {
+      const res  = await fetch(HTTPTRIGGER_URL, {
         method: "POST",
         headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
         body: JSON.stringify({ id: "test-from-browser" })
@@ -252,13 +352,35 @@
       const token = await acquireToken("get-exercises");
       if (!token) return;
 
+      if (!navigator.onLine) {
+        const cached = await getCached("exercises");
+        if (cached) {
+          exercisesOut.textContent = JSON.stringify(cached, null, 2);
+          setStatus(exercisesStatus, "Offline — showing cached exercises.", "warn");
+        } else {
+          setStatus(exercisesStatus, "Offline and no cached data.", "err");
+        }
+        return;
+      }
+
       setStatus(exercisesStatus, "Fetching…");
-      const res = await fetch(GETEXERCISES_URL, {
-        headers: { "Authorization": "Bearer " + token }
-      });
-      const text = await res.text();
-      renderResponse(exercisesOut, res, text);
-      setStatus(exercisesStatus, res.ok ? "Success." : `Request failed (${res.status}).`, res.ok ? "ok" : "err");
+      try {
+        const res  = await fetch(GETEXERCISES_URL, {
+          headers: { "Authorization": "Bearer " + token }
+        });
+        const text = await res.text();
+        renderResponse(exercisesOut, res, text);
+        if (res.ok) await setCached("exercises", JSON.parse(text));
+        setStatus(exercisesStatus, res.ok ? "Success." : `Request failed (${res.status}).`, res.ok ? "ok" : "err");
+      } catch {
+        const cached = await getCached("exercises");
+        if (cached) {
+          exercisesOut.textContent = JSON.stringify(cached, null, 2);
+          setStatus(exercisesStatus, "Network error — showing cached exercises.", "warn");
+        } else {
+          setStatus(exercisesStatus, "Network error and no cached data.", "err");
+        }
+      }
     }
 
     async function callLogLiftSession() {
@@ -270,40 +392,55 @@
         return;
       }
 
-      setStatus(liftStatus, "Acquiring token…");
-      const token = await acquireToken("log-lift");
-      if (!token) return;
+      // Queue first — the write is safe even if we lose connection mid-flight.
+      const localId = await enqueue(LOGLIFT_URL, parsed);
+      await updatePendingBadge();
+
+      const token = await acquireTokenSilent();
+      if (!token) {
+        setStatus(liftStatus, "Queued — will sync when signed in.", "warn");
+        return;
+      }
 
       setStatus(liftStatus, "Sending…");
-      const res = await fetch(LOGLIFT_URL, {
-        method: "POST",
-        headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
-        body: JSON.stringify(parsed)
-      });
-      const text = await res.text();
-      renderResponse(liftOut, res, text);
-      setStatus(liftStatus, res.ok ? "Success." : `Request failed (${res.status}).`, res.ok ? "ok" : "err");
+      try {
+        const res  = await fetch(LOGLIFT_URL, {
+          method: "POST",
+          headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+          body: JSON.stringify(parsed)
+        });
+        const text = await res.text();
+        if (res.ok) {
+          await dequeue(localId);
+          renderResponse(liftOut, res, text);
+          setStatus(liftStatus, "Success.", "ok");
+        } else {
+          renderResponse(liftOut, res, text);
+          setStatus(liftStatus, `Request failed (${res.status}) — queued for retry.`, "err");
+        }
+      } catch {
+        setStatus(liftStatus, "Offline — queued for sync.", "warn");
+      }
+      await updatePendingBadge();
     }
 
+    // ---- Event listeners ---- //
     runBtn.addEventListener("click", async () => {
-      runBtn.disabled = true;
-      outEl.textContent = "—";
+      runBtn.disabled = true; outEl.textContent = "—";
       try { await callHttpTrigger(); }
       catch (e) { outEl.textContent = String(e.stack || e); setStatus(statusEl, "Error: " + e.message, "err"); }
       finally { runBtn.disabled = false; }
     });
 
     exercisesRun.addEventListener("click", async () => {
-      exercisesRun.disabled = true;
-      exercisesOut.textContent = "—";
+      exercisesRun.disabled = true; exercisesOut.textContent = "—";
       try { await callGetExercises(); }
       catch (e) { exercisesOut.textContent = String(e.stack || e); setStatus(exercisesStatus, "Error: " + e.message, "err"); }
       finally { exercisesRun.disabled = false; }
     });
 
     liftRun.addEventListener("click", async () => {
-      liftRun.disabled = true;
-      liftOut.textContent = "—";
+      liftRun.disabled = true; liftOut.textContent = "—";
       try { await callLogLiftSession(); }
       catch (e) { liftOut.textContent = String(e.stack || e); setStatus(liftStatus, "Error: " + e.message, "err"); }
       finally { liftRun.disabled = false; }
@@ -315,17 +452,29 @@
       await pca.logoutRedirect({ account, postLogoutRedirectUri: window.location.origin });
     });
 
-    // ---- Page-load: process redirect response, then auto-run any pending action. ----
+    // ---- Page load ---- //
     (async () => {
+      // Register service worker
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("sw.js").catch(console.warn);
+      }
+
+      await updatePendingBadge();
+
       try {
         await pca.initialize();
         const response = await pca.handleRedirectPromise();
         if (response?.account) pca.setActiveAccount(response.account);
 
+        msalReady = true;
+
         const acct = pca.getAllAccounts()[0];
         runBtn.disabled = false;
         liftRun.disabled = false;
         exercisesRun.disabled = false;
+
+        // Flush any writes that were queued in a previous session.
+        drainQueue();
 
         const pending = sessionStorage.getItem("pending-action");
         if (acct && pending) {
@@ -343,8 +492,9 @@
           return;
         }
 
-        const msg = acct ? `Signed in as ${acct.username}. Ready.` : "Not signed in. Click a button to sign in.";
-        setStatus(statusEl, msg);
+        setStatus(statusEl, acct
+          ? `Signed in as ${acct.username}. Ready.`
+          : "Not signed in. Click a button to sign in.");
       } catch (e) {
         setStatus(statusEl, "MSAL init failed: " + e.message, "err");
         runBtn.disabled = true;
