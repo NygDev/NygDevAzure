@@ -58,11 +58,13 @@ public class HttpTrigger
             preferredName = user.FindFirst("preferred_username")?.Value,
             tenantId = user.GetTenantId(),
             issuer = user.FindFirst("iss")?.Value,
-            audience = user.FindFirst("aud")?.Value,
+            audience = user.FindAll("aud").Select(c => c.Value).ToArray(),
             roles = user.FindAll("roles").Select(c => c.Value).ToArray(),
             scopes = user.FindFirst("scp")?.Value?.Split(' ',
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
-            claims = user.Claims.ToDictionary(c => c.Type, c => c.Value)
+            claims = user.Claims
+                .GroupBy(c => c.Type)
+                .ToDictionary(g => g.Key, g => g.Select(c => c.Value).ToArray())
         };
 
         var container = _cosmosClient.GetContainer("db", "primary");
