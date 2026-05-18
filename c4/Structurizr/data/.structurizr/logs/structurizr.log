@@ -1,0 +1,38 @@
+2026-05-15T07:26:58.822Z  INFO 1 --- [main] com.structurizr.server.Server            : ***********************************************************************************
+2026-05-15T07:26:58.828Z  INFO 1 --- [main] com.structurizr.server.Server            :   _____ _                   _              _          
+2026-05-15T07:26:58.829Z  INFO 1 --- [main] com.structurizr.server.Server            :  / ____| |                 | |            (_)         
+2026-05-15T07:26:58.831Z  INFO 1 --- [main] com.structurizr.server.Server            : | (___ | |_ _ __ _   _  ___| |_ _   _ _ __ _ _____ __ 
+2026-05-15T07:26:58.832Z  INFO 1 --- [main] com.structurizr.server.Server            :  \___ \| __| '__| | | |/ __| __| | | | '__| |_  / '__|
+2026-05-15T07:26:58.833Z  INFO 1 --- [main] com.structurizr.server.Server            :  ____) | |_| |  | |_| | (__| |_| |_| | |  | |/ /| |   
+2026-05-15T07:26:58.834Z  INFO 1 --- [main] com.structurizr.server.Server            : |_____/ \__|_|   \__,_|\___|\__|\__,_|_|  |_/___|_|   
+2026-05-15T07:26:58.835Z  INFO 1 --- [main] com.structurizr.server.Server            :                                                       
+2026-05-15T07:26:58.838Z  INFO 1 --- [main] com.structurizr.server.Server            : Server v1.0.0
+2026-05-15T07:26:58.840Z  INFO 1 --- [main] com.structurizr.server.Server            : ***********************************************************************************
+2026-05-15T07:26:58.843Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.admin: 
+2026-05-15T07:26:58.845Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.apikey:
+2026-05-15T07:26:58.847Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.authentication: none
+2026-05-15T07:26:58.849Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.cache: none
+2026-05-15T07:26:58.850Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.cache.expiry: 5
+2026-05-15T07:26:58.851Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.data: file
+2026-05-15T07:26:58.853Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.data.directory: /usr/local/structurizr
+2026-05-15T07:26:58.854Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.datadirectory: /usr/local/structurizr
+2026-05-15T07:26:58.857Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.debug: false
+2026-05-15T07:26:58.858Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.feature.ui.dsleditor: false
+2026-05-15T07:26:58.859Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.feature.workspace.archiving: false
+2026-05-15T07:26:58.862Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.feature.workspace.branches: false
+2026-05-15T07:26:58.863Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.feature.workspace.scope: relaxed
+2026-05-15T07:26:58.865Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.logging.filename: /usr/local/structurizr/.structurizr/logs/structurizr.log
+2026-05-15T07:26:58.866Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.network.timeout: 60000
+2026-05-15T07:26:58.867Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.search: lucene
+2026-05-15T07:26:58.871Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.session: local
+2026-05-15T07:26:58.874Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.themes: /usr/local/structurizr/themes/
+2026-05-15T07:26:58.875Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.url: 
+2026-05-15T07:26:58.876Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.workspace.maxsize: 1MB
+2026-05-15T07:26:58.878Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.workspace.maxversions: 30
+2026-05-15T07:26:58.879Z  INFO 1 --- [main] com.structurizr.server.Server            :  - structurizr.workspace.threads: 10
+2026-05-15T07:26:58.880Z  INFO 1 --- [main] com.structurizr.server.Server            : ***********************************************************************************
+2026-05-15T07:26:58.881Z  INFO 1 --- [main] com.structurizr.server.Server            : Themes:
+2026-05-15T07:26:58.883Z  INFO 1 --- [main] com.structurizr.server.Server            : ***********************************************************************************
+2026-05-15T07:48:30.793Z  INFO 1 --- [SpringApplicationShutdownHook] com.structurizr.server.AbstractServer    : ********************************************************
+2026-05-15T07:48:30.795Z  INFO 1 --- [SpringApplicationShutdownHook] com.structurizr.server.AbstractServer    :  Stopping Structurizr
+2026-05-15T07:48:30.795Z  INFO 1 --- [SpringApplicationShutdownHook] com.structurizr.server.AbstractServer    : ********************************************************
