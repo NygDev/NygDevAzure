@@ -1,37 +1,19 @@
-# Local Structurizr server, built from source on Docker Desktop.
-# Bring up:   docker compose up -d --build
-# Rebuild:    docker compose build --no-cache --pull
-# UI:         http://localhost:8081
-#
-# Data, properties and search index live in ./data and survive container restarts.
-# Workspaces are created via the UI (/workspace/new) or pushed with the CLI:
-#   docker compose run --rm --entrypoint java structurizr \
-#     -jar /app/structurizr.war push -url http://localhost:8081 ...
+# NygDev Structurizr  ->  http://localhost:8081
+# Bring up: docker compose up -d --build
+
+name: nygdev-c4
 
 services:
-  structurizr:
+  nygdev-c4:
     build:
       context: .
-      dockerfile: Dockerfile
       args:
-        # Pin to a release tag for reproducibility. Bump this when a newer tag
-        # is published at https://github.com/structurizr/structurizr/releases
-        STRUCTURIZR_REF: v2026.04.19
+        STRUCTURIZR_REF: v2026.05.16
         APP_REVISION: 1.0.0
-    image: nygdev-structurizr-server:v2026.04.19
-    container_name: nygdev-structurizr-server
+    image: nygdev-c4:v2026.05.16
+    container_name: nygdev-c4
     ports:
       - "8081:8080"
-    environment:
-      # Forwarded into the JVM at start time. Add -Xmx, -Dstructurizr.url=..., etc.
-      JAVA_OPTS: ""
     volumes:
-      # Data directory: holds structurizr.properties, workspaces/, search index, sessions.
       - ./data:/usr/local/structurizr
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/ || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
