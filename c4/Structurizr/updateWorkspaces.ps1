@@ -28,7 +28,7 @@ Set-Location -LiteralPath (Split-Path -Parent $MyInvocation.MyCommand.Path)
 
 # In-compose DNS name reachable from the helper container; '/api' is required
 # by the push command.
-$serverUrl = 'http://structurizr:8080/api'
+$serverUrl = 'http://nygdev-c4:8080/api'
 
 $ids = @(1)
 
@@ -66,7 +66,7 @@ function Invoke-StructurizrPush {
     # the server has no remote layout to merge.
     docker compose run --rm `
         --entrypoint java `
-        structurizr `
+        nygdev-c4 `
         -jar /app/structurizr.war push `
         -url $serverUrl `
         -id  $Id `
@@ -113,7 +113,7 @@ function Invoke-StructurizrExport {
 
     docker compose run --rm `
         --entrypoint java `
-        structurizr `
+        nygdev-c4 `
         -jar /app/structurizr.war export `
         -workspace $dslContainerPath `
         -format static `

@@ -1,0 +1,18 @@
+# --- Server runtime state (regenerated, never committed) ---
+# Lucene index, logs, HTTP session files.
+data/.structurizr/
+
+# Rendered workspace state per workspace folder (data/<id>/).
+# The DSL is the source of truth; JSON is rebuilt by updateWorkspaces.ps1.
+data/*/workspace.json
+data/*/workspace-*.json
+data/*/images/
+data/*/branches/
+data/*/*.lock
+
+# --- Tracked (intentional; listed for clarity, not actually ignored) ---
+# data/structurizr.properties             - server config
+# data/themes/                            - shared icon pack
+# data/adr/                               - ADR markdown (referenced by landscape DSL)
+# data/<id>/workspace.dsl                 - DSL source of truth
+# data/<id>/workspace.properties          - workspace metadata (name, api key, etc.)
