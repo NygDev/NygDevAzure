@@ -1,34 +1,26 @@
 name: Deploy PS Function App
-
 on:
   push:
     branches: [main]
     paths:
       - 'psfunctionapp/**'
   workflow_dispatch:
-
 permissions:
   id-token: write
   contents: read
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: NygDevAzure
-
     steps:
       - uses: actions/checkout@v4
 
       - name: Bundle Az modules into package
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path psfunctionapp/Modules | Out-Null
           Save-Module -Name Az.Accounts -Path psfunctionapp/Modules -Repository PSGallery -Force
           Save-Module -Name Az.Storage  -Path psfunctionapp/Modules -Repository PSGallery -Force
-
-      - name: Package function app
-        run: |
-          cd psfunctionapp
-          zip -r ../psfunctionapp.zip .
 
       - name: Az CLI login
         uses: azure/login@v2
@@ -38,8 +30,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy to Azure Functions (Flex Consumption)
-        run: |
-          az functionapp deployment source config-zip \
-            --resource-group rg-nygdev-consumption \
-            --name func-nygdev-azadmin \
-            --src psfunctionapp.zip
+        uses: Azure/functions-action@v1
+        with:
+          app-name: func-nygdev-azadmin
+          package: psfunctionapp
