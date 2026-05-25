@@ -3,6 +3,14 @@ using namespace Azure.Storage.Blobs.Models
 
 param($Request, $TriggerMetadata)
 
+$mod = Get-Module Az.Accounts -ListAvailable | Select-Object -First 1
+$body = @{
+    Version       = $mod.Version.ToString()
+    Path          = $mod.Path
+    PSModulePath  = $env:PSModulePath
+} | ConvertTo-Json
+Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 200; Body = $body })
+
 try {
     Disable-AzContextAutosave -Scope Process
     Connect-AzAccount -Identity
