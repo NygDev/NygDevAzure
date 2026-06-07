@@ -24,16 +24,12 @@ jobs:
         run: |
           # The frontend is hosted on the nygdevcdn storage account's static
           # website ($web container), served at nygdevcdn.z1.web.core.windows.net.
-          # The deploy identity has Contributor on the subscription, so it can list
-          # the account key (matching how the Function Apps authenticate to storage).
-          KEY="$(az storage account keys list \
-            --account-name nygdevcdn \
-            --resource-group rg-nygdev-web \
-            --query "[0].value" -o tsv)"
-          echo "::add-mask::$KEY"
+          # nygdevcdn has shared-key access disabled, so upload over Entra ID
+          # (--auth-mode login). This requires the deploy identity to hold the
+          # "Storage Blob Data Contributor" role on the nygdevcdn account.
           az storage blob upload-batch \
             --account-name nygdevcdn \
-            --account-key "$KEY" \
+            --auth-mode login \
             --destination '$web' \
             --source frontend \
             --overwrite
