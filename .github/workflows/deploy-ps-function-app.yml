@@ -1,7 +1,7 @@
 name: Deploy PS Function App
 on:
   push:
-    branches: [main]
+    branches: [master]
     paths:
       - 'psfunctionapp/**'
   workflow_dispatch:
