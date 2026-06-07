@@ -1,8 +1,10 @@
 using Azure.Identity;
+using Azure.Monitor.OpenTelemetry.Exporter;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
+using Microsoft.Azure.Functions.Worker.OpenTelemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Identity.Web;
@@ -10,6 +12,14 @@ using NygDev.logtest;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 builder.ConfigureFunctionsWebApplication();
+
+// Export host + worker telemetry to Application Insights via OpenTelemetry.
+// The host side is enabled by "telemetryMode": "OpenTelemetry" in host.json;
+// this wires up the isolated worker. The Azure Monitor exporter reads the
+// APPLICATIONINSIGHTS_CONNECTION_STRING app setting automatically.
+builder.Services.AddOpenTelemetry()
+    .UseFunctionsWorkerDefaults()
+    .UseAzureMonitorExporter();
 
 builder.UseMiddleware<JwtAuthMiddleware>();
 
