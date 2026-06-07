@@ -20,50 +20,20 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Fetch Static Web App deployment token
-        id: swa
+      - name: Upload frontend to storage static website ($web)
         run: |
-          # The Static Web App is provisioned outside Terraform. Discover it by its
-          # default hostname (the prefix Azure also used to name the original
-          # auto-generated workflow) so we don't hard-code a resource name/RG.
-          read -r NAME RG <<< "$(az staticwebapp list \
-            --query "[?starts_with(defaultHostname, 'white-cliff-0068f5803')].[name, resourceGroup]" \
-            -o tsv)"
-          if [ -z "$NAME" ] || [ -z "$RG" ]; then
-            echo "Could not locate the Static Web App (hostname prefix white-cliff-0068f5803)." >&2
-            az staticwebapp list --query "[].{name:name, host:defaultHostname, rg:resourceGroup}" -o table >&2 || true
-            exit 1
-          fi
-          echo "Found Static Web App '$NAME' in resource group '$RG'."
-          echo "--- Static Web App diagnostics ---"
-          az staticwebapp show --name "$NAME" --resource-group "$RG" \
-            --query "{name:name, host:defaultHostname, location:location, sku:sku.name, provider:provider, repositoryUrl:repositoryUrl, branch:branch}" \
-            -o jsonc || true
-          echo "--- All Static Web Apps in subscription ---"
-          az staticwebapp list --query "[].{name:name, host:defaultHostname, rg:resourceGroup, provider:provider}" -o table || true
-          TOKEN="$(az staticwebapp secrets list --name "$NAME" --resource-group "$RG" \
-            --query "properties.apiKey" -o tsv)"
-          if [ -z "$TOKEN" ]; then
-            echo "Failed to retrieve deployment token for '$NAME'." >&2
-            exit 1
-          fi
-          echo "Retrieved deployment token (length: ${#TOKEN} chars)."
-          echo "::add-mask::$TOKEN"
-          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
-      - name: Get GitHub OIDC id-token
-        id: idtoken
-        uses: actions/github-script@v7
-        with:
-          # The Static Web App's deployment authorization policy is "GitHub", so the
-          # deploy must present a GitHub OIDC id-token alongside the deployment token.
-          script: return await core.getIDToken()
-          result-encoding: string
-      - name: Deploy to Azure Static Web Apps
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
-          github_id_token: ${{ steps.idtoken.outputs.result }}
-          action: upload
-          app_location: frontend
-          output_location: ""
-          skip_api_build: true
+          # The frontend is hosted on the nygdevcdn storage account's static
+          # website ($web container), served at nygdevcdn.z1.web.core.windows.net.
+          # The deploy identity has Contributor on the subscription, so it can list
+          # the account key (matching how the Function Apps authenticate to storage).
+          KEY="$(az storage account keys list \
+            --account-name nygdevcdn \
+            --resource-group rg-nygdev-web \
+            --query "[0].value" -o tsv)"
+          echo "::add-mask::$KEY"
+          az storage blob upload-batch \
+            --account-name nygdevcdn \
+            --account-key "$KEY" \
+            --destination '$web' \
+            --source frontend \
+            --overwrite
