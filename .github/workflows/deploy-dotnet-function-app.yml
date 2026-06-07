@@ -1,7 +1,7 @@
 name: Deploy Dotnet Function App
 on:
   push:
-    branches: [main]
+    branches: [master]
     paths:
       - 'dotnetloggerapp/**'
   workflow_dispatch:
