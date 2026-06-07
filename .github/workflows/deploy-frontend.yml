@@ -35,12 +35,19 @@ jobs:
             exit 1
           fi
           echo "Found Static Web App '$NAME' in resource group '$RG'."
+          echo "--- Static Web App diagnostics ---"
+          az staticwebapp show --name "$NAME" --resource-group "$RG" \
+            --query "{name:name, host:defaultHostname, location:location, sku:sku.name, provider:provider, repositoryUrl:repositoryUrl, branch:branch}" \
+            -o jsonc || true
+          echo "--- All Static Web Apps in subscription ---"
+          az staticwebapp list --query "[].{name:name, host:defaultHostname, rg:resourceGroup, provider:provider}" -o table || true
           TOKEN="$(az staticwebapp secrets list --name "$NAME" --resource-group "$RG" \
             --query "properties.apiKey" -o tsv)"
           if [ -z "$TOKEN" ]; then
             echo "Failed to retrieve deployment token for '$NAME'." >&2
             exit 1
           fi
+          echo "Retrieved deployment token (length: ${#TOKEN} chars)."
           echo "::add-mask::$TOKEN"
           echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
       - name: Deploy to Azure Static Web Apps
