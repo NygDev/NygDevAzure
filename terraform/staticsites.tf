@@ -16,11 +16,6 @@ resource "azurerm_static_web_app" "gymlog" {
   }
 }
 
-import {
-  to = azurerm_static_web_app.gymlog
-  id = "${local.subscription_scope}/resourceGroups/${var.web_resource_group}/providers/Microsoft.Web/staticSites/gymlog"
-}
-
 resource "azurerm_static_web_app" "nygdevapex" {
   name                = "nygdevapex"
   resource_group_name = var.web_resource_group
@@ -31,9 +26,4 @@ resource "azurerm_static_web_app" "nygdevapex" {
   lifecycle {
     ignore_changes = [repository_branch, repository_token, repository_url, app_settings]
   }
-}
-
-import {
-  to = azurerm_static_web_app.nygdevapex
-  id = "${local.subscription_scope}/resourceGroups/${var.web_resource_group}/providers/Microsoft.Web/staticSites/nygdevapex"
 }
