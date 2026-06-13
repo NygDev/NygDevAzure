@@ -112,9 +112,13 @@ resource "azurerm_function_app_flex_consumption" "azadmin" {
   tags = local.common_tags
 
   lifecycle {
-    # Azure mirrors the APPLICATIONINSIGHTS_CONNECTION_STRING app setting into
-    # site_config on read; ignore it so Terraform stops trying to clear it.
-    ignore_changes = [site_config[0].application_insights_connection_string]
+    # Flex Consumption doesn't return APPLICATIONINSIGHTS_CONNECTION_STRING in
+    # app_settings on read, and mirrors it into site_config; ignore both so
+    # Terraform stops re-adding/clearing a value the platform already manages.
+    ignore_changes = [
+      app_settings["APPLICATIONINSIGHTS_CONNECTION_STRING"],
+      site_config[0].application_insights_connection_string,
+    ]
   }
 }
 
@@ -178,10 +182,12 @@ resource "azurerm_function_app_flex_consumption" "logger" {
   tags = local.common_tags
 
   lifecycle {
-    # Azure mirrors the APPLICATIONINSIGHTS_CONNECTION_STRING app setting into
-    # site_config and adds a hidden-link tag when App Insights is connected;
-    # ignore both so Terraform stops fighting the platform.
+    # Flex Consumption doesn't return APPLICATIONINSIGHTS_CONNECTION_STRING in
+    # app_settings on read, mirrors it into site_config, and adds a hidden-link
+    # tag when App Insights is connected; ignore all three so Terraform stops
+    # fighting values the platform already manages.
     ignore_changes = [
+      app_settings["APPLICATIONINSIGHTS_CONNECTION_STRING"],
       site_config[0].application_insights_connection_string,
       tags["hidden-link: /app-insights-resource-id"],
     ]
