@@ -15,8 +15,8 @@ required by Structurizr (the server and the push script key off it). None are
 authored yet — to add the first one:
 
 1. Create `data/1/workspace.dsl`.
-2. Add `1` to `$ids` in `updateWorkspaces.ps1`.
-3. Run `./updateWorkspaces.ps1`.
+2. Run `./updateWorkspaces.ps1` — it discovers every numeric `data/<id>/`
+   folder containing a `workspace.dsl`, so no script edit is needed.
 
 The Azure icon set is already in place under `data/themes/Azure/` and can be
 referenced from DSL styles via relative paths (`../themes/Azure/...`).
