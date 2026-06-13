@@ -3,12 +3,13 @@
 # `terraform plan` shows no changes after import (see notes below).
 
 resource "azurerm_key_vault" "nygdev" {
-  name                = "nygdev"
-  location            = var.location
-  resource_group_name = var.security_resource_group
-  tenant_id           = var.tenant_id
-  sku_name            = "standard"
-  tags                = local.common_tags
+  name                       = "nygdev"
+  location                   = var.location
+  resource_group_name        = var.security_resource_group
+  tenant_id                  = var.tenant_id
+  sku_name                   = "standard"
+  soft_delete_retention_days = 7
+  tags                       = local.common_tags
 }
 
 import {

@@ -7,6 +7,13 @@ resource "azurerm_static_web_app" "gymlog" {
   resource_group_name = var.web_resource_group
   location            = "westeurope"
   tags                = local.common_tags
+
+  # GitHub integration + app settings are wired up by the app's own deploy
+  # pipeline; the repository_token is never returned by Azure, so let those
+  # attributes drift rather than have Terraform clear them.
+  lifecycle {
+    ignore_changes = [repository_branch, repository_token, repository_url, app_settings]
+  }
 }
 
 import {
@@ -19,6 +26,11 @@ resource "azurerm_static_web_app" "nygdevapex" {
   resource_group_name = var.web_resource_group
   location            = "westeurope"
   tags                = local.common_tags
+
+  # See gymlog above — GitHub integration is managed outside Terraform.
+  lifecycle {
+    ignore_changes = [repository_branch, repository_token, repository_url, app_settings]
+  }
 }
 
 import {
