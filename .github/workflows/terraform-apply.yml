@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 jobs:
-  plan:
+  apply:
     runs-on: ubuntu-latest
     environment: NygDevAzure
     env:
@@ -67,12 +67,14 @@ jobs:
         working-directory: terraform
         run: terraform init
 
-      - name: 'Terraform Plan'
+      - name: 'Terraform Apply'
         working-directory: terraform
         run: |
-          terraform plan \
+          terraform apply -auto-approve \
             -var="home_ip=$HOME_IP" \
             -var="ssh_public_key=$SSH_PUBLIC_KEY" \
+claude/admiring-noether-yxjis4
+            -var="admin_username=${{ secrets.AZURE_VM_USERNAME }}"
             -var="admin_username=${{ secrets.AZURE_VM_USERNAME }}" \
             -out=tfplan
 
@@ -131,3 +133,4 @@ jobs:
       - name: 'Terraform Apply'
         working-directory: terraform
         run: terraform apply -auto-approve tfplan
+master
