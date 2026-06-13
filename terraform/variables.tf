@@ -76,6 +76,18 @@ variable "consumption_resource_group" {
   default     = "rg-nygdev-consumption"
 }
 
+variable "security_resource_group" {
+  description = "Resource group for security resources (Key Vault, SSH keys)"
+  type        = string
+  default     = "rg-nygdev-security"
+}
+
+variable "web_resource_group" {
+  description = "Resource group for web front-end resources (Static Web Apps)"
+  type        = string
+  default     = "rg-nygdev-web"
+}
+
 variable "entra_owner_objectid" {
   description = "Object ID of the Entra owner user"
   type        = string
