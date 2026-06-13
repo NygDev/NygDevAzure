@@ -20,6 +20,12 @@
 #   `-key` as optional in that case - the UI surfaces this on each workspace
 #   page as 'API key: (not required)'. If you later enable authentication
 #   (structurizr.properties -> structurizr.authentication), pass `-key` here.
+#
+# Static-site export is opt-in:
+#   ./updateWorkspaces.ps1            # push + prune only
+#   ./updateWorkspaces.ps1 -Export    # also export static sites to export/<id>
+
+param([switch]$Export)
 
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -150,7 +156,7 @@ function Invoke-StructurizrExport {
 Wait-ForServer
 foreach ($id in $ids) {
     Invoke-StructurizrPush -Id $id
-    Invoke-StructurizrExport -Id $id
+    if ($Export) { Invoke-StructurizrExport -Id $id }
     Remove-OldWorkspaceBackups -Id $id -MaxAgeHours $backupMaxAgeHours
 }
 
