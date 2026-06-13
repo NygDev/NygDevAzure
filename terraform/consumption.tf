@@ -110,6 +110,12 @@ resource "azurerm_function_app_flex_consumption" "azadmin" {
   site_config {}
 
   tags = local.common_tags
+
+  lifecycle {
+    # Azure mirrors the APPLICATIONINSIGHTS_CONNECTION_STRING app setting into
+    # site_config on read; ignore it so Terraform stops trying to clear it.
+    ignore_changes = [site_config[0].application_insights_connection_string]
+  }
 }
 
 # Grant azadmin blob contributor on the CDN storage account
@@ -152,9 +158,9 @@ resource "azurerm_function_app_flex_consumption" "logger" {
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
     CosmosDb__AccountEndpoint             = azurerm_cosmosdb_account.db.endpoint
 
-    "AzureAd__Instance"        = "https://login.microsoftonline.com/"
-    "AzureAd__TenantId"        = var.tenant_id
-    "AzureAd__ClientId"        = "b871e062-cdbf-417c-8e91-6d23d0189ce5"
+    "AzureAd__Instance" = "https://login.microsoftonline.com/"
+    "AzureAd__TenantId" = var.tenant_id
+    "AzureAd__ClientId" = "b871e062-cdbf-417c-8e91-6d23d0189ce5"
   }
 
   site_config {
@@ -163,12 +169,23 @@ resource "azurerm_function_app_flex_consumption" "logger" {
         "https://portal.azure.com",
         "https://ms.portal.azure.com",
         "http://localhost:8000",
-        "https://nygdevcdn.z1.web.core.windows.net"
+        "https://nygdevcdn.z1.web.core.windows.net",
+        "https://gymlog.nygard.dev"
       ]
     }
   }
 
   tags = local.common_tags
+
+  lifecycle {
+    # Azure mirrors the APPLICATIONINSIGHTS_CONNECTION_STRING app setting into
+    # site_config and adds a hidden-link tag when App Insights is connected;
+    # ignore both so Terraform stops fighting the platform.
+    ignore_changes = [
+      site_config[0].application_insights_connection_string,
+      tags["hidden-link: /app-insights-resource-id"],
+    ]
+  }
 }
 
 # Grant logger built-in data contributor on the Cosmos DB account
