@@ -25,11 +25,11 @@ workspace "NygDev Azure" "Big-picture C4 model of the NygDevAzure estate" {
             tags "StaticApp"
         }
 
-        rpg = softwareSystem "RPG Server" "rpg-vm — Ubuntu Linux VM behind rpg-pip public IP" {
+        rpg = softwareSystem "RPG Server" "rpg-vm — Ubuntu Linux VM running Foundry VTT (Caddy reverse proxy) behind rpg-pip public IP" {
             tags "VirtualMachine"
         }
 
-        cdn = softwareSystem "CDN Storage" "nygdevcdn storage account — static website hosting and media blobs (foundry container)" {
+        cdn = softwareSystem "CDN Storage" "nygdevcdn storage account — Gym Logger PWA static website and CDN for Foundry media (foundry container)" {
             tags "StorageAccount"
         }
 
@@ -46,8 +46,9 @@ workspace "NygDev Azure" "Big-picture C4 model of the NygDevAzure estate" {
         gym.api -> entra "Validates JWTs against"
         gym.api -> gym.db "Reads/writes (managed identity)"
 
+        rpg -> cdn "Holds asset URLs pointing to"
         azadmin -> cdn "Sets Cache-Control on blobs (managed identity)"
-        cdn -> u "Serves PWA and media to"
+        cdn -> u "Serves Gym Logger PWA and Foundry media to (direct browser fetch)"
     }
 
     views {
