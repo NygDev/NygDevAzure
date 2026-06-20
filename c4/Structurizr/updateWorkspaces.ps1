@@ -97,8 +97,9 @@ function Remove-OldWorkspaceBackups {
     # filename patterns are produced depending on the server version:
     #   - workspace-<timestamp>.json        (current format)
     #   - structurizr-<id>-<timestamp>.json (legacy format)
-    # Archive creation is disabled via data/structurizr.properties
-    # (structurizr.maxWorkspaceVersions=0), so this prune is belt-and-braces.
+    # Version retention is set to 0 in data/structurizr.properties
+    # (structurizr.workspace.maxversions=0); the server still writes a snapshot
+    # on each save but prunes them all, so this prune is belt-and-braces.
     #
     # The active workspace.json has no hyphen-timestamp and is never matched.
     param([int]$Id, [int]$MaxAgeHours)
