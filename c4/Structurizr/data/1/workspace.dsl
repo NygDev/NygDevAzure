@@ -3,6 +3,8 @@ workspace "NygDev Azure" "Big-picture C4 model of the NygDevAzure estate" {
     !identifiers hierarchical
 
     model {
+        !impliedRelationships true
+
         u = person "User" "Uses the apps, websites and game server"
 
         entra = softwareSystem "Microsoft Entra ID" "Identity provider — issues JWTs for the Logger API" {
@@ -25,8 +27,11 @@ workspace "NygDev Azure" "Big-picture C4 model of the NygDevAzure estate" {
             tags "StaticApp"
         }
 
-        rpg = softwareSystem "RPG Server" "rpg-vm — Ubuntu Linux VM running Foundry VTT (Caddy reverse proxy) behind rpg-pip public IP" {
+        rpg = softwareSystem "RPG Server" "rpg-vm — Ubuntu Linux VM hosting Foundry VTT, behind rpg-pip public IP" {
             tags "VirtualMachine"
+
+            caddy = container "Caddy" "Reverse proxy and TLS termination on ports 80/443" "Caddy"
+            foundry = container "Foundry VTT" "Self-hosted virtual tabletop; serves the game UI and world data" "Node.js"
         }
 
         cdn = softwareSystem "CDN Storage" "nygdevcdn storage account — Gym Logger PWA static website and CDN for Foundry media (foundry container)" {
@@ -39,14 +44,15 @@ workspace "NygDev Azure" "Big-picture C4 model of the NygDevAzure estate" {
 
         u -> gym.pwa "Logs lifts with"
         u -> web "Visits"
-        u -> rpg "Plays on"
+        u -> rpg.caddy "Plays on (HTTPS)"
 
         gym.pwa -> entra "Signs user in, obtains JWT"
         gym.pwa -> gym.api "Calls (HTTPS/JSON, bearer JWT)"
         gym.api -> entra "Validates JWTs against"
         gym.api -> gym.db "Reads/writes (managed identity)"
 
-        rpg -> cdn "Holds asset URLs pointing to"
+        rpg.caddy -> rpg.foundry "Reverse proxies to (:30000)"
+        rpg.foundry -> cdn "Holds asset URLs pointing to"
         azadmin -> cdn "Sets Cache-Control on blobs (managed identity)"
         cdn -> u "Serves Gym Logger PWA and Foundry media to (direct browser fetch)"
     }
@@ -57,6 +63,10 @@ workspace "NygDev Azure" "Big-picture C4 model of the NygDevAzure estate" {
         }
 
         container gym "GymLoggerContainers" {
+            include *
+        }
+
+        container rpg "RpgServerContainers" {
             include *
         }
 
