@@ -12,10 +12,18 @@ views {
       azure.**,
       internet.*
 
+    exclude
+      azure.** -> internet.entraId,
+      azure.rgWeb.cdnStorage.pwaFiles -> azure.rgConsumption.aspDotnet.loggerApi,
+      azure.rgWeb.cdnStorage.cdnBlob -> internet.browser,
+      internet.browser -> azure.rgVm.**
+
+    autoLayout LeftRight 200 130
+
     style azure {
       color muted
     }
-    style azure.rgVm._, azure.rgNetwork._ {
+    style azure.rgVm._, azure.rgNetwork._, azure.rgData._ {
       color indigo
     }
     style azure.rgConsumption._ {
@@ -40,6 +48,13 @@ views {
       azure.rgConsumption.aspDotnet._,
       azure.rgDb._
 
+    exclude
+      azure.rgWeb.cdnStorage.cdnBlob <-> azure.rgConsumption,
+      internet.browser -> azure.rgWeb,
+      internet.browser -> azure
+
+    autoLayout TopBottom 130 130
+
     style * {
       color secondary
     }
@@ -47,6 +62,46 @@ views {
       color muted
     }
     style azure.rgConsumption.aspDotnet.loggerApi, azure.rgWeb.cdnStorage.pwaFiles, azure.rgDb.cosmos {
+      color primary
+    }
+    style internet.browser {
+      color green
+    }
+  }
+
+  deployment view foundryDeployment {
+    title 'Deployment / Foundry VTT'
+    description '
+      The FoundryVTT chain: browser via rpg-pip to Caddy, the Foundry
+      process on rpg-vm, its dedicated data disk and media CDN.
+    '
+
+    include
+      internet.browser,
+      azure,
+      azure.rgNetwork._,
+      azure.rgVm._,
+      azure.rgVm.rpgVm._,
+      azure.rgData._,
+      azure.rgWeb,
+      azure.rgWeb.cdnStorage,
+      azure.rgWeb.cdnStorage.cdnBlob
+
+    exclude
+      internet.browser -> azure.rgWeb,
+      internet.browser -> azure.rgWeb.cdnStorage,
+      azure.rgWeb -> azure.rgVm.rpgVm.caddyProc,
+      azure.rgWeb.cdnStorage -> internet
+
+    autoLayout TopBottom 130 130
+
+    style * {
+      color secondary
+    }
+    style azure {
+      color muted
+    }
+    style azure.rgVm.rpgVm.caddyProc, azure.rgVm.rpgVm.foundryProc, azure.rgData.foundryData {
       color primary
     }
     style internet.browser {

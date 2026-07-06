@@ -5,7 +5,7 @@ model {
 
     -> gym.pwa 'Logs lifts with'
     -> web 'Visits (https://nygard.dev)'
-    -> rpg.caddy 'Plays on (HTTPS, rpg.nygard.dev)'
+    -> rpg.client 'Plays on (rpg.nygard.dev)'
   }
 
   entra = identity-provider 'Microsoft Entra ID' {
@@ -49,6 +49,11 @@ model {
   rpg = virtual-machine 'RPG Server' {
     description 'rpg-vm — Ubuntu Linux VM hosting Foundry VTT, behind rpg-pip public IP'
 
+    client = webapp 'FoundryVTT Client' {
+      technology 'HTML/JS in browser'
+      description 'Foundry game UI running in the browser — served by Foundry VTT on the RPG Server'
+    }
+
     caddy = service 'Caddy' {
       technology 'Caddy'
       description 'Reverse proxy and TLS termination on ports 80/443'
@@ -59,7 +64,9 @@ model {
       description 'Self-hosted virtual tabletop; serves the game UI and world data'
     }
 
+    client -> caddy 'Connects to (HTTPS/WSS, rpg.nygard.dev)'
     caddy -> foundry 'Reverse proxies to (:30000)'
+    foundry -> client 'Serves game UI and world data to'
   }
 
   cdn = storage-account 'CDN Storage' {

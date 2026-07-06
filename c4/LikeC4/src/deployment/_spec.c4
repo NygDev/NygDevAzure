@@ -77,6 +77,13 @@ specification {
     }
   }
 
+  deploymentNode disk {
+    notation 'Managed Disk'
+    style {
+      icon azure:disks
+    }
+  }
+
   deploymentNode key-vault {
     notation 'Key Vault'
     style {

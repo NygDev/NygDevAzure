@@ -5,6 +5,8 @@ views {
     description 'Big-picture view of the NygDevAzure estate'
 
     include *
+
+    autoLayout LeftRight 140 120
   }
 
   view gym of gym {
@@ -19,6 +21,8 @@ views {
       user,
       entra,
       cdn
+
+    autoLayout LeftRight 180 100
 
     style * {
       color secondary
@@ -44,6 +48,8 @@ views {
       cdn,
       cdn -> user
 
+    autoLayout LeftRight 180 100
+
     style * {
       color secondary
     }
@@ -65,6 +71,8 @@ views {
     include
       *,
       -> cdn ->
+
+    autoLayout TopBottom 120 130
 
     style * {
       color secondary

@@ -94,6 +94,15 @@ deployment {
       }
     }
 
+    rgData = resource-group 'rg-nygdev-data' {
+      description 'Persistent data — survives VM rebuilds'
+
+      foundryData = disk 'foundrydata' {
+        technology 'Azure Managed Disk'
+        description 'Dedicated data disk for Foundry VTT worlds, modules and media'
+      }
+    }
+
     rgSecurity = resource-group 'rg-nygdev-security' {
       description 'Not created by terraform — managed as minimal definitions'
 
@@ -105,6 +114,7 @@ deployment {
 
   internet.browser -> azure.rgNetwork.pip 'HTTPS to rpg.nygard.dev (rpg.norwayeast.cloudapp.azure.com)'
   azure.rgNetwork.pip -> azure.rgVm.rpgVm.caddyProc 'Forwards 80/443 via rpg-snet'
+  azure.rgVm.rpgVm.foundryProc -> azure.rgData.foundryData 'Stores worlds, modules and media on (attached data disk)'
   azure.rgConsumption.aspDotnet.loggerApi -> azure.rgConsumption.appInsights 'Telemetry (OpenTelemetry)'
   azure.rgConsumption.aspPs.azadminApp -> azure.rgConsumption.appInsights 'Telemetry'
 }
