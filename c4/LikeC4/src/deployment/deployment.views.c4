@@ -1,0 +1,56 @@
+views {
+
+  deployment view azureDeployment {
+    title 'Deployment / Azure'
+    description '
+      Physical layout of the estate: resource groups, Flex Consumption
+      plans, VNet/VM and storage, as provisioned by terraform.
+    '
+
+    include
+      azure,
+      azure.**,
+      internet.*
+
+    style azure {
+      color muted
+    }
+    style azure.rgVm._, azure.rgNetwork._ {
+      color indigo
+    }
+    style azure.rgConsumption._ {
+      color green
+    }
+    style azure.rgWeb._, azure.rgDb._ {
+      color amber
+    }
+  }
+
+  deployment view gymDeployment {
+    title 'Deployment / Gym Logger'
+    description 'Where each Gym Logger container runs'
+
+    include
+      internet.browser,
+      internet.entraId,
+      azure,
+      azure.rgWeb,
+      azure.rgWeb.cdnStorage._,
+      azure.rgConsumption,
+      azure.rgConsumption.aspDotnet._,
+      azure.rgDb._
+
+    style * {
+      color secondary
+    }
+    style azure {
+      color muted
+    }
+    style azure.rgConsumption.aspDotnet.loggerApi, azure.rgWeb.cdnStorage.pwaFiles, azure.rgDb.cosmos {
+      color primary
+    }
+    style internet.browser {
+      color green
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "nygdev-azure-likec4",
+  "version": "0.0.1",
+  "private": true,
+  "description": "LikeC4 model of the NygDevAzure estate",
+  "type": "module",
+  "scripts": {
+    "start": "likec4 start",
+    "dev": "likec4 start",
+    "build": "likec4 build",
+    "export:png": "likec4 export png -o ./png"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "likec4": "latest",
+    "typescript": "^6.0.3"
+  }
+}

@@ -1,0 +1,110 @@
+deployment {
+
+  internet = internet 'Internet' {
+    browser = instanceOf user {
+      style {
+        size sm
+        color green
+      }
+    }
+
+    entraId = instanceOf entra {
+      title 'Microsoft Entra ID (tenant)'
+    }
+  }
+
+  azure = subscription 'Azure Subscription' {
+    description 'Managed by terraform — norwayeast unless noted'
+
+    rgConsumption = resource-group 'rg-nygdev-consumption' {
+      description 'Serverless compute, shared monitoring and deploy storage'
+
+      aspDotnet = service-plan 'asp-nygdev-flex-dotnet' {
+        technology 'FC1 / Linux'
+        loggerApi = instanceOf gym.api {
+          description 'func-nygdev-logger — 512 MB instances'
+        }
+      }
+
+      aspPs = service-plan 'asp-nygdev-flex-ps' {
+        technology 'FC1 / Linux'
+        azadminApp = instanceOf azadmin {
+          description 'func-nygdev-azadmin — 512 MB instances'
+        }
+      }
+
+      funcStorage = blob-storage 'nygdevfunc' {
+        description 'Deployment packages (azadmin-deploy, logger-deploy containers)'
+      }
+
+      appInsights = monitoring 'appi-nygdev-consumption' {
+        description 'Application Insights, backed by log-nygdev-consumption workspace'
+      }
+    }
+
+    rgDb = resource-group 'rg-nygdev-db' {
+      cosmos = instanceOf gym.db {
+        title 'nygdev-cosmos-db'
+        description 'GlobalDocumentDB / db / primary container'
+      }
+    }
+
+    rgWeb = resource-group 'rg-nygdev-web' {
+      description 'Web front-ends (Static Web Apps in westeurope, Free SKU)'
+
+      apex = static-site 'nygdevapex' {
+        description 'Serves https://nygard.dev'
+        webapex = instanceOf web
+      }
+
+      gymlogSwa = static-site 'gymlog' {
+        description 'Provisioned, currently unused — PWA is served from nygdevcdn instead'
+      }
+
+      cdnStorage = blob-storage 'nygdevcdn' {
+        cdnBlob = instanceOf cdn
+        pwaFiles = instanceOf gym.pwa {
+          description 'Static website ($web) hosting the PWA assets'
+        }
+      }
+    }
+
+    rgNetwork = resource-group 'rg-nygdev-network' {
+      pip = public-ip 'rpg-pip' {
+        description 'Static public IP, DNS label "rpg"'
+      }
+
+      vnetMain = vnet 'nygdev-vnet' {
+        subnetRpg = subnet 'rpg-snet' {
+          description 'NSG nygdev-nsg: 80/443 from anywhere; 22/30000/30001 from home IP only'
+        }
+      }
+    }
+
+    rgVm = resource-group 'rg-nygdev-vm' {
+      rpgVm = vm 'rpg-vm' {
+        technology 'Standard_B2s, Ubuntu 26.04 LTS minimal'
+        description '
+          30 GB os disk + foundrydata data disk (persistent, in rg-nygdev-data);
+          auto-shutdown 23:00 Oslo time
+        '
+
+        caddyProc = instanceOf rpg.caddy
+        foundryProc = instanceOf rpg.foundry
+      }
+    }
+
+    rgSecurity = resource-group 'rg-nygdev-security' {
+      description 'Not created by terraform — managed as minimal definitions'
+
+      kv = key-vault 'nygdev' {
+        description 'Secrets; alongside the nygdev-ed25519 SSH public key resource'
+      }
+    }
+  }
+
+  internet.browser -> azure.rgNetwork.pip 'HTTPS to rpg.nygard.dev (rpg.norwayeast.cloudapp.azure.com)'
+  azure.rgNetwork.pip -> azure.rgVm.rpgVm.caddyProc 'Forwards 80/443 via rpg-snet'
+  azure.rgConsumption.aspDotnet.loggerApi -> azure.rgConsumption.appInsights 'Telemetry (OpenTelemetry)'
+  azure.rgConsumption.aspPs.azadminApp -> azure.rgConsumption.appInsights 'Telemetry'
+}

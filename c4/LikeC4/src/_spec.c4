@@ -1,0 +1,87 @@
+specification {
+
+  element actor {
+    style {
+      shape person
+      color green
+    }
+  }
+
+  element system {
+    notation "Software System"
+    style {
+      opacity 20%
+    }
+  }
+
+  element external-system {
+    notation "External Software System"
+    style {
+      opacity 20%
+      color muted
+    }
+  }
+
+  element webapp {
+    notation "Progressive Web App"
+    style {
+      shape browser
+    }
+  }
+
+  element service {
+    notation "Service / Process"
+  }
+
+  element function-app {
+    notation "Azure Function App"
+    style {
+      icon azure:function-apps
+    }
+  }
+
+  element cosmos-db {
+    notation "Azure Cosmos DB"
+    style {
+      shape storage
+      icon azure:azure-cosmos-db
+    }
+  }
+
+  element static-web-app {
+    notation "Azure Static Web App"
+    style {
+      shape browser
+      icon azure:static-apps
+    }
+  }
+
+  element storage-account {
+    notation "Azure Storage Account"
+    style {
+      shape storage
+      icon azure:storage-accounts
+    }
+  }
+
+  element virtual-machine {
+    notation "Azure Virtual Machine"
+    style {
+      icon azure:virtual-machine
+      opacity 20%
+    }
+  }
+
+  element identity-provider {
+    notation "Identity Provider"
+    style {
+      icon azure:external-identities
+      opacity 20%
+      color muted
+    }
+  }
+
+  tag managed-identity {
+    color rgb(7 115 175)
+  }
+}

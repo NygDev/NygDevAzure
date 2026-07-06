@@ -1,0 +1,93 @@
+specification {
+
+  deploymentNode internet {
+    notation 'Internet'
+    style {
+      opacity 0%
+    }
+  }
+
+  deploymentNode subscription {
+    notation 'Azure Subscription'
+    style {
+      icon azure:subscriptions
+      opacity 5%
+    }
+  }
+
+  deploymentNode resource-group {
+    notation 'Resource Group'
+    style {
+      icon azure:resource-groups
+      opacity 10%
+    }
+  }
+
+  deploymentNode service-plan {
+    notation 'App Service Plan (Flex Consumption)'
+    style {
+      icon azure:app-service-plans
+      opacity 10%
+    }
+  }
+
+  deploymentNode vm {
+    notation 'Virtual Machine'
+    style {
+      icon azure:virtual-machine
+      opacity 10%
+    }
+  }
+
+  deploymentNode vnet {
+    notation 'Virtual Network'
+    style {
+      icon azure:virtual-networks
+      opacity 5%
+    }
+  }
+
+  deploymentNode subnet {
+    notation 'Subnet'
+    style {
+      icon azure:subnet
+      opacity 10%
+    }
+  }
+
+  deploymentNode public-ip {
+    notation 'Public IP Address'
+    style {
+      icon azure:public-ip-addresses
+    }
+  }
+
+  deploymentNode blob-storage {
+    notation 'Storage Account'
+    style {
+      icon azure:storage-accounts
+      opacity 10%
+    }
+  }
+
+  deploymentNode static-site {
+    notation 'Static Web App'
+    style {
+      icon azure:static-apps
+    }
+  }
+
+  deploymentNode key-vault {
+    notation 'Key Vault'
+    style {
+      icon azure:key-vaults
+    }
+  }
+
+  deploymentNode monitoring {
+    notation 'Monitoring'
+    style {
+      icon azure:application-insights
+    }
+  }
+}
