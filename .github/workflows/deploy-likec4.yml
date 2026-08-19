@@ -1,0 +1,97 @@
+name: Deploy LikeC4
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'c4/LikeC4/**'
+      - '.github/workflows/deploy-likec4.yml'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+# Never let two deploys overlap: the delete-then-upload sequence is not
+# safe to interleave.
+concurrency:
+  group: deploy-likec4
+  cancel-in-progress: false
+
+env:
+  STORAGE_ACCOUNT: nygdevcdn
+  PROJECT_DIR: c4/LikeC4
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: NygDevAzure
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: c4/LikeC4/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npm ci
+
+      - name: Validate model
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npx likec4 validate
+
+      - name: Build site
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npx likec4 build -o dist --base /
+
+      - name: Az CLI login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Clear the container so content-hashed assets from previous builds
+      # don't accumulate. '$web' is single-quoted so bash does not try to
+      # expand it as a variable.
+      - name: Clear $web
+        run: |
+          az storage blob delete-batch \
+            --account-name "$STORAGE_ACCOUNT" \
+            --auth-mode login \
+            --source '$web'
+
+      # Two passes so cache headers differ: everything gets no-cache, then
+      # the content-hashed assets are re-uploaded as immutable.
+      - name: Upload site
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          az storage blob upload-batch \
+            --account-name "$STORAGE_ACCOUNT" \
+            --auth-mode login \
+            --destination '$web' \
+            --source dist \
+            --overwrite \
+            --content-cache-control 'no-cache'
+
+      - name: Set immutable cache headers on hashed assets
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          az storage blob upload-batch \
+            --account-name "$STORAGE_ACCOUNT" \
+            --auth-mode login \
+            --destination '$web' \
+            --source dist \
+            --pattern 'assets/*' \
+            --overwrite \
+            --content-cache-control 'public, max-age=31536000, immutable'
+
+      - name: Report endpoint
+        run: |
+          az storage account show \
+            --name "$STORAGE_ACCOUNT" \
+            --query "primaryEndpoints.web" \
+            --output tsv
