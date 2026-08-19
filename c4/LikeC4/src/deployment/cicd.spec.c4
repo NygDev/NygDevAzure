@@ -1,0 +1,26 @@
+specification {
+
+  deploymentNode ci-cloud {
+    notation 'CI/CD Cloud'
+    style {
+      icon tech:github
+      opacity 5%
+    }
+  }
+
+  deploymentNode ci-runner {
+    notation 'Ephemeral CI Runner'
+    style {
+      icon tech:github-actions
+      opacity 10%
+    }
+  }
+
+  deploymentNode storage-container {
+    notation 'Blob Container'
+    style {
+      icon azure:storage-container
+      opacity 10%
+    }
+  }
+}

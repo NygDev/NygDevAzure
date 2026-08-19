@@ -1,0 +1,259 @@
+// The delivery plane: how text in this repository becomes running Azure
+// resources. Derived from .github/workflows/*.yml.
+model {
+
+  dev = actor 'Developer' {
+    description '
+      Authors the LikeC4 model, the terraform configuration and the
+      function code, and pushes to master
+    '
+  }
+
+  github = external-system 'GitHub' {
+    technology 'github.com'
+    description 'Source of truth and CI/CD control plane for the whole estate'
+
+    repo = repository 'NygDevAzure' {
+      description 'Single repository; master is the deploy branch'
+
+      srcC4 = source-files 'c4/LikeC4/src/**/*.c4' {
+        technology 'LikeC4 DSL'
+        description '
+          The architecture model as plain text — the specification,
+          the logical model, the deployment model and the views
+        '
+      }
+
+      srcTf = source-files 'terraform/**/*.tf' {
+        technology 'Terraform HCL'
+        description 'The Azure estate: resource groups, VNet, VM, storage, function apps'
+      }
+
+      srcPs = source-files 'psfunctionapp/**' {
+        technology 'PowerShell 7.4'
+        description 'cachecontrol and cachecontrolauto function code'
+      }
+
+      srcWf = source-files '.github/workflows/*.yml' {
+        technology 'YAML'
+        description 'The five workflows that deploy everything above'
+      }
+    }
+
+    ghEnv = ci-environment 'Environment "NygDevAzure"' {
+      technology 'GitHub Actions environment'
+      description '
+        AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+        AZURE_KEYVAULT_NAME, AZURE_VM_USERNAME, ENTRA_OWNER_OBJECTID.
+        Identifiers only — no credential is stored here.
+      '
+    }
+
+    actions = ci-platform 'GitHub Actions' {
+      technology 'ubuntu-latest hosted runners'
+      description '
+        Every job declares permissions: id-token write, contents read,
+        and authenticates to Azure with azure/login@v3 over OIDC
+      '
+
+      deployC4 = workflow 'Deploy LikeC4' {
+        technology '.github/workflows/deploy-likec4.yml'
+        description '
+          push to master touching c4/LikeC4/**, or workflow_dispatch.
+          concurrency group deploy-likec4 with cancel-in-progress false,
+          because the delete-then-upload sequence must not interleave.
+        '
+
+        c4Checkout = build-step 'Checkout' {
+          technology 'actions/checkout@v5'
+        }
+
+        c4Node = build-step 'Setup Node 24' {
+          technology 'actions/setup-node@v6'
+          description 'npm cache keyed on c4/LikeC4/package-lock.json'
+        }
+
+        c4Install = build-step 'npm ci' {
+          description 'Installs likec4 from the lockfile'
+        }
+
+        c4Validate = build-step 'npx likec4 validate' {
+          description 'Parses every .c4 file and fails the run on a model error'
+        }
+
+        c4Build = build-step 'npx likec4 build -o dist --base /' {
+          description '
+            Renders the model into a static site: index.html plus
+            content-hashed files under assets/
+          '
+        }
+
+        c4Login = build-step 'Az CLI login' {
+          technology 'azure/login@v3'
+          description 'Exchanges the runner OIDC token for an Azure access token'
+        }
+
+        c4Clear = build-step 'Clear $web' {
+          technology 'az storage blob delete-batch'
+          description '
+            Empties the container so hashed assets from previous builds
+            do not accumulate
+          '
+        }
+
+        c4Upload = build-step 'Upload site' {
+          technology 'az storage blob upload-batch'
+          description 'dist/ to $web, Cache-Control no-cache'
+        }
+
+        c4Immutable = build-step 'Set immutable cache headers' {
+          technology 'az storage blob upload-batch --pattern assets/*'
+          description 'Second pass: public, max-age=31536000, immutable'
+        }
+
+        c4Report = build-step 'Report endpoint' {
+          technology 'az storage account show'
+          description 'Prints primaryEndpoints.web to the job log'
+        }
+
+        c4Checkout -> c4Node 'then'
+        c4Node -> c4Install 'then'
+        c4Install -> c4Validate 'then'
+        c4Validate -> c4Build 'then'
+        c4Build -> c4Login 'then'
+        c4Login -> c4Clear 'then'
+        c4Clear -> c4Upload 'then'
+        c4Upload -> c4Immutable 'then'
+        c4Immutable -> c4Report 'then'
+      }
+
+      deployFunc = workflow 'Deploy PS Function App' {
+        technology '.github/workflows/deploy-ps-function-app.yml'
+        description '
+          push to master touching psfunctionapp/**, or workflow_dispatch.
+          Save-Module bundles Az.Accounts and Az.Storage into the package
+          before Azure/functions-action@v1 pushes it.
+        '
+      }
+
+      tfPlan = workflow 'Terraform Plan' {
+        technology '.github/workflows/terraform-plan.yml'
+        description '
+          push to any branch except master touching terraform/**, or a
+          pull request, or workflow_dispatch. Read-only: terraform plan
+          with ARM_USE_OIDC true.
+        '
+      }
+
+      tfApply = workflow 'Terraform Apply' {
+        technology '.github/workflows/terraform-apply.yml'
+        description '
+          workflow_dispatch only — never on push. Runs
+          terraform apply -auto-approve with the home IP and SSH key
+          fetched at run time.
+        '
+      }
+
+      loginTest = workflow 'Test Azure Login (OIDC)' {
+        technology '.github/workflows/test-azure-login.yml'
+        description '
+          workflow_dispatch only. Smoke test: az account show and
+          az group list, to prove the federated credential still works.
+        '
+      }
+    }
+  }
+
+  entra = identity-provider 'Microsoft Entra ID' {
+    description 'Tenant that issues the access tokens the workflows use'
+
+    ghOidc = app-registration 'GitHub deploy identity' {
+      technology 'Workload identity federation'
+      description '
+        The AZURE_CLIENT_ID principal. Federated credentials trust
+        token.actions.githubusercontent.com for this repository and the
+        NygDevAzure environment, so no client secret exists to leak.
+        Managed outside terraform — it is the identity terraform runs as.
+      '
+    }
+  }
+
+  azurerm = external-system 'Azure Resource Manager' {
+    technology 'management.azure.com'
+    description '
+      The Azure control plane. Terraform and the az CLI both reach the
+      estate through it; RBAC on this principal is what bounds a workflow.
+    '
+  }
+
+  tfstate = storage-account 'Terraform State' {
+    technology 'Azure Blob Storage, AzureAD auth'
+    description '
+      nygdevtfstate / tfstate / azure-infrastructure.tfstate in
+      rg-nygdev-data — the backend both terraform workflows lock and write
+    '
+  }
+
+  keyvault = secret-store 'Key Vault' {
+    description '
+      nygdev in rg-nygdev-security — holds the HomeIP secret and, beside
+      it, the nygdev-ed25519 SSH public key resource
+    '
+  }
+
+  // ---------------------------------------------------------------------
+  // nygdevcdn serves two very different things out of one storage account
+  // ---------------------------------------------------------------------
+  extend cdn {
+
+    foundryMedia = blob-container 'foundry' {
+      description 'Foundry VTT media, fetched straight by players browsers'
+    }
+
+    webSite = blob-container '$web' {
+      technology 'Azure Storage static website hosting'
+      description '
+        The static-website container. Its contents are served at the
+        account primary web endpoint, reported at the end of every deploy.
+      '
+
+      docs = webapp 'LikeC4 Site' {
+        technology 'Static HTML + JS, produced by likec4 build'
+        description 'The browsable diagrams — this model, rendered'
+      }
+    }
+  }
+
+  // --- source to pipeline ------------------------------------------------
+  dev -> github.repo 'git push (master)'
+  github.repo -> github.actions 'Triggers workflows (push path filters, pull_request, workflow_dispatch)' #ci
+  github.ghEnv -> github.actions 'Supplies tenant, subscription and client ids to' #ci
+
+  github.repo.srcC4 -> github.actions.deployC4 'Change here runs' #ci
+  github.repo.srcPs -> github.actions.deployFunc 'Change here runs' #ci
+  github.repo.srcTf -> github.actions.tfPlan 'Change here runs (off master, or on a PR)' #ci
+
+  // --- pipeline to identity ---------------------------------------------
+  github.actions -> entra.ghOidc 'Presents the runner OIDC token (azure/login@v3)' #oidc
+  entra.ghOidc -> github.actions 'Issues a short-lived Azure access token to' #oidc
+  entra.ghOidc -> azurerm 'Authorises calls against (RBAC on the subscription)'
+
+  // --- pipeline to Azure -------------------------------------------------
+  github.actions.deployC4.c4Upload -> cdn.webSite 'Uploads dist/ to (az storage blob upload-batch)'
+  github.actions.deployFunc -> azadmin 'Deploys the function package (Azure/functions-action@v1)'
+  github.actions.tfPlan -> keyvault 'Reads HomeIP and the SSH public key'
+  github.actions.tfApply -> keyvault 'Reads HomeIP and the SSH public key'
+  github.actions.tfPlan -> tfstate 'Reads state (terraform init)'
+  github.actions.tfApply -> tfstate 'Locks and writes state'
+  github.actions.tfPlan -> azurerm 'Refreshes and diffs the estate (terraform plan)'
+  github.actions.tfApply -> azurerm 'Creates and updates the estate (terraform apply)'
+  github.actions.loginTest -> azurerm 'Smoke-tests the federated credential against'
+
+  // --- what terraform builds --------------------------------------------
+  azurerm -> cdn 'Provisions and configures'
+  azurerm -> azadmin 'Provisions and configures'
+
+  // --- the published result ---------------------------------------------
+  cdn.webSite.docs -> user 'Serves rendered diagrams to (primary web endpoint)'
+  dev -> cdn.webSite.docs 'Reviews the rendered model on'
+}

@@ -1,0 +1,37 @@
+// Where the delivery plane physically runs: a throwaway GitHub-hosted VM
+// that holds an Azure token for the length of one job.
+deployment {
+
+  githubCloud = ci-cloud 'GitHub' {
+    description 'github.com — repository hosting and Actions'
+
+    runner = ci-runner 'ubuntu-latest runner' {
+      technology 'GitHub-hosted, ephemeral'
+      description '
+        Fresh VM per job, destroyed afterwards. Bound to the NygDevAzure
+        environment; holds an Azure access token only for the run.
+      '
+
+      jobDeployC4 = instanceOf github.actions.deployC4
+      jobDeployFunc = instanceOf github.actions.deployFunc
+      jobTfPlan = instanceOf github.actions.tfPlan
+      jobTfApply = instanceOf github.actions.tfApply
+    }
+  }
+
+  // nygdevcdn already exists in deployment.c4 — give it its two containers
+  extend azure.rgWeb.cdnStorage {
+
+    webContainer = storage-container '$web' {
+      description 'Static website hosting; served at the account primary web endpoint'
+
+      docsSite = instanceOf cdn.webSite.docs
+    }
+  }
+
+  githubCloud.runner.jobDeployC4 -> azure.rgWeb.cdnStorage.webContainer 'Uploads dist/ (az storage blob upload-batch)'
+  githubCloud.runner.jobDeployFunc -> azure.rgConsumption.aspPs.azadminApp 'Pushes the function package to'
+  githubCloud.runner.jobTfApply -> azure.rgSecurity.kv 'Reads HomeIP and the SSH public key from'
+  githubCloud.runner.jobTfPlan -> azure.rgSecurity.kv 'Reads HomeIP and the SSH public key from'
+  internet.browser -> azure.rgWeb.cdnStorage.webContainer 'Reads the rendered diagrams from'
+}

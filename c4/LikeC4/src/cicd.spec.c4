@@ -1,0 +1,80 @@
+// Element kinds for the delivery plane: the repository, GitHub Actions and
+// the Entra identity that lets a workflow talk to Azure without a secret.
+specification {
+
+  element repository {
+    notation 'Git Repository'
+    style {
+      shape storage
+      icon tech:github
+      opacity 20%
+    }
+  }
+
+  element source-files {
+    notation 'Source Files (text)'
+    style {
+      icon tech:git
+    }
+  }
+
+  element ci-platform {
+    notation 'CI/CD Platform'
+    style {
+      icon tech:github-actions
+      opacity 20%
+    }
+  }
+
+  element ci-environment {
+    notation 'CI Environment / Secrets'
+    style {
+      icon tech:github
+    }
+  }
+
+  element workflow {
+    notation 'GitHub Actions Workflow'
+    style {
+      icon tech:github-actions
+      opacity 20%
+    }
+  }
+
+  element build-step {
+    notation 'Workflow Step'
+  }
+
+  element app-registration {
+    notation 'Entra App Registration'
+    style {
+      icon azure:app-registrations
+    }
+  }
+
+  element blob-container {
+    notation 'Blob Container'
+    style {
+      shape storage
+      icon azure:storage-container
+    }
+  }
+
+  element secret-store {
+    notation 'Key Vault'
+    style {
+      shape storage
+      icon azure:key-vaults
+    }
+  }
+
+  // Relationships that carry a federated (secretless) token exchange
+  tag oidc {
+    color rgb(217 119 6)
+  }
+
+  // Everything that only exists at build/deploy time
+  tag ci {
+    color rgb(99 102 241)
+  }
+}
