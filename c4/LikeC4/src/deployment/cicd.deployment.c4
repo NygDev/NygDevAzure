@@ -14,12 +14,11 @@ deployment {
 
       jobDeployC4 = instanceOf github.actions.deployC4
       jobDeployFunc = instanceOf github.actions.deployFunc
-      jobTfPlan = instanceOf github.actions.tfPlan
       jobTfApply = instanceOf github.actions.tfApply
     }
   }
 
-  // nygdevcdn already exists in deployment.c4 — give it its two containers
+  // nygdevcdn already exists in deployment.c4 — give it its $web container
   extend azure.rgWeb.cdnStorage {
 
     webContainer = storage-container '$web' {
@@ -32,6 +31,5 @@ deployment {
   githubCloud.runner.jobDeployC4 -> azure.rgWeb.cdnStorage.webContainer 'Uploads dist/ (az storage blob upload-batch)'
   githubCloud.runner.jobDeployFunc -> azure.rgConsumption.aspPs.azadminApp 'Pushes the function package to'
   githubCloud.runner.jobTfApply -> azure.rgSecurity.kv 'Reads HomeIP and the SSH public key from'
-  githubCloud.runner.jobTfPlan -> azure.rgSecurity.kv 'Reads HomeIP and the SSH public key from'
   internet.browser -> azure.rgWeb.cdnStorage.webContainer 'Reads the rendered diagrams from'
 }

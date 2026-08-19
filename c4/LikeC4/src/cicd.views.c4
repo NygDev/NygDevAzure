@@ -25,9 +25,6 @@ views {
       cdn,
       cdn.webSite
 
-    exclude
-      github.actions.deployC4.*
-
     autoLayout LeftRight 160 110
 
     style * {
@@ -47,34 +44,38 @@ views {
     }
   }
 
-  view likec4Pipeline of github.actions.deployC4 {
+  view likec4Pipeline {
     title 'LikeC4 — from .c4 text to $web'
     description '
-      The one workflow that publishes this site. Ten steps: install,
-      validate, render, get a token, empty the container, upload twice
-      (once no-cache, once immutable) and print the endpoint.
+      The one workflow that publishes this site. Editing a .c4 file and
+      pushing to master is the whole publishing act; what Deploy LikeC4
+      does inside a run is on the element itself.
     '
 
     include
-      *,
       dev,
+      github,
       github.repo,
       github.repo.srcC4,
+      github.ghEnv,
+      github.actions,
+      github.actions.deployC4,
+      entra,
       entra.ghOidc,
       cdn,
       cdn.webSite,
       cdn.webSite.docs,
       user
 
-    autoLayout TopBottom 90 90
+    autoLayout TopBottom 120 100
 
     style * {
       color secondary
     }
-    style github.actions.deployC4._ {
+    style github.actions.deployC4 {
       color indigo
     }
-    style github.actions.deployC4.c4Validate, github.actions.deployC4.c4Build {
+    style github.repo.srcC4 {
       color primary
     }
     style cdn.webSite, cdn.webSite.docs {
@@ -123,17 +124,12 @@ views {
     description 'A single push to master, followed end to end'
 
     dev -> github.repo 'Edits a .c4 file and pushes to master'
-    github.repo -> github.actions.deployC4.c4Checkout 'Path filter c4/LikeC4/** matches; the workflow starts'
-    github.actions.deployC4.c4Checkout -> github.actions.deployC4.c4Install 'Setup Node 24, then npm ci'
-    github.actions.deployC4.c4Install -> github.actions.deployC4.c4Validate 'likec4 validate — a broken model fails here, before anything is touched'
-    github.actions.deployC4.c4Validate -> github.actions.deployC4.c4Build 'Model is valid; likec4 build renders dist/'
-    github.ghEnv -> github.actions.deployC4.c4Login 'Supplies AZURE_CLIENT_ID / TENANT_ID / SUBSCRIPTION_ID'
-    github.actions.deployC4.c4Login -> entra.ghOidc 'Presents the runner OIDC token'
-    entra.ghOidc -> github.actions.deployC4.c4Login 'Returns a short-lived access token'
-    github.actions.deployC4.c4Clear -> cdn.webSite 'delete-batch empties $web'
-    github.actions.deployC4.c4Upload -> cdn.webSite 'upload-batch dist/, Cache-Control no-cache'
-    github.actions.deployC4.c4Immutable -> cdn.webSite 'Re-uploads assets/* as public, max-age=31536000, immutable'
-    github.actions.deployC4.c4Report -> dev 'Prints primaryEndpoints.web to the job log'
+    github.repo -> github.actions.deployC4 'Path filter c4/LikeC4/** matches; the workflow starts'
+    github.ghEnv -> github.actions.deployC4 'Supplies AZURE_CLIENT_ID / TENANT_ID / SUBSCRIPTION_ID'
+    github.actions.deployC4 -> entra.ghOidc 'Presents the runner OIDC token'
+    entra.ghOidc -> github.actions.deployC4 'Returns a short-lived access token'
+    github.actions.deployC4 -> cdn.webSite 'Empties $web, uploads dist/, re-uploads assets/* as immutable'
+    github.actions.deployC4 -> dev 'Prints primaryEndpoints.web to the job log'
     cdn.webSite -> user 'Static website hosting serves the new build'
 
     autoLayout LeftRight

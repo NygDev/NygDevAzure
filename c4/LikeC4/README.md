@@ -20,10 +20,12 @@ This model is published by `.github/workflows/deploy-likec4.yml`: a push to mast
 - `src/_spec.c4` — element kinds (Azure-flavoured) and tags
 - `src/model.c4` — logical model: RPG Server, nygard.dev, CDN, Admin Automation, Placeholder API, Cosmos DB
 - `src/model.views.c4` — landscape + container views
-- `src/cicd.spec.c4` — element kinds for the delivery plane (repository, workflow, workflow step, Entra app registration, blob container)
-- `src/cicd.c4` — the delivery model: the repo, the five workflows, the OIDC identity, and the `$web` / `foundry` containers on `nygdevcdn`
+- `src/cicd.spec.c4` — element kinds for the delivery plane (repository, workflow, Entra app registration, blob container)
+- `src/cicd.c4` — the delivery model: the repo, the three workflows, the OIDC identity, and the `$web` / `foundry` containers on `nygdevcdn`
 - `src/cicd.views.c4` — delivery views (see below)
 - `src/deployment/` — Azure subscription/resource-group deployment model and views, plus the GitHub-hosted runner
+
+Each workflow is a single element. What a run does step by step lives in the element's `description`, not in child elements — steps churn much faster than the shape of the pipeline, and a diagram of `actions/checkout` teaches nobody anything.
 
 ## Views
 
@@ -31,8 +33,8 @@ This model is published by `.github/workflows/deploy-likec4.yml`: a push to mast
 | --- | --- |
 | `index` | The whole estate, delivery plane included |
 | `delivery` | Every path from this repo into the subscription: triggers, identity, blast radius |
-| `likec4Pipeline` | The `Deploy LikeC4` workflow end to end — `.c4` text to `$web` |
-| `likec4Deploy` | The same as a dynamic/sequence view, one push followed step by step |
+| `likec4Pipeline` | How `.c4` text reaches `$web` |
+| `likec4Deploy` | The same as a dynamic/sequence view, one push followed end to end |
 | `oidcTrust` | Why no Azure credential is stored in GitHub |
 | `deliveryDeployment` | Where the delivery plane physically runs |
 | `azureDeployment` | Resource groups, plans, VNet/VM and storage, as provisioned by terraform |

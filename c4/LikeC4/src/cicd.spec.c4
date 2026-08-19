@@ -37,12 +37,7 @@ specification {
     notation 'GitHub Actions Workflow'
     style {
       icon tech:github-actions
-      opacity 20%
     }
-  }
-
-  element build-step {
-    notation 'Workflow Step'
   }
 
   element app-registration {
@@ -76,5 +71,10 @@ specification {
   // Everything that only exists at build/deploy time
   tag ci {
     color rgb(99 102 241)
+  }
+
+  // Runs only on manual dispatch, never on push
+  tag manual {
+    color rgb(190 24 93)
   }
 }

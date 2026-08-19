@@ -1,5 +1,8 @@
 // The delivery plane: how text in this repository becomes running Azure
 // resources. Derived from .github/workflows/*.yml.
+//
+// Each workflow is one element. What happens inside a run is described, not
+// modelled — steps change far more often than the shape of the pipeline.
 model {
 
   dev = actor 'Developer' {
@@ -36,7 +39,7 @@ model {
 
       srcWf = source-files '.github/workflows/*.yml' {
         technology 'YAML'
-        description 'The five workflows that deploy everything above'
+        description 'The three workflows that deploy everything above'
       }
     }
 
@@ -59,106 +62,39 @@ model {
       deployC4 = workflow 'Deploy LikeC4' {
         technology '.github/workflows/deploy-likec4.yml'
         description '
-          push to master touching c4/LikeC4/**, or workflow_dispatch.
+          Trigger: push to master touching c4/LikeC4/**, or workflow_dispatch.
+
+          Installs from the lockfile, runs likec4 validate (a broken model
+          fails the run before anything is touched), renders the site with
+          likec4 build, logs in over OIDC, then empties $web and uploads
+          dist/ twice — everything as no-cache, then assets/* again as
+          immutable. Finishes by printing primaryEndpoints.web.
+
           concurrency group deploy-likec4 with cancel-in-progress false,
           because the delete-then-upload sequence must not interleave.
         '
-
-        c4Checkout = build-step 'Checkout' {
-          technology 'actions/checkout@v5'
-        }
-
-        c4Node = build-step 'Setup Node 24' {
-          technology 'actions/setup-node@v6'
-          description 'npm cache keyed on c4/LikeC4/package-lock.json'
-        }
-
-        c4Install = build-step 'npm ci' {
-          description 'Installs likec4 from the lockfile'
-        }
-
-        c4Validate = build-step 'npx likec4 validate' {
-          description 'Parses every .c4 file and fails the run on a model error'
-        }
-
-        c4Build = build-step 'npx likec4 build -o dist --base /' {
-          description '
-            Renders the model into a static site: index.html plus
-            content-hashed files under assets/
-          '
-        }
-
-        c4Login = build-step 'Az CLI login' {
-          technology 'azure/login@v3'
-          description 'Exchanges the runner OIDC token for an Azure access token'
-        }
-
-        c4Clear = build-step 'Clear $web' {
-          technology 'az storage blob delete-batch'
-          description '
-            Empties the container so hashed assets from previous builds
-            do not accumulate
-          '
-        }
-
-        c4Upload = build-step 'Upload site' {
-          technology 'az storage blob upload-batch'
-          description 'dist/ to $web, Cache-Control no-cache'
-        }
-
-        c4Immutable = build-step 'Set immutable cache headers' {
-          technology 'az storage blob upload-batch --pattern assets/*'
-          description 'Second pass: public, max-age=31536000, immutable'
-        }
-
-        c4Report = build-step 'Report endpoint' {
-          technology 'az storage account show'
-          description 'Prints primaryEndpoints.web to the job log'
-        }
-
-        c4Checkout -> c4Node 'then'
-        c4Node -> c4Install 'then'
-        c4Install -> c4Validate 'then'
-        c4Validate -> c4Build 'then'
-        c4Build -> c4Login 'then'
-        c4Login -> c4Clear 'then'
-        c4Clear -> c4Upload 'then'
-        c4Upload -> c4Immutable 'then'
-        c4Immutable -> c4Report 'then'
       }
 
       deployFunc = workflow 'Deploy PS Function App' {
         technology '.github/workflows/deploy-ps-function-app.yml'
         description '
-          push to master touching psfunctionapp/**, or workflow_dispatch.
-          Save-Module bundles Az.Accounts and Az.Storage into the package
-          before Azure/functions-action@v1 pushes it.
-        '
-      }
+          Trigger: push to master touching psfunctionapp/**, or
+          workflow_dispatch.
 
-      tfPlan = workflow 'Terraform Plan' {
-        technology '.github/workflows/terraform-plan.yml'
-        description '
-          push to any branch except master touching terraform/**, or a
-          pull request, or workflow_dispatch. Read-only: terraform plan
-          with ARM_USE_OIDC true.
+          Save-Module bundles Az.Accounts and Az.Storage into the package,
+          then Azure/functions-action@v1 pushes it to func-nygdev-azadmin.
         '
       }
 
       tfApply = workflow 'Terraform Apply' {
+        #manual
         technology '.github/workflows/terraform-apply.yml'
         description '
-          workflow_dispatch only — never on push. Runs
-          terraform apply -auto-approve with the home IP and SSH key
-          fetched at run time.
-        '
-      }
+          Trigger: workflow_dispatch only — never on push. There is no
+          plan-on-PR workflow, so the diff is only ever seen in this run.
 
-      loginTest = workflow 'Test Azure Login (OIDC)' {
-        technology '.github/workflows/test-azure-login.yml'
-        description '
-          workflow_dispatch only. Smoke test: az account show and
-          az group list, to prove the federated credential still works.
+          Authenticates with ARM_USE_OIDC, fetches the home IP and the SSH
+          public key at run time, then terraform apply -auto-approve.
         '
       }
     }
@@ -190,7 +126,7 @@ model {
     technology 'Azure Blob Storage, AzureAD auth'
     description '
       nygdevtfstate / tfstate / azure-infrastructure.tfstate in
-      rg-nygdev-data — the backend both terraform workflows lock and write
+      rg-nygdev-data — the backend Terraform Apply locks and writes
     '
   }
 
@@ -226,12 +162,14 @@ model {
 
   // --- source to pipeline ------------------------------------------------
   dev -> github.repo 'git push (master)'
-  github.repo -> github.actions 'Triggers workflows (push path filters, pull_request, workflow_dispatch)' #ci
-  github.ghEnv -> github.actions 'Supplies tenant, subscription and client ids to' #ci
+  dev -> github.actions.tfApply 'Starts by hand (workflow_dispatch)' #manual
+  github.repo.srcWf -> github.actions 'Defines the workflows of' #ci
 
   github.repo.srcC4 -> github.actions.deployC4 'Change here runs' #ci
   github.repo.srcPs -> github.actions.deployFunc 'Change here runs' #ci
-  github.repo.srcTf -> github.actions.tfPlan 'Change here runs (off master, or on a PR)' #ci
+  github.repo.srcTf -> github.actions.tfApply 'Applied by (no automatic trigger)' #manual
+
+  github.ghEnv -> github.actions 'Supplies tenant, subscription and client ids to' #ci
 
   // --- pipeline to identity ---------------------------------------------
   github.actions -> entra.ghOidc 'Presents the runner OIDC token (azure/login@v3)' #oidc
@@ -239,15 +177,11 @@ model {
   entra.ghOidc -> azurerm 'Authorises calls against (RBAC on the subscription)'
 
   // --- pipeline to Azure -------------------------------------------------
-  github.actions.deployC4.c4Upload -> cdn.webSite 'Uploads dist/ to (az storage blob upload-batch)'
+  github.actions.deployC4 -> cdn.webSite 'Clears and re-uploads dist/ (az storage blob upload-batch)'
   github.actions.deployFunc -> azadmin 'Deploys the function package (Azure/functions-action@v1)'
-  github.actions.tfPlan -> keyvault 'Reads HomeIP and the SSH public key'
   github.actions.tfApply -> keyvault 'Reads HomeIP and the SSH public key'
-  github.actions.tfPlan -> tfstate 'Reads state (terraform init)'
   github.actions.tfApply -> tfstate 'Locks and writes state'
-  github.actions.tfPlan -> azurerm 'Refreshes and diffs the estate (terraform plan)'
-  github.actions.tfApply -> azurerm 'Creates and updates the estate (terraform apply)'
-  github.actions.loginTest -> azurerm 'Smoke-tests the federated credential against'
+  github.actions.tfApply -> azurerm 'Creates and updates the estate (terraform apply -auto-approve)'
 
   // --- what terraform builds --------------------------------------------
   azurerm -> cdn 'Provisions and configures'
