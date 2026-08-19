@@ -72,9 +72,4 @@ specification {
   tag ci {
     color rgb(99 102 241)
   }
-
-  // Runs only on manual dispatch, never on push
-  tag manual {
-    color rgb(190 24 93)
-  }
 }

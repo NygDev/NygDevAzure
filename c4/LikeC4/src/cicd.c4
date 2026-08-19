@@ -87,14 +87,18 @@ model {
       }
 
       tfApply = workflow 'Terraform Apply' {
-        #manual
         technology '.github/workflows/terraform-apply.yml'
         description '
-          Trigger: workflow_dispatch only — never on push. There is no
-          plan-on-PR workflow, so the diff is only ever seen in this run.
+          Trigger: push to master touching terraform/**, or
+          workflow_dispatch.
 
           Authenticates with ARM_USE_OIDC, fetches the home IP and the SSH
           public key at run time, then terraform apply -auto-approve.
+
+          There is no plan step and no approval gate: everything this
+          configuration manages can be recreated without data loss, so a
+          merge to master is the decision point. State is serialised by a
+          terraform-apply concurrency group.
         '
       }
     }
@@ -162,12 +166,11 @@ model {
 
   // --- source to pipeline ------------------------------------------------
   dev -> github.repo 'git push (master)'
-  dev -> github.actions.tfApply 'Starts by hand (workflow_dispatch)' #manual
   github.repo.srcWf -> github.actions 'Defines the workflows of' #ci
 
   github.repo.srcC4 -> github.actions.deployC4 'Change here runs' #ci
   github.repo.srcPs -> github.actions.deployFunc 'Change here runs' #ci
-  github.repo.srcTf -> github.actions.tfApply 'Applied by (no automatic trigger)' #manual
+  github.repo.srcTf -> github.actions.tfApply 'Change here runs' #ci
 
   github.ghEnv -> github.actions 'Supplies tenant, subscription and client ids to' #ci
 

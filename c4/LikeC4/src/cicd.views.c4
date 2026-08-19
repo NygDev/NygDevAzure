@@ -27,7 +27,6 @@ views {
     // Everything below is true, and belongs in a different view
     exclude
       github.repo.srcWf -> github.actions,   // workflows define themselves
-      dev -> github.actions.tfApply,         // the #manual tag says this
       dev -> cdn.webSite.docs,               // reading the site is not delivery
       entra.ghOidc -> github.actions,        // return leg — see oidcTrust
       entra.ghOidc -> azurerm,               // see oidcTrust
