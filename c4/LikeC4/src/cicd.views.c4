@@ -3,27 +3,38 @@ views {
   view delivery {
     title 'Delivery — GitHub to Azure'
     description '
-      Every path from this repository into the subscription: what triggers
-      each workflow, how a runner gets an Azure token without a stored
-      secret, and what it is allowed to touch.
+      One question only: which workflow can touch what. Triggers are on
+      each workflow, the token exchange is in oidcTrust, and the source
+      files that fire each run are in likec4Pipeline — keeping them out of
+      here is what makes this readable.
     '
 
     include
       dev,
       github,
       github.repo,
-      github.repo.*,
       github.ghEnv,
       github.actions,
       github.actions.*,
       entra,
-      entra.*,
+      entra.ghOidc,
       azurerm,
       tfstate,
       keyvault,
       azadmin,
-      cdn,
-      cdn.webSite
+      cdn
+
+    // Everything below is true, and belongs in a different view
+    exclude
+      github.repo.srcWf -> github.actions,   // workflows define themselves
+      dev -> github.actions.tfApply,         // the #manual tag says this
+      dev -> cdn.webSite.docs,               // reading the site is not delivery
+      entra.ghOidc -> github.actions,        // return leg — see oidcTrust
+      entra.ghOidc -> azurerm,               // see oidcTrust
+      azurerm -> cdn,                        // provisioning — see index
+      azurerm -> azadmin,
+      azadmin -> cdn,                        // runtime, not delivery — see cdn
+      cdn -> azadmin
 
     autoLayout LeftRight 160 110
 
@@ -33,13 +44,13 @@ views {
     style dev {
       color green
     }
-    style github._, github.repo._, github.actions._ {
+    style github._, github.actions._ {
       color indigo
     }
     style entra._ {
       color amber
     }
-    style azurerm, tfstate, keyvault, azadmin, cdn, cdn.webSite {
+    style azurerm, tfstate, keyvault, azadmin, cdn {
       color primary
     }
   }
