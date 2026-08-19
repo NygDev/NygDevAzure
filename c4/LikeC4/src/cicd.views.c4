@@ -139,7 +139,6 @@ views {
     github.actions.deployC4 -> entra.ghOidc 'Presents the runner OIDC token'
     entra.ghOidc -> github.actions.deployC4 'Returns a short-lived access token'
     github.actions.deployC4 -> cdn.webSite 'Empties $web, uploads dist/, re-uploads assets/* as immutable'
-    github.actions.deployC4 -> dev 'Prints primaryEndpoints.web to the job log'
     cdn.webSite -> user 'Static website hosting serves the new build'
 
     autoLayout LeftRight
