@@ -129,22 +129,24 @@ resource "azurerm_role_assignment" "azadmin_cdn_storage" {
   principal_id         = azurerm_function_app_flex_consumption.azadmin.identity[0].principal_id
 }
 
-# Deployment artifact container for the logger function app
-resource "azurerm_storage_container" "logger" {
-  name                  = "logger-deploy"
+# Deployment artifact container for the api function app
+resource "azurerm_storage_container" "api" {
+  name                  = "api-deploy"
   storage_account_id    = azurerm_storage_account.consumption.id
   container_access_type = "private"
 }
 
-# Daily logger — .NET 10 isolated on Flex Consumption
-resource "azurerm_function_app_flex_consumption" "logger" {
-  name                = "func-nygdev-logger"
+# Placeholder .NET 10 isolated app on Flex Consumption — provisioned empty, no
+# code deployed yet. App-specific settings (CORS, auth, data bindings) and any
+# role assignments the app needs get added when something lands here.
+resource "azurerm_function_app_flex_consumption" "api" {
+  name                = "func-nygdev-api"
   resource_group_name = azurerm_resource_group.consumption.name
   location            = azurerm_resource_group.consumption.location
   service_plan_id     = azurerm_service_plan.flex_dotnet.id
 
   storage_container_type      = "blobContainer"
-  storage_container_endpoint  = "${azurerm_storage_account.consumption.primary_blob_endpoint}${azurerm_storage_container.logger.name}"
+  storage_container_endpoint  = "${azurerm_storage_account.consumption.primary_blob_endpoint}${azurerm_storage_container.api.name}"
   storage_authentication_type = "StorageAccountConnectionString"
   storage_access_key          = azurerm_storage_account.consumption.primary_access_key
 
@@ -160,24 +162,9 @@ resource "azurerm_function_app_flex_consumption" "logger" {
 
   app_settings = {
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
-    CosmosDb__AccountEndpoint             = azurerm_cosmosdb_account.db.endpoint
-
-    "AzureAd__Instance" = "https://login.microsoftonline.com/"
-    "AzureAd__TenantId" = var.tenant_id
-    "AzureAd__ClientId" = "b871e062-cdbf-417c-8e91-6d23d0189ce5"
   }
 
-  site_config {
-    cors {
-      allowed_origins = [
-        "https://portal.azure.com",
-        "https://ms.portal.azure.com",
-        "http://localhost:8000",
-        "https://nygdevcdn.z1.web.core.windows.net",
-        "https://gymlog.nygard.dev"
-      ]
-    }
-  }
+  site_config {}
 
   tags = local.common_tags
 
@@ -192,13 +179,4 @@ resource "azurerm_function_app_flex_consumption" "logger" {
       tags["hidden-link: /app-insights-resource-id"],
     ]
   }
-}
-
-# Grant logger built-in data contributor on the Cosmos DB account
-resource "azurerm_cosmosdb_sql_role_assignment" "logger_cosmos" {
-  resource_group_name = azurerm_resource_group.databases.name
-  account_name        = azurerm_cosmosdb_account.db.name
-  role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
-  principal_id        = azurerm_function_app_flex_consumption.logger.identity[0].principal_id
-  scope               = azurerm_cosmosdb_account.db.id
 }

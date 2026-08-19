@@ -9,35 +9,6 @@ views {
     autoLayout LeftRight 140 120
   }
 
-  view gym of gym {
-    title 'Gym Logger — Containers'
-    description '
-      Offline-first PWA, its Functions API and Cosmos DB backend,
-      with Entra ID sign-in and JWT validation.
-    '
-
-    include
-      *,
-      user,
-      entra,
-      cdn
-
-    autoLayout LeftRight 180 100
-
-    style * {
-      color secondary
-    }
-    style gym {
-      opacity 0%
-    }
-    style gym._ {
-      color primary
-    }
-    style user {
-      color green
-    }
-  }
-
   view rpg of rpg {
     title 'RPG Server — Containers'
     description 'Caddy reverse proxy and Foundry VTT on rpg-vm'

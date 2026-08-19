@@ -13,8 +13,6 @@ views {
       internet.*
 
     exclude
-      azure.** -> internet.entraId,
-      azure.rgWeb.cdnStorage.pwaFiles -> azure.rgConsumption.aspDotnet.loggerApi,
       azure.rgWeb.cdnStorage.cdnBlob -> internet.browser,
       internet.browser -> azure.rgVm.**
 
@@ -31,41 +29,6 @@ views {
     }
     style azure.rgWeb._, azure.rgDb._ {
       color amber
-    }
-  }
-
-  deployment view gymDeployment {
-    title 'Deployment / Gym Logger'
-    description 'Where each Gym Logger container runs'
-
-    include
-      internet.browser,
-      internet.entraId,
-      azure,
-      azure.rgWeb,
-      azure.rgWeb.cdnStorage._,
-      azure.rgConsumption,
-      azure.rgConsumption.aspDotnet._,
-      azure.rgDb._
-
-    exclude
-      azure.rgWeb.cdnStorage.cdnBlob <-> azure.rgConsumption,
-      internet.browser -> azure.rgWeb,
-      internet.browser -> azure
-
-    autoLayout TopBottom 130 130
-
-    style * {
-      color secondary
-    }
-    style azure {
-      color muted
-    }
-    style azure.rgConsumption.aspDotnet.loggerApi, azure.rgWeb.cdnStorage.pwaFiles, azure.rgDb.cosmos {
-      color primary
-    }
-    style internet.browser {
-      color green
     }
   }
 

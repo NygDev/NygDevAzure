@@ -7,10 +7,6 @@ deployment {
         color green
       }
     }
-
-    entraId = instanceOf entra {
-      title 'Microsoft Entra ID (tenant)'
-    }
   }
 
   azure = subscription 'Azure Subscription' {
@@ -21,8 +17,8 @@ deployment {
 
       aspDotnet = service-plan 'asp-nygdev-flex-dotnet' {
         technology 'FC1 / Linux'
-        loggerApi = instanceOf gym.api {
-          description 'func-nygdev-logger — 512 MB instances'
+        apiApp = instanceOf api {
+          description 'func-nygdev-api — 512 MB instances, empty (no code deployed)'
         }
       }
 
@@ -34,7 +30,7 @@ deployment {
       }
 
       funcStorage = blob-storage 'nygdevfunc' {
-        description 'Deployment packages (azadmin-deploy, logger-deploy containers)'
+        description 'Deployment packages (azadmin-deploy, api-deploy containers)'
       }
 
       appInsights = monitoring 'appi-nygdev-consumption' {
@@ -43,7 +39,7 @@ deployment {
     }
 
     rgDb = resource-group 'rg-nygdev-db' {
-      cosmos = instanceOf gym.db {
+      cosmosDb = instanceOf cosmos {
         title 'nygdev-cosmos-db'
         description 'GlobalDocumentDB / db / primary container'
       }
@@ -58,14 +54,11 @@ deployment {
       }
 
       gymlogSwa = static-site 'gymlog' {
-        description 'Provisioned, currently unused — PWA is served from nygdevcdn instead'
+        description 'Provisioned, currently unused'
       }
 
       cdnStorage = blob-storage 'nygdevcdn' {
         cdnBlob = instanceOf cdn
-        pwaFiles = instanceOf gym.pwa {
-          description 'Static website ($web) hosting the PWA assets'
-        }
       }
     }
 
@@ -115,6 +108,6 @@ deployment {
   internet.browser -> azure.rgNetwork.pip 'HTTPS to rpg.nygard.dev (rpg.norwayeast.cloudapp.azure.com)'
   azure.rgNetwork.pip -> azure.rgVm.rpgVm.caddyProc 'Forwards 80/443 via rpg-snet'
   azure.rgVm.rpgVm.foundryProc -> azure.rgData.foundryData 'Stores worlds, modules and media on (attached data disk)'
-  azure.rgConsumption.aspDotnet.loggerApi -> azure.rgConsumption.appInsights 'Telemetry (OpenTelemetry)'
+  azure.rgConsumption.aspDotnet.apiApp -> azure.rgConsumption.appInsights 'Telemetry (OpenTelemetry)'
   azure.rgConsumption.aspPs.azadminApp -> azure.rgConsumption.appInsights 'Telemetry'
 }

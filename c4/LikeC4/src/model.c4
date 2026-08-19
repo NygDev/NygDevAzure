@@ -1,42 +1,26 @@
 model {
 
   user = actor 'User' {
-    description 'Uses the apps, websites and game server'
+    description 'Uses the websites and game server'
 
-    -> gym.pwa 'Logs lifts with'
     -> web 'Visits (https://nygard.dev)'
     -> rpg.client 'Plays on (rpg.nygard.dev)'
   }
 
-  entra = identity-provider 'Microsoft Entra ID' {
-    description 'Identity provider — issues JWTs for the Logger API'
+  api = function-app 'Placeholder API' {
+    technology '.NET 10 isolated (Flex Consumption)'
+    description '
+      func-nygdev-api — provisioned empty by terraform,
+      reserved for a future app. No code deployed.
+    '
   }
 
-  gym = system 'Gym Logger' {
-    description 'Offline-first PWA for logging lift sessions'
-
-    pwa = webapp 'Gym Logger PWA' {
-      technology 'HTML/JS PWA'
-      description '
-        Offline-first web app (service worker + IndexedDB),
-        served from nygdevcdn static website
-      '
-    }
-
-    api = function-app 'Logger API' {
-      technology '.NET 10 isolated (Flex Consumption)'
-      description 'func-nygdev-logger — HttpTrigger, GetExercises, LogLiftSession'
-    }
-
-    db = cosmos-db 'Cosmos DB' {
-      technology 'Azure Cosmos DB (NoSQL)'
-      description 'nygdev-cosmos-db / db / primary'
-    }
-
-    pwa -> entra 'Signs user in, obtains JWT'
-    pwa -> api 'Calls (HTTPS/JSON, bearer JWT)'
-    api -> entra 'Validates JWTs against'
-    api -> db 'Reads/writes (managed identity)' #managed-identity
+  cosmos = cosmos-db 'Cosmos DB' {
+    technology 'Azure Cosmos DB (NoSQL)'
+    description '
+      nygdev-cosmos-db / db / primary — provisioned on the free tier,
+      currently unused by any app
+    '
   }
 
   web = static-web-app 'nygard.dev' {
@@ -71,8 +55,8 @@ model {
 
   cdn = storage-account 'CDN Storage' {
     description '
-      nygdevcdn storage account — Gym Logger PWA static website
-      and CDN for Foundry media (foundry container)
+      nygdevcdn storage account — CDN for Foundry media
+      (foundry container)
     '
   }
 
@@ -89,5 +73,5 @@ model {
   rpg.foundry -> cdn 'Holds asset URLs pointing to'
   azadmin -> cdn 'Sets Cache-Control on blobs (managed identity)' #managed-identity
   cdn -> azadmin 'Triggers on blob-created events (Event Grid)'
-  cdn -> user 'Serves Gym Logger PWA and Foundry media to (direct browser fetch)'
+  cdn -> user 'Serves Foundry media to (direct browser fetch)'
 }
