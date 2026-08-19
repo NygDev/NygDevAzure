@@ -46,15 +46,11 @@ deployment {
     }
 
     rgWeb = resource-group 'rg-nygdev-web' {
-      description 'Web front-ends (Static Web Apps in westeurope, Free SKU)'
+      description 'Web front-ends (Static Web App in westeurope, Free SKU)'
 
       apex = static-site 'nygdevapex' {
         description 'Serves https://nygard.dev'
         webapex = instanceOf web
-      }
-
-      gymlogSwa = static-site 'gymlog' {
-        description 'Provisioned, currently unused'
       }
 
       cdnStorage = blob-storage 'nygdevcdn' {
