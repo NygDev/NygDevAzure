@@ -9,6 +9,72 @@ views {
     autoLayout LeftRight 140 120
   }
 
+  view dataflow {
+    title 'Data Flow — User to Azure'
+    description '
+      One page, read top to bottom: what a visitor touches, what sits
+      behind it, and what every box actually runs on.
+
+      Two entry points — the apex website and the Foundry client — and
+      both lead to the RPG Server, where Caddy terminates TLS and hands
+      the request to the Foundry process on :30000. Foundry asset URLs
+      point at the nygdevcdn storage account, and a blob landing there is
+      what wakes the admin function. Placeholder API and Cosmos DB stay
+      grey: provisioned and reachable, carrying no traffic yet.
+
+      Two return legs are deliberately left out, because drawing them
+      turns a straight read into a loop — Foundry serving the game UI back
+      to the client (see `rpg`) and the storage account serving media
+      straight to the browser (see `cdn`). Delivery is out of scope here:
+      for the repository, the workflows and the OIDC identity see
+      `delivery`.
+    '
+
+    include
+      user,
+      web,
+      rpg,
+      rpg.*,
+      cdn,
+      azadmin,
+      api,
+      cosmos
+
+    exclude
+      rpg.foundry -> rpg.client,   // return leg — see `rpg`
+      cdn -> user                  // direct media fetch — see `cdn`
+
+    autoLayout TopBottom 130 110
+
+    style * {
+      color secondary
+    }
+    style user {
+      color green
+    }
+    // Runs in the visitor browser
+    style web, rpg.client {
+      color sky
+    }
+    style rpg {
+      color muted
+      opacity 15%
+    }
+    // Runs on the VM
+    style rpg.caddy, rpg.foundry {
+      color indigo
+    }
+    // Azure-managed backend
+    style cdn, azadmin {
+      color primary
+    }
+    // Provisioned, no traffic yet
+    style api, cosmos {
+      color muted
+      opacity 15%
+    }
+  }
+
   view rpg of rpg {
     title 'RPG Server — Containers'
     description 'Caddy reverse proxy and Foundry VTT on rpg-vm'

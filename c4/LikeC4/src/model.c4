@@ -24,6 +24,7 @@ model {
   }
 
   web = static-web-app 'nygard.dev' {
+    technology 'Azure Static Web App (Free SKU, westeurope)'
     description '
       Personal apex website (nygdevapex) — free-tier Azure Static Web App.
       Links and Foundry RPG server status.
@@ -31,6 +32,7 @@ model {
   }
 
   rpg = virtual-machine 'RPG Server' {
+    technology 'Azure Linux VM — Standard_B2s, Ubuntu 26.04 LTS'
     description 'rpg-vm — Ubuntu Linux VM hosting Foundry VTT, behind rpg-pip public IP'
 
     client = webapp 'FoundryVTT Client' {
@@ -54,6 +56,7 @@ model {
   }
 
   cdn = storage-account 'CDN Storage' {
+    technology 'Azure Blob Storage — foundry media + $web static website'
     description '
       nygdevcdn storage account — CDN for Foundry media
       (foundry container)
