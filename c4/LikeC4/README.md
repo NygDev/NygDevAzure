@@ -19,7 +19,7 @@ This model is published by `.github/workflows/deploy-likec4.yml`: a push to mast
 
 - `src/_spec.c4` — element kinds (Azure-flavoured) and tags
 - `src/model.c4` — logical model: RPG Server, nygard.dev, CDN, Admin Automation, Placeholder API, Cosmos DB
-- `src/model.views.c4` — landscape, runtime data flow + container views
+- `src/model.views.c4` — landscape, top-level data flow + container views
 - `src/cicd.spec.c4` — element kinds for the delivery plane (repository, workflow, Entra app registration, blob container)
 - `src/cicd.c4` — the delivery model: the repo, the three workflows, the OIDC identity, and the `$web` / `foundry` containers on `nygdevcdn`
 - `src/cicd.views.c4` — delivery views (see below)
@@ -32,7 +32,7 @@ Each workflow is a single element. What a run does step by step lives in the ele
 | View | What it answers |
 | --- | --- |
 | `index` | The whole estate, delivery plane included |
-| `dataflow` | The runtime estate only: user to website, user to RPG Server to Azure, and what each box runs on |
+| `dataflow` | Top level, both flows on one page: user to website and RPG Server, developer to GitHub to Azure, and what each box runs on |
 | `delivery` | Every path from this repo into the subscription: triggers, identity, blast radius |
 | `likec4Pipeline` | How `.c4` text reaches `$web` |
 | `likec4Deploy` | The same as a dynamic/sequence view, one push followed end to end |
