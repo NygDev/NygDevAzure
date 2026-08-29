@@ -1,9 +1,13 @@
+using ApiFunctionApp.Whoop;
+using Azure.Core;
 using Azure.Identity;
+using Azure.Security.KeyVault.Secrets;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 
@@ -13,24 +17,29 @@ builder.Services
     .AddApplicationInsightsTelemetryWorkerService()
     .ConfigureFunctionsApplicationInsights();
 
+// One credential for every Azure client in the app. It caches tokens per
+// scope, so sharing it means Cosmos and Key Vault each authenticate once per
+// token lifetime rather than once per client.
+//
+// The app runs on a user-assigned identity, which has to be named: an app can
+// carry several, so the platform won't pick one. Terraform supplies the client
+// id. Left unset locally, where the value is null and DefaultAzureCredential
+// falls through to a developer sign-in instead.
+builder.Services.AddSingleton<TokenCredential>(_ =>
+    new DefaultAzureCredential(new DefaultAzureCredentialOptions
+    {
+        ManagedIdentityClientId = Environment.GetEnvironmentVariable("MANAGED_IDENTITY_CLIENT_ID"),
+    }));
+
 // One CosmosClient for the lifetime of the host — it owns the connection pool
 // and the Entra token cache, so a per-request client would re-authenticate on
 // every call. The account has local_authentication_disabled, so the app's
 // managed identity is the only way in.
-builder.Services.AddSingleton(_ =>
+builder.Services.AddSingleton(provider =>
 {
     var endpoint = Environment.GetEnvironmentVariable("COSMOS_ENDPOINT")
         ?? throw new InvalidOperationException(
             "COSMOS_ENDPOINT is not configured; terraform sets it on the function app.");
-
-    // The app runs on a user-assigned identity, which has to be named: an app
-    // can carry several, so the platform won't pick one. Terraform supplies the
-    // client id. Left unset locally, where the value is null and
-    // DefaultAzureCredential falls through to a developer sign-in instead.
-    var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
-    {
-        ManagedIdentityClientId = Environment.GetEnvironmentVariable("MANAGED_IDENTITY_CLIENT_ID"),
-    });
 
     var options = new CosmosClientOptions
     {
@@ -39,7 +48,40 @@ builder.Services.AddSingleton(_ =>
         ConnectionMode = ConnectionMode.Gateway,
     };
 
-    return new CosmosClient(endpoint, credential, options);
+    return new CosmosClient(endpoint, provider.GetRequiredService<TokenCredential>(), options);
 });
+
+// ---------------------------------------------------------------------------
+// WHOOP
+//
+// Every registration below is a singleton resolved lazily, on the first WHOOP
+// request. That matters: WHOOP_CLIENT_ID and friends are missing in a local
+// checkout without them, and eager construction would take the whole worker
+// down — SpotRead included — rather than failing the one endpoint that needs
+// the configuration.
+// ---------------------------------------------------------------------------
+builder.Services.AddSingleton(_ => WhoopOptions.FromEnvironment());
+
+builder.Services.AddSingleton(provider => new SecretClient(
+    provider.GetRequiredService<WhoopOptions>().KeyVaultUri,
+    provider.GetRequiredService<TokenCredential>()));
+
+builder.Services.AddSingleton<WhoopSecretStore>();
+
+builder.Services.AddSingleton(provider => new WhoopClient(
+    // One HttpClient for the app's lifetime, so connections to WHOOP are
+    // reused across invocations. PooledConnectionLifetime is what keeps that
+    // from pinning a stale DNS answer forever — the connection is retired on a
+    // timer and the next one re-resolves.
+    new HttpClient(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(15),
+    })
+    {
+        Timeout = TimeSpan.FromSeconds(30),
+    },
+    provider.GetRequiredService<WhoopOptions>(),
+    provider.GetRequiredService<WhoopSecretStore>(),
+    provider.GetRequiredService<ILogger<WhoopClient>>()));
 
 builder.Build().Run();

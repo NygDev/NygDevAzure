@@ -11,11 +11,36 @@ model {
   api = function-app 'API' {
     technology '.NET 10 isolated (Flex Consumption)'
     description '
-      func-nygdev-api — SpotRead (HTTP, anonymous) point-reads
-      a single document out of Cosmos and returns it verbatim.
-      Called straight from the run.nygard.dev page, so CORS lists
-      that origin and a function key would only sit in public
-      JavaScript. Runs as the user-assigned identity id-nygdev-api.
+      func-nygdev-api. SpotRead (HTTP, anonymous) point-reads a single
+      document out of Cosmos and returns it verbatim. Called straight from
+      the run.nygard.dev page, so CORS lists that origin and a function key
+      would only sit in public JavaScript.
+
+      Three more endpoints hold the WHOOP integration: whoop/authorize and
+      whoop/callback run the one-time consent, whoop/status proves the
+      chain still works. Runs as the user-assigned identity id-nygdev-api,
+      which is how it reaches both Cosmos and the vault.
+    '
+  }
+
+  vault = key-vault 'Key Vault' {
+    technology 'Azure Key Vault (standard, RBAC data plane)'
+    description '
+      nygdev — holds whoop-clientsecret, copied in by hand from the WHOOP
+      developer dashboard, and whoop-token, the current refresh token.
+      The second one is not configuration: the API rewrites it every time
+      WHOOP rotates it, so the vault is where that state lives.
+    '
+  }
+
+  whoop = external-system 'WHOOP' {
+    technology 'WHOOP API v2 — OAuth 2.0 + REST'
+    description '
+      Wearable platform, read-only to us and gated by an authorization code
+      grant. A person consents once and that yields a refresh token; every
+      refresh then rotates it, killing the old one the moment a new one is
+      issued. So the replacement has to be captured and stored or the
+      integration locks itself out.
     '
   }
 
@@ -94,6 +119,15 @@ model {
   running -> api 'Fetches the spot read from the browser (GET /api/spotread, cross-origin)'
 
   api -> cosmos 'Point-reads id 1 / partition run_marathon (id-nygdev-api)' #managed-identity
+
+  // The refresh token is read, spent and rewritten on the same call, which is
+  // why the identity holds Secrets Officer here rather than a reader role.
+  api -> vault 'Reads whoop-clientsecret, reads and rewrites whoop-token (id-nygdev-api)' #managed-identity
+  api -> whoop 'Refreshes the access token, then reads profile and activity data (HTTPS)'
+
+  // Once, by hand. The refresh grant can keep a token pair alive forever but
+  // cannot create one — only a person at the consent screen can do that.
+  user -> api 'Authorizes WHOOP access once (GET /api/whoop/authorize)'
 
   web -> rpg.caddy 'Polls Foundry status (GET /api/status)'
   rpg.foundry -> cdn 'Holds asset URLs pointing to'

@@ -7,6 +7,11 @@ deployment {
         color green
       }
     }
+
+    whoopApi = instanceOf whoop {
+      title 'api.prod.whoop.com'
+      description 'OAuth token endpoint and the v2 data API, both outside the subscription'
+    }
   }
 
   azure = subscription 'Azure Subscription' {
@@ -18,7 +23,7 @@ deployment {
       aspDotnet = service-plan 'asp-nygdev-flex-dotnet' {
         technology 'FC1 / Linux'
         apiApp = instanceOf api {
-          description 'func-nygdev-api — 512 MB instances, hosts SpotRead, runs as id-nygdev-api'
+          description 'func-nygdev-api — 512 MB instances, hosts SpotRead and the WHOOP endpoints, runs as id-nygdev-api'
         }
       }
 
@@ -101,7 +106,10 @@ deployment {
       description 'Not created by terraform — managed as minimal definitions'
 
       kv = key-vault 'nygdev' {
-        description 'Secrets; alongside the nygdev-ed25519 SSH public key resource'
+        description '
+          Secrets, on an RBAC data plane; alongside the nygdev-ed25519 SSH
+          public key resource. Holds whoop-clientsecret and whoop-token.
+        '
       }
     }
   }
@@ -117,6 +125,8 @@ deployment {
   azure.rgNetwork.pip -> azure.rgVm.rpgVm.caddyProc 'Forwards 80/443 via rpg-snet'
   azure.rgVm.rpgVm.foundryProc -> azure.rgData.foundryData 'Stores worlds, modules and media on (attached data disk)'
   azure.rgConsumption.aspDotnet.apiApp -> azure.rgDb.cosmosDb 'Point read over HTTPS/443 (gateway mode, Entra token for id-nygdev-api)'
+  azure.rgConsumption.aspDotnet.apiApp -> azure.rgSecurity.kv 'Reads whoop-clientsecret, writes the rotated whoop-token (HTTPS/443, Entra token for id-nygdev-api)'
+  azure.rgConsumption.aspDotnet.apiApp -> internet.whoopApi 'OAuth token grants and v2 reads (HTTPS to api.prod.whoop.com)'
   azure.rgConsumption.aspDotnet.apiApp -> azure.rgConsumption.appInsights 'Telemetry (OpenTelemetry)'
   azure.rgConsumption.aspPs.azadminApp -> azure.rgConsumption.appInsights 'Telemetry'
 }

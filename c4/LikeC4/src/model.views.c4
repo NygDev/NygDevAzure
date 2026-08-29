@@ -34,6 +34,14 @@ views {
       for that, and `oidcTrust` for how a runner gets an Azure token
       without a stored secret.
 
+      One more leg runs outward from the API, to WHOOP, and that one is
+      drawn from the API rather than from the browser because it genuinely
+      is server-side: the client secret and the refresh token never leave
+      Azure, and the vault beside it is where the refresh token lives
+      between calls. The visitor edge into the API is the odd one out on
+      this page — it is the one-time WHOOP consent, opened by hand, not
+      something either site does.
+
       Two return legs are deliberately left out, because drawing them
       turns a straight read into a loop — Foundry serving the game UI back
       to the client (see `rpg`) and the storage account serving media
@@ -53,7 +61,9 @@ views {
       cdn,
       azadmin,
       api,
-      cosmos
+      cosmos,
+      vault,
+      whoop
 
     exclude
       rpg.foundry -> rpg.client,             // return leg — see `rpg`
@@ -87,8 +97,12 @@ views {
       color amber
     }
     // Azure-managed backend
-    style cdn, azadmin, api, cosmos {
+    style cdn, azadmin, api, cosmos, vault {
       color primary
+    }
+    // Outside the estate entirely
+    style whoop {
+      color muted
     }
   }
 

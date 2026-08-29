@@ -47,3 +47,13 @@ output "api_function_app_hostname" {
   description = "Default hostname of the api function app. The run.nygard.dev site hardcodes this origin in main.js (SPOT_URL) and in the connect-src of its staticwebapp.config.json; both have to match it, and it has to appear in the app's CORS allowed origins."
   value       = azurerm_function_app_flex_consumption.api.default_hostname
 }
+
+output "whoop_redirect_uri" {
+  description = "Register this exactly as a redirect URL on the WHOOP application in the developer dashboard. WHOOP compares it on both legs of the authorization code grant, so a trailing slash or a different host is a rejected flow rather than a warning. The app derives the same string from WEBSITE_HOSTNAME at run time."
+  value       = "https://${azurerm_function_app_flex_consumption.api.default_hostname}/api/whoop/callback"
+}
+
+output "whoop_authorize_url" {
+  description = "Open this once, in a browser, to grant the app access to a WHOOP account and seed the whoop-token secret. Needs ?code=<function key> appended — the endpoint is at Function auth level."
+  value       = "https://${azurerm_function_app_flex_consumption.api.default_hostname}/api/whoop/authorize"
+}
