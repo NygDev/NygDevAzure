@@ -41,3 +41,6 @@ Each workflow is a single element. What a run does step by step lives in the ele
 | `azureDeployment` | Resource groups, plans, VNet/VM and storage, as provisioned by terraform |
 | `foundryDeployment` | The FoundryVTT chain |
 | `rpg`, `cdn` | Container-level views |
+| `whoopSync` | The API, WHOOP and Cosmos DB: what the daily sync reads, spends and writes |
+| `whoopBootstrap` | The one-time OAuth consent, as a sequence |
+| `whoopRefresh` | Spending and replacing the refresh token, as a sequence |

@@ -19,15 +19,16 @@ model {
       user-assigned identity id-nygdev-api, which is how it reaches both
       Cosmos and the vault without holding a key or a connection string.
 
-      SpotRead (anonymous) point-reads one document out of Cosmos for the
-      run.nygard.dev page. That is why CORS lists that origin, and why
-      there is no function key on it: the caller is public JavaScript, so
-      a key would be published with the page.
+      The WHOOP integration is what it carries. whoop/authorize and
+      whoop/callback run the one-time consent between them; whoop/status refreshes and
+      reads the profile, which is the cheapest proof that the whole chain
+      is still alive; whoop/sync walks the WHOOP collections into Cosmos on
+      demand, a budgeted slice at a time.
 
-      Three more endpoints hold the WHOOP integration. whoop/authorize and
-      whoop/callback run the one-time consent between them; whoop/status
-      refreshes and reads the profile, which is the cheapest proof that the
-      whole chain is still alive.
+      One timer trigger runs that same sync unattended, daily at 07:00 UTC.
+      Both go through a single runner holding a single gate, so a manual
+      call landing on top of the scheduled run stands down rather than
+      racing it for the cursor.
     '
   }
 
@@ -116,12 +117,15 @@ model {
   // staticwebapp.config.json, and the function app's CORS allowed origins.
   running -> api 'Fetches the spot read from the browser (GET /api/spotread, cross-origin)'
 
-  api -> cosmos 'Point-reads id 1 / partition run_marathon (id-nygdev-api)' #managed-identity
+  // Upserts by WHOOP's own id, which is what makes a re-sync idempotent: a
+  // record WHOOP rescored overwrites its earlier self rather than landing
+  // beside it. The cursors live in the same container, one per collection.
+  api -> cosmos 'Upserts WHOOP records and sync cursors, partitioned by type (id-nygdev-api)' #managed-identity
 
   // The refresh token is read, spent and rewritten on the same call, which is
   // why the identity holds Secrets Officer here rather than a reader role.
   api -> keyvault 'Reads whoop-clientsecret, reads and rewrites whoop-token (id-nygdev-api)' #managed-identity
-  api -> whoop 'Refreshes the access token, then reads profile and activity data (HTTPS)'
+  api -> whoop 'Refreshes the access token, then pages cycles, sleep, workouts and recovery (HTTPS)'
 
   // Once, by hand. The refresh grant can keep a token pair alive forever but
   // cannot create one — only a person at the consent screen can do that.

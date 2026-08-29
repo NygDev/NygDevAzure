@@ -150,6 +150,62 @@ views {
     }
   }
 
+  view whoopSync {
+    title 'WHOOP Sync — API, WHOOP and Cosmos DB'
+    description '
+      The recurring half of the WHOOP integration, and the only part of the
+      estate that runs with nobody watching. Read left to right: the API
+      opens the vault, spends what it finds there on WHOOP, and writes what
+      comes back into Cosmos.
+
+      The vault is on this page because the other two legs do not work
+      without it. WHOOP rotates the refresh token on every renewal and kills
+      the old one immediately, so the token is not configuration that sits
+      in an app setting — it is state the API reads and rewrites on the same
+      call, which is why the identity holds Secrets Officer rather than a
+      reader role. `whoopRefresh` is that exchange in order.
+
+      What travels the WHOOP leg is four collections — cycles, sleep,
+      workouts and recovery — paged 25 records at a time. The first runs
+      walk history backwards; once a collection runs out of history every
+      later run re-reads the last week instead, because WHOOP filters on
+      start time and a record it rescored keeps the start it always had. A
+      "since last sync" query would never see it again.
+
+      The Cosmos leg is an upsert keyed on the id WHOOP itself gives a
+      record, which is what makes re-reading that week free of duplicates,
+      and it carries the cursors too — one document per collection, saying
+      how far back the backfill has got. That is the whole reason a run can
+      stop on a budget and a later one can pick it up.
+
+      Two triggers drive it and both are the API: /api/whoop/sync on demand,
+      and a timer at 07:00 UTC daily. They share one runner and one gate, so
+      only ever one of them is walking the cursor. The timer does not call
+      the endpoint — there is no HTTP hop between them, and drawing a second
+      box for the schedule would suggest one.
+    '
+
+    include
+      api,
+      keyvault,
+      whoop,
+      cosmos
+
+    autoLayout LeftRight 150 120
+
+    style * {
+      color secondary
+    }
+    // Ours, and inside Azure
+    style api, cosmos, keyvault {
+      color primary
+    }
+    // Outside the estate entirely
+    style whoop {
+      color muted
+    }
+  }
+
   dynamic view whoopBootstrap {
     title 'WHOOP consent — the one-time bootstrap'
     description '
