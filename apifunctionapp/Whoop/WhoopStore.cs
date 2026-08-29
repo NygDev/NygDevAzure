@@ -25,17 +25,16 @@ public sealed class WhoopStore(CosmosClient cosmosClient, ILogger<WhoopStore> lo
     private const string ContainerName = "primary";
 
     /// <summary>
-    /// Where the cursors live. The container's partition key path is
-    /// /partition and the value is the document's type, so the cursors get a
-    /// type — and therefore a partition — of their own rather than sitting
-    /// among the records they track.
+    /// Where the cursors live. The container is partitioned on /type, so
+    /// giving the cursors a type of their own keeps them out of the partitions
+    /// holding the records they track.
     /// </summary>
     public const string SyncStateType = "whoop_sync_state";
 
     // Written by this app, so a WHOOP field of the same name must not overwrite
     // them — the copy loop below skips these names.
     private static readonly HashSet<string> OwnedProperties =
-        new(StringComparer.Ordinal) { "id", "partition", "type", "ingested_at" };
+        new(StringComparer.Ordinal) { "id", "type", "ingested_at" };
 
     private Container Container => cosmosClient.GetContainer(DatabaseName, ContainerName);
 
@@ -57,11 +56,10 @@ public sealed class WhoopStore(CosmosClient cosmosClient, ILogger<WhoopStore> lo
 
             writer.WriteString("id", id);
 
-            // Partition and type carry the same value deliberately. The
-            // container's key path is /partition, so that is the name Cosmos
-            // routes on; type is what a reader of the document — or a query,
-            // once this container is indexed — should be reading.
-            writer.WriteString("partition", collection.Type);
+            // The container's partition key path, and what the document says
+            // it is. One field doing both jobs: Cosmos routes on it, and a
+            // reader can tell what they are holding without consulting
+            // anything else.
             writer.WriteString("type", collection.Type);
 
             // When this copy was taken, as distinct from WHOOP's own
@@ -85,8 +83,8 @@ public sealed class WhoopStore(CosmosClient cosmosClient, ILogger<WhoopStore> lo
 
         payload.Position = 0;
 
-        // Stream overload, matching SpotRead: the bytes written are the bytes
-        // stored, with no POCO or serializer settings in between — which also
+        // Stream overload: the bytes written are the bytes stored, with no
+        // POCO or serializer settings in between — which also
         // sidesteps the CosmosClient's default Newtonsoft serializer, whose
         // defaults would reshape a System.Text.Json payload on the way through.
         using var response = await Container.UpsertItemStreamAsync(

@@ -37,6 +37,11 @@ resource "azurerm_cosmosdb_sql_database" "db" {
   throughput          = 1000
 }
 
+# Partitioned on /type: a document says what it is, and that is also what
+# Cosmos routes on. Changing partition_key_paths is ForceNew — terraform would
+# destroy and recreate the container, taking every document with it — so this
+# value is not one to edit casually. Check `terraform plan` shows no
+# replacement before applying.
 resource "azurerm_cosmosdb_sql_container" "primary" {
   name                  = "primary"
   resource_group_name   = azurerm_resource_group.databases.name

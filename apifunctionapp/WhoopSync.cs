@@ -39,6 +39,16 @@ public class WhoopSync(
 
     private static readonly TimeSpan MaxBudget = TimeSpan.FromSeconds(200);
 
+    /// <summary>
+    /// One sync at a time. Two overlapping runs would read the same cursor,
+    /// fetch the same pages and race each other writing it back, so the second
+    /// caller is turned away rather than queued — by the time a run finishes,
+    /// whatever the second caller wanted is already done. Static because the
+    /// worker builds a new instance per invocation, and the app is capped at
+    /// maximum_instance_count = 1, so one process is the whole story.
+    /// </summary>
+    private static readonly SemaphoreSlim SyncGate = new(1, 1);
+
     [Function("WhoopSync")]
     public async Task<IActionResult> Run(
         [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = "whoop/sync")] HttpRequest request,
@@ -71,112 +81,134 @@ public class WhoopSync(
 
         var budget = ResolveBudget(request.Query["seconds"].FirstOrDefault());
 
+        // ?days= widens how far back an incremental run re-reads. The default
+        // catches ordinary rescoring; a longer outage needs more.
+        var refreshWindow = ResolveRefreshWindow(request.Query["days"].FirstOrDefault());
+
         // ?reset=true drops the cursors and backfills from scratch. The records
         // themselves are left alone — they are upserted by id, so a fresh
         // backfill rewrites them in place rather than duplicating them.
         var reset = request.Query["reset"].FirstOrDefault() is "true" or "1";
 
-        return await WhoopEndpoint.RunAsync(whoop, logger, async client =>
+        if (!await SyncGate.WaitAsync(TimeSpan.Zero, cancellationToken))
         {
-            var deadline = DateTimeOffset.UtcNow + budget;
-            var results = new List<WhoopSyncResult>();
+            logger.LogInformation("A WHOOP sync is already running; declining to start a second.");
 
-            try
+            return new ObjectResult(new
             {
+                ok = false,
+                error = "sync_in_progress",
+                message = "A WHOOP sync is already running on this instance. Try again when it finishes.",
+            })
+            {
+                StatusCode = (int)HttpStatusCode.Conflict,
+            };
+        }
+
+        try
+        {
+            return await WhoopEndpoint.RunAsync(whoop, logger, async client =>
+            {
+                var deadline = DateTimeOffset.UtcNow + budget;
+                var results = new List<WhoopSyncResult>();
+
                 foreach (var collection in collections)
                 {
-                    if (reset)
+                    // Each collection is isolated: one that fails should not
+                    // cost the others their run. This is what makes an
+                    // unattended sync worth scheduling — a WHOOP hiccup on
+                    // recovery still leaves cycles, sleep and workouts current.
+                    try
                     {
-                        await store.DeleteStateAsync(collection, cancellationToken);
+                        if (reset)
+                        {
+                            await store.DeleteStateAsync(collection, cancellationToken);
+                        }
+
+                        results.Add(await runner.SyncAsync(
+                            collection, client, deadline, refreshWindow, cancellationToken));
+                    }
+                    catch (WhoopAuthException ex) when (ex.NeedsReauthorization)
+                    {
+                        logger.LogError(ex, "WHOOP rejected the stored credentials during a sync.");
+
+                        results.Add(WhoopSyncResult.Failed(
+                            collection, "whoop_reauthorization_required", ex.ResponseBody ?? ex.Message));
+
+                        // Every remaining collection would fail the same way on
+                        // the same credentials, so there is nothing to gain by
+                        // asking WHOOP three more times.
+                        break;
+                    }
+                    catch (WhoopAuthException ex)
+                    {
+                        logger.LogError(ex, "Syncing {Type} failed upstream.", collection.Type);
+                        results.Add(WhoopSyncResult.Failed(
+                            collection, "whoop_upstream_error", ex.ResponseBody ?? ex.Message));
+                    }
+                    catch (CosmosException ex)
+                    {
+                        logger.LogError(ex, "Cosmos rejected a {Type} write.", collection.Type);
+                        results.Add(WhoopSyncResult.Failed(collection, "cosmos_write_failed", ex.Message));
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        logger.LogError(ex, "Syncing {Type} failed.", collection.Type);
+                        results.Add(WhoopSyncResult.Failed(collection, "unexpected_error", ex.Message));
                     }
 
-                    results.Add(await runner.SyncAsync(collection, client, deadline, cancellationToken));
-
                     // The budget is shared across collections, so a backfill
-                    // that eats the whole run leaves the rest for the next
-                    // call rather than overrunning on its behalf.
+                    // that eats the whole run leaves the rest for the next call
+                    // rather than overrunning on their behalf.
                     if (DateTimeOffset.UtcNow >= deadline)
                     {
                         break;
                     }
                 }
-            }
-            catch (WhoopAuthException ex) when (ex.NeedsReauthorization)
-            {
-                // WHOOP rejected the credentials rather than failing to answer.
-                // A 403 while /api/whoop/status still works means something
-                // narrower: the token is good but the grant predates the read
-                // scope this collection needs.
-                logger.LogError(ex, "WHOOP rejected the stored credentials during a sync.");
 
-                return new ObjectResult(new
-                {
-                    ok = false,
-                    error = "whoop_reauthorization_required",
-                    message = "WHOOP rejected the stored credentials. Open /api/whoop/authorize "
-                        + $"in a browser to re-authorize; it rewrites '{WhoopSecretStore.RefreshTokenName}'.",
-                    status = (int)ex.StatusCode,
-                    grantedScopes = client.GrantedScopes,
-                    detail = ex.ResponseBody,
+                var failed = results.Where(r => r.Error is not null).ToList();
 
-                    // Whatever finished before the failure is already stored,
-                    // and its cursor with it.
-                    completed = results,
-                })
+                // Complete means every collection asked for has exhausted its
+                // history and had its recent window re-read. Anything else is a
+                // signal to call again.
+                var complete = failed.Count == 0
+                    && results.Count == collections.Count
+                    && results.All(r => r.BackfillComplete && !r.MoreWorkRemaining);
+
+                var payload = new
                 {
-                    StatusCode = (int)HttpStatusCode.Conflict,
+                    ok = failed.Count == 0,
+                    complete,
+                    message = failed.Count > 0
+                        ? $"{failed.Count} of {results.Count} collections failed; the rest are stored."
+                        : complete
+                            ? "Every collection is up to date."
+                            : "The budget ran out before the backfill finished; call again to continue.",
+                    budgetSeconds = (int)budget.TotalSeconds,
+                    refreshDays = (int)refreshWindow.TotalDays,
+                    written = results.Sum(r => r.Written),
+                    collections = results,
                 };
-            }
-            catch (WhoopAuthException ex)
-            {
-                logger.LogError(ex, "A WHOOP sync failed upstream.");
 
-                return new ObjectResult(new
+                if (failed.Count == 0)
                 {
-                    ok = false,
-                    error = "whoop_upstream_error",
-                    message = ex.Message,
-                    detail = ex.ResponseBody,
-                    completed = results,
-                })
+                    return new OkObjectResult(payload);
+                }
+
+                // A credentials failure is the one a caller can act on, so it
+                // keeps its own status; anything else is reported as upstream.
+                return new ObjectResult(payload)
                 {
-                    StatusCode = (int)HttpStatusCode.BadGateway,
+                    StatusCode = failed.Any(r => r.Error == "whoop_reauthorization_required")
+                        ? (int)HttpStatusCode.Conflict
+                        : (int)HttpStatusCode.BadGateway,
                 };
-            }
-            catch (CosmosException ex)
-            {
-                logger.LogError(ex, "Cosmos rejected a write during a WHOOP sync.");
-
-                return new ObjectResult(new
-                {
-                    ok = false,
-                    error = "cosmos_write_failed",
-                    message = ex.Message,
-                    completed = results,
-                })
-                {
-                    StatusCode = (int)ex.StatusCode,
-                };
-            }
-
-            // Complete means every collection asked for has exhausted its
-            // history and had its recent window re-read. Anything else is a
-            // signal to call again.
-            var complete = results.Count == collections.Count
-                && results.All(r => r.BackfillComplete && !r.MoreWorkRemaining);
-
-            return new OkObjectResult(new
-            {
-                ok = true,
-                complete,
-                message = complete
-                    ? "Every collection is up to date."
-                    : "The budget ran out before the backfill finished; call again to continue.",
-                budgetSeconds = (int)budget.TotalSeconds,
-                written = results.Sum(r => r.Written),
-                collections = results,
             });
-        });
+        }
+        finally
+        {
+            SyncGate.Release();
+        }
     }
 
     private static TimeSpan ResolveBudget(string? seconds)
@@ -187,5 +219,15 @@ public class WhoopSync(
         }
 
         return TimeSpan.FromSeconds(Math.Clamp(parsed, 10, (int)MaxBudget.TotalSeconds));
+    }
+
+    private static TimeSpan ResolveRefreshWindow(string? days)
+    {
+        if (!int.TryParse(days, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return WhoopSyncRunner.DefaultRefreshWindow;
+        }
+
+        return TimeSpan.FromDays(Math.Clamp(parsed, 1, 90));
     }
 }

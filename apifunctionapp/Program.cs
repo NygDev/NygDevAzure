@@ -57,8 +57,7 @@ builder.Services.AddSingleton(provider =>
 // Every registration below is a singleton resolved lazily, on the first WHOOP
 // request. That matters: WHOOP_CLIENT_ID and friends are missing in a local
 // checkout without them, and eager construction would take the whole worker
-// down — SpotRead included — rather than failing the one endpoint that needs
-// the configuration.
+// down rather than failing the endpoints that need the configuration.
 // ---------------------------------------------------------------------------
 builder.Services.AddSingleton(_ => WhoopOptions.FromEnvironment());
 

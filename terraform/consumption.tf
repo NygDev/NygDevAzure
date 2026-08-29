@@ -148,9 +148,10 @@ resource "azurerm_user_assigned_identity" "api" {
   tags                = local.common_tags
 }
 
-# The API app — .NET 10 isolated on Flex Consumption. Hosts SpotRead, an
-# HTTP-triggered point read of nygdev-cosmos-db / db / primary. Its Cosmos
-# access is granted by the role assignment below.
+# The API app — .NET 10 isolated on Flex Consumption. Hosts the WHOOP
+# integration: the OAuth flow, a status check, and the sync that writes WHOOP's
+# collections into nygdev-cosmos-db / db / primary. Its Cosmos access is
+# granted by the role assignment below.
 resource "azurerm_function_app_flex_consumption" "api" {
   name                = "func-nygdev-api"
   resource_group_name = azurerm_resource_group.consumption.name

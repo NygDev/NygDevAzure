@@ -21,9 +21,7 @@ public sealed record WhoopSyncState
     [JsonPropertyName("id")]
     public required string Id { get; init; }
 
-    [JsonPropertyName("partition")]
-    public string Partition { get; init; } = WhoopStore.SyncStateType;
-
+    /// <summary>Also the partition key: every cursor shares one partition.</summary>
     [JsonPropertyName("type")]
     public string Type { get; init; } = WhoopStore.SyncStateType;
 

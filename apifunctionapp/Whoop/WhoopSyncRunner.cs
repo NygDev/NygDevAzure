@@ -16,17 +16,20 @@ namespace ApiFunctionApp.Whoop;
 public sealed class WhoopSyncRunner(WhoopStore store, ILogger<WhoopSyncRunner> logger)
 {
     /// <summary>
-    /// How far back an incremental run re-reads. WHOOP filters a collection by
-    /// start time, so a record rescored after it was first stored keeps its
-    /// original start and would never come back in a "since last sync" query.
-    /// Re-reading a week catches those; the upsert makes it free of duplicates.
+    /// How far back an incremental run re-reads by default. WHOOP filters a
+    /// collection by start time, so a record rescored after it was first
+    /// stored keeps its original start and would never come back in a "since
+    /// last sync" query. Re-reading a week catches those; the upsert makes it
+    /// free of duplicates. Widen it after an outage, when more than a week of
+    /// records may have moved on WHOOP's side while nothing was syncing.
     /// </summary>
-    private static readonly TimeSpan RefreshWindow = TimeSpan.FromDays(7);
+    public static readonly TimeSpan DefaultRefreshWindow = TimeSpan.FromDays(7);
 
     public async Task<WhoopSyncResult> SyncAsync(
         WhoopCollection collection,
         WhoopClient client,
         DateTimeOffset deadline,
+        TimeSpan refreshWindow,
         CancellationToken cancellationToken)
     {
         var state = await store.ReadStateAsync(collection, cancellationToken);
@@ -36,7 +39,7 @@ public sealed class WhoopSyncRunner(WhoopStore store, ILogger<WhoopSyncRunner> l
         // The backfill walks all of history from now, newest first. An
         // incremental run asks only for the recent window and always starts a
         // fresh page sequence, so it never resumes a stale token.
-        var start = backfilling ? (DateTimeOffset?)null : DateTimeOffset.UtcNow - RefreshWindow;
+        var start = backfilling ? (DateTimeOffset?)null : DateTimeOffset.UtcNow - refreshWindow;
         var token = backfilling ? state.NextToken : null;
 
         var written = 0;
@@ -176,4 +179,29 @@ public sealed record WhoopSyncResult
     public DateTimeOffset? OldestStart { get; init; }
 
     public required long TotalRecordsWritten { get; init; }
+
+    /// <summary>
+    /// Set when this collection failed. The others in the same run are still
+    /// attempted and reported, so a partial result is a real result.
+    /// </summary>
+    public string? Error { get; init; }
+
+    public string? ErrorDetail { get; init; }
+
+    /// <summary>The shape a collection reports when its own run threw.</summary>
+    public static WhoopSyncResult Failed(WhoopCollection collection, string error, string? detail) => new()
+    {
+        Type = collection.Type,
+        Written = 0,
+        Skipped = 0,
+        Pages = 0,
+        BackfillComplete = false,
+
+        // Nothing was recorded, so whatever this collection owed is still owed.
+        MoreWorkRemaining = true,
+
+        TotalRecordsWritten = 0,
+        Error = error,
+        ErrorDetail = detail,
+    };
 }
