@@ -14,7 +14,7 @@ namespace ApiFunctionApp;
 /// create one, so a human has to approve the app once. After that this
 /// endpoint is only needed again if the refresh token is revoked or lost.
 /// </summary>
-public class WhoopAuthorize(WhoopClient whoop, ILogger<WhoopAuthorize> logger)
+public class WhoopAuthorize(Lazy<WhoopClient> whoop, ILogger<WhoopAuthorize> logger)
 {
     // Function, not Anonymous: this starts an OAuth flow that ends in a write
     // to the vault, and it is opened by hand a couple of times a year — a
@@ -25,12 +25,15 @@ public class WhoopAuthorize(WhoopClient whoop, ILogger<WhoopAuthorize> logger)
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "whoop/authorize")] HttpRequest request,
         CancellationToken cancellationToken)
     {
-        var url = await whoop.BuildAuthorizationUrlAsync(cancellationToken);
+        return await WhoopEndpoint.RunAsync(whoop, logger, async client =>
+        {
+            var url = await client.BuildAuthorizationUrlAsync(cancellationToken);
 
-        logger.LogInformation("Redirecting to the WHOOP consent screen.");
+            logger.LogInformation("Redirecting to the WHOOP consent screen.");
 
-        // Not permanent: the state in the URL is single-use and time-bounded,
-        // so a cached redirect would send the next visitor somewhere expired.
-        return new RedirectResult(url, permanent: false);
+            // Not permanent: the state in the URL is single-use and time-bounded,
+            // so a cached redirect would send the next visitor somewhere expired.
+            return new RedirectResult(url, permanent: false);
+        });
     }
 }

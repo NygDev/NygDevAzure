@@ -12,7 +12,7 @@ namespace ApiFunctionApp;
 /// authorization code, which is traded for the first token pair and the
 /// refresh token written to Key Vault.
 /// </summary>
-public class WhoopCallback(WhoopClient whoop, ILogger<WhoopCallback> logger)
+public class WhoopCallback(Lazy<WhoopClient> whoop, ILogger<WhoopCallback> logger)
 {
     // Anonymous because it has to be: WHOOP redirects a browser here, and a
     // function key in a registered redirect URL would be sitting in the
@@ -26,74 +26,70 @@ public class WhoopCallback(WhoopClient whoop, ILogger<WhoopCallback> logger)
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "whoop/callback")] HttpRequest request,
         CancellationToken cancellationToken)
     {
-        // WHOOP reports a declined or failed consent by redirecting here with
-        // an error instead of a code.
-        if (request.Query["error"].FirstOrDefault() is { Length: > 0 } error)
+        return await WhoopEndpoint.RunAsync(whoop, logger, async client =>
         {
-            var description = request.Query["error_description"].FirstOrDefault();
-            logger.LogWarning("WHOOP authorization failed: {Error} {Description}", error, description);
-            return Text(HttpStatusCode.BadRequest, $"WHOOP authorization failed: {error}. {description}");
-        }
-
-        var state = request.Query["state"].FirstOrDefault();
-        if (!await whoop.ValidateStateAsync(state, cancellationToken))
-        {
-            logger.LogWarning("Rejected a WHOOP callback with a missing, forged or expired state.");
-            return Text(
-                HttpStatusCode.BadRequest,
-                "Invalid or expired state. Start again at /api/whoop/authorize.");
-        }
-
-        if (request.Query["code"].FirstOrDefault() is not { Length: > 0 } code)
-        {
-            return Text(HttpStatusCode.BadRequest, "No authorization code on the callback.");
-        }
-
-        try
-        {
-            var result = await whoop.CompleteAuthorizationAsync(code, cancellationToken);
-
-            if (!result.RefreshTokenStored)
+            // WHOOP reports a declined or failed consent by redirecting here with
+            // an error instead of a code.
+            if (request.Query["error"].FirstOrDefault() is { Length: > 0 } error)
             {
-                // Without a refresh token there is nothing to renew with, and
-                // the access token just issued dies in an hour. Say so rather
-                // than reporting a success that quietly expires.
-                logger.LogError("WHOOP returned no refresh token; was the offline scope granted?");
-                return Text(
-                    HttpStatusCode.BadGateway,
-                    "WHOOP returned no refresh token. The 'offline' scope has to be granted — "
-                    + "check the scopes on the app in the WHOOP developer dashboard and try again.");
+                var description = request.Query["error_description"].FirstOrDefault();
+                logger.LogWarning("WHOOP authorization failed: {Error} {Description}", error, description);
+                return WhoopEndpoint.Text(HttpStatusCode.BadRequest, $"WHOOP authorization failed: {error}. {description}");
             }
 
-            logger.LogInformation(
-                "WHOOP authorization complete; refresh token stored in '{SecretName}'.",
-                WhoopSecretStore.RefreshTokenName);
+            var state = request.Query["state"].FirstOrDefault();
+            if (!await client.ValidateStateAsync(state, cancellationToken))
+            {
+                logger.LogWarning("Rejected a WHOOP callback with a missing, forged or expired state.");
+                return WhoopEndpoint.Text(
+                    HttpStatusCode.BadRequest,
+                    "Invalid or expired state. Start again at /api/whoop/authorize.");
+            }
 
-            return Text(
-                HttpStatusCode.OK,
-                $"""
-                WHOOP authorization complete.
+            if (request.Query["code"].FirstOrDefault() is not { Length: > 0 } code)
+            {
+                return WhoopEndpoint.Text(HttpStatusCode.BadRequest, "No authorization code on the callback.");
+            }
 
-                Refresh token stored in Key Vault secret '{WhoopSecretStore.RefreshTokenName}'.
-                Scopes granted: {string.Join(' ', result.Scopes)}
-                Access token valid until: {result.ExpiresAt:u}
+            try
+            {
+                var result = await client.CompleteAuthorizationAsync(code, cancellationToken);
 
-                Confirm with GET /api/whoop/status.
-                """);
-        }
-        catch (WhoopAuthException ex)
-        {
-            logger.LogError(ex, "Exchanging the WHOOP authorization code failed.");
-            return Text(
-                HttpStatusCode.BadGateway,
-                $"Exchanging the authorization code failed: {ex.Message} {ex.ResponseBody}");
-        }
+                if (!result.RefreshTokenStored)
+                {
+                    // Without a refresh token there is nothing to renew with, and
+                    // the access token just issued dies in an hour. Say so rather
+                    // than reporting a success that quietly expires.
+                    logger.LogError("WHOOP returned no refresh token; was the offline scope granted?");
+                    return WhoopEndpoint.Text(
+                        HttpStatusCode.BadGateway,
+                        "WHOOP returned no refresh token. The 'offline' scope has to be granted — "
+                        + "check the scopes on the app in the WHOOP developer dashboard and try again.");
+                }
+
+                logger.LogInformation(
+                    "WHOOP authorization complete; refresh token stored in '{SecretName}'.",
+                    WhoopSecretStore.RefreshTokenName);
+
+                return WhoopEndpoint.Text(
+                    HttpStatusCode.OK,
+                    $"""
+                    WHOOP authorization complete.
+
+                    Refresh token stored in Key Vault secret '{WhoopSecretStore.RefreshTokenName}'.
+                    Scopes granted: {string.Join(' ', result.Scopes)}
+                    Access token valid until: {result.ExpiresAt:u}
+
+                    Confirm with GET /api/whoop/status.
+                    """);
+            }
+            catch (WhoopAuthException ex)
+            {
+                logger.LogError(ex, "Exchanging the WHOOP authorization code failed.");
+                return WhoopEndpoint.Text(
+                    HttpStatusCode.BadGateway,
+                    $"Exchanging the authorization code failed: {ex.Message} {ex.ResponseBody}");
+            }
+        });
     }
-
-    private static ContentResult Text(HttpStatusCode status, string body) => new()
-    {
-        Content = body,
-        ContentType = "text/plain; charset=utf-8",
-        StatusCode = (int)status,
-    };
 }
