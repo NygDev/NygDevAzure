@@ -186,6 +186,23 @@ resource "azurerm_function_app_flex_consumption" "api" {
     # it, and a token request without a client id fails on an app that has no
     # system-assigned identity.
     MANAGED_IDENTITY_CLIENT_ID = azurerm_user_assigned_identity.api.client_id
+
+    # WHOOP. The vault holds both secrets — whoop-clientsecret, copied from the
+    # developer dashboard, and whoop-token, which the app rewrites every time
+    # WHOOP rotates the refresh token. Neither appears here; the app reads them
+    # at run time as id-nygdev-api, which is Key Vault Secrets Officer on the
+    # vault (officer, not reader: the write-back is the whole point).
+    KEY_VAULT_URI = azurerm_key_vault.nygdev.vault_uri
+
+    # Public half of the WHOOP app registration — it rides along in the browser
+    # on every authorization redirect, so it is configuration, not a secret.
+    WHOOP_CLIENT_ID = var.whoop_client_id
+
+    # WHOOP_REDIRECT_URI is deliberately not set. It would have to contain this
+    # app's own default_hostname, and an app setting on the app that reads that
+    # attribute is a dependency cycle. The app builds the URL from the
+    # platform's WEBSITE_HOSTNAME instead; the whoop_redirect_uri output below
+    # is the same string, for pasting into the developer dashboard.
   }
 
   site_config {

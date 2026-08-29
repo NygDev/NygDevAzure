@@ -11,6 +11,10 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <!-- The WHOOP client secret and refresh token live in the nygdev vault;
+         the app reads both and writes the refresh token back on every
+         rotation, as id-nygdev-api. -->
+    <PackageReference Include="Azure.Security.KeyVault.Secrets" Version="4.11.0" />
     <!-- Pinned to the 2.x line on purpose. Microsoft.Azure.Functions.Worker.
          ApplicationInsights builds against Microsoft.ApplicationInsights 2.23.x;
          the 3.x SDK drops ITelemetryInitializer, so ConfigureFunctionsApplication-

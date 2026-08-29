@@ -3,6 +3,14 @@
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "COSMOS_ENDPOINT": "https://nygdev-cosmos-db.documents.azure.com:443/"
+    "COSMOS_ENDPOINT": "https://nygdev-cosmos-db.documents.azure.com:443/",
+
+    "KEY_VAULT_URI": "https://nygdev.vault.azure.net/",
+    "WHOOP_CLIENT_ID": "9a692aea-e2d9-414c-8324-9ae8d7e1e19b",
+
+    "_comment_whoop_redirect_uri": "On Azure this is derived from WEBSITE_HOSTNAME and left unset. Locally there is no such hostname, so set it by hand — and whatever is set here also has to be a registered redirect URL on the WHOOP app, which means a public tunnel rather than localhost if the flow is to be run end to end.",
+    "WHOOP_REDIRECT_URI": "http://localhost:7071/api/whoop/callback",
+
+    "_comment_credentials": "There is no client secret or refresh token here on purpose. Both live in the nygdev Key Vault; locally DefaultAzureCredential falls through to your az login, which needs Key Vault Secrets Officer on the vault to read whoop-clientsecret and write whoop-token."
   }
 }

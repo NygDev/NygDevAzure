@@ -99,3 +99,9 @@ variable "tenant_id" {
   type        = string
   sensitive   = true
 }
+
+variable "whoop_client_id" {
+  description = "Client ID of the WHOOP application registered in the WHOOP developer dashboard. Not a secret — it travels in the browser on every authorization redirect. Its client secret and the refresh token it mints live in the nygdev Key Vault as whoop-clientsecret and whoop-token."
+  type        = string
+  default     = "9a692aea-e2d9-414c-8324-9ae8d7e1e19b"
+}
