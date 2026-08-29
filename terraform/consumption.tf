@@ -212,10 +212,9 @@ resource "azurerm_function_app_flex_consumption" "api" {
 
     # WEBSITE_TIME_ZONE is deliberately not set either, and should not be. It
     # is what would let the WhoopSyncTimer function write its NCRONTAB schedule
-    # in Oslo time rather than UTC, but Microsoft does not support it on Linux
+    # in local time rather than UTC, but Microsoft does not support it on Linux
     # under Flex Consumption — setting it there causes TLS errors and stops the
-    # app's metrics. The function fires on both candidate UTC hours instead and
-    # converts to Oslo time itself, in apifunctionapp/OsloTime.cs.
+    # app's metrics. The timer runs on UTC instead.
 
     # AzureWebJobsStorage is not listed here either, and is not missing: the
     # timer trigger needs it for the blob lease that keeps one firing from

@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace ApiFunctionApp;
 
 /// <summary>
-/// The morning WHOOP sync: every collection into Cosmos at 09:00 Oslo time,
+/// The morning WHOOP sync: every collection into Cosmos once a day,
 /// unattended.
 ///
 /// It does the same work as <see cref="WhoopSync"/> and shares its runner, so
@@ -20,16 +20,17 @@ public class WhoopSyncTimer(
     ILogger<WhoopSyncTimer> logger)
 {
     /// <summary>
-    /// 07:00 and 08:00 UTC — the two hours 09:00 in Oslo falls on, summer and
-    /// winter. NCRONTAB is read in UTC, and the setting that would move it to
-    /// another zone, WEBSITE_TIME_ZONE, is unsupported on Linux under Flex
-    /// Consumption: Microsoft's guidance is that setting it there causes TLS
-    /// errors and stops the app's metrics. So the schedule fires twice and the
-    /// hour check below drops whichever firing is 08:00 or 10:00 locally.
+    /// 07:00 UTC, daily — the platform's own clock, which is what Functions
+    /// reads an NCRONTAB expression in.
+    ///
+    /// That is 09:00 in Oslo through the summer and 08:00 through the winter;
+    /// the hour it lands on matters less than that it lands after the night's
+    /// data has settled on WHOOP's side. Nothing here tracks daylight saving,
+    /// deliberately: the setting that would move the schedule to a named zone,
+    /// WEBSITE_TIME_ZONE, is unsupported on Linux under Flex Consumption, and
+    /// converting in code costs more than the drifting hour is worth.
     /// </summary>
-    private const string Schedule = "0 0 7,8 * * *";
-
-    private const int OsloHour = 9;
+    private const string Schedule = "0 0 7 * * *";
 
     /// <summary>
     /// Long enough to finish a backfill that a manual run left unfinished, and
@@ -44,21 +45,6 @@ public class WhoopSyncTimer(
     [Function("WhoopSyncTimer")]
     public async Task Run([TimerTrigger(Schedule)] TimerInfo timer, CancellationToken cancellationToken)
     {
-        var local = OsloTime.From(DateTimeOffset.UtcNow);
-
-        if (local.Hour != OsloHour)
-        {
-            // The other of the two firings. A firing delayed past the hour is
-            // dropped here too; that costs a day at most, because the next
-            // run's refresh window reaches back a week.
-            logger.LogInformation(
-                "Skipping the {Local:HH:mm} Oslo firing; the WHOOP sync runs at {Hour:00}:00 local.",
-                local,
-                OsloHour);
-
-            return;
-        }
-
         WhoopClient client;
         try
         {
