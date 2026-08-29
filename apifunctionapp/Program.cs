@@ -68,7 +68,13 @@ builder.Services.AddSingleton(provider => new SecretClient(
 
 builder.Services.AddSingleton<WhoopSecretStore>();
 
-builder.Services.AddSingleton(provider => new WhoopClient(
+// Lazy, and injected as Lazy into the endpoints. Constructing the client reads
+// the app settings, and the worker builds a function's constructor arguments
+// before it invokes the function — so a configuration error thrown here would
+// land where no catch of ours can reach it and go out as a 500 with an empty
+// body. Deferring it to the first .Value inside the endpoint is what lets
+// WhoopEndpoint answer with the name of the missing setting instead.
+builder.Services.AddSingleton(provider => new Lazy<WhoopClient>(() => new WhoopClient(
     // One HttpClient for the app's lifetime, so connections to WHOOP are
     // reused across invocations. PooledConnectionLifetime is what keeps that
     // from pinning a stale DNS answer forever — the connection is retired on a
@@ -82,6 +88,6 @@ builder.Services.AddSingleton(provider => new WhoopClient(
     },
     provider.GetRequiredService<WhoopOptions>(),
     provider.GetRequiredService<WhoopSecretStore>(),
-    provider.GetRequiredService<ILogger<WhoopClient>>()));
+    provider.GetRequiredService<ILogger<WhoopClient>>())));
 
 builder.Build().Run();

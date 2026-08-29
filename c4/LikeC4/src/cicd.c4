@@ -39,7 +39,7 @@ model {
 
       srcApi = source-files 'apifunctionapp/**' {
         technology 'C# / .NET 10 isolated worker'
-        description 'SpotRead function code and its project file'
+        description 'SpotRead and the three WHOOP endpoints, and the project file'
       }
 
       srcWf = source-files '.github/workflows/*.yml' {
@@ -152,9 +152,18 @@ model {
   }
 
   keyvault = secret-store 'Key Vault' {
+    technology 'Azure Key Vault (standard, RBAC data plane)'
     description '
-      nygdev in rg-nygdev-security — holds the HomeIP secret and, beside
-      it, the nygdev-ed25519 SSH public key resource
+      nygdev in rg-nygdev-security. Holds the HomeIP secret that Terraform
+      Apply reads at run time and, beside it, the nygdev-ed25519 SSH public
+      key resource.
+
+      Also the two WHOOP secrets, and those are read at run time by the API
+      rather than at deploy time: whoop-clientsecret, copied in by hand from
+      the WHOOP developer dashboard, and whoop-token. The second is not
+      configuration — WHOOP rotates the refresh token on every use and the
+      API writes the replacement straight back, so this vault is where that
+      state lives between calls.
     '
   }
 
@@ -208,7 +217,7 @@ model {
   // --- what terraform builds --------------------------------------------
   azurerm -> cdn 'Provisions and configures'
   azurerm -> azadmin 'Provisions and configures'
-  azurerm -> api 'Provisions and configures (incl. id-nygdev-api and its Cosmos role assignment)'
+  azurerm -> api 'Provisions and configures (id-nygdev-api, its Cosmos role assignment, and the app settings the WHOOP endpoints read)'
 
   // --- the published result ---------------------------------------------
   cdn.webSite.docs -> user 'Serves rendered diagrams to (primary web endpoint)'

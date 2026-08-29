@@ -198,6 +198,11 @@ resource "azurerm_function_app_flex_consumption" "api" {
     # on every authorization redirect, so it is configuration, not a secret.
     WHOOP_CLIENT_ID = var.whoop_client_id
 
+    # Narrow this (via var.whoop_scopes) if the app registration is not granted
+    # all of them — WHOOP refuses the entire authorization request when it is
+    # asked for one scope the client does not hold, rather than dropping it.
+    WHOOP_SCOPES = var.whoop_scopes
+
     # WHOOP_REDIRECT_URI is deliberately not set. It would have to contain this
     # app's own default_hostname, and an app setting on the app that reads that
     # attribute is a dependency cycle. The app builds the URL from the

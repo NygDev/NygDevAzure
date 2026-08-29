@@ -1,7 +1,11 @@
 model {
 
   user = actor 'User' {
-    description 'Uses the websites and game server'
+    description '
+      Uses the websites and game server. Also the person at the WHOOP
+      consent screen, once — a refresh token can be renewed forever but
+      only a human can create the first one.
+    '
 
     -> web 'Visits (https://nygard.dev)'
     -> running 'Visits (https://run.nygard.dev)'
@@ -11,25 +15,19 @@ model {
   api = function-app 'API' {
     technology '.NET 10 isolated (Flex Consumption)'
     description '
-      func-nygdev-api. SpotRead (HTTP, anonymous) point-reads a single
-      document out of Cosmos and returns it verbatim. Called straight from
-      the run.nygard.dev page, so CORS lists that origin and a function key
-      would only sit in public JavaScript.
+      func-nygdev-api, the HTTP API for the estate. Runs as the
+      user-assigned identity id-nygdev-api, which is how it reaches both
+      Cosmos and the vault without holding a key or a connection string.
 
-      Three more endpoints hold the WHOOP integration: whoop/authorize and
-      whoop/callback run the one-time consent, whoop/status proves the
-      chain still works. Runs as the user-assigned identity id-nygdev-api,
-      which is how it reaches both Cosmos and the vault.
-    '
-  }
+      SpotRead (anonymous) point-reads one document out of Cosmos for the
+      run.nygard.dev page. That is why CORS lists that origin, and why
+      there is no function key on it: the caller is public JavaScript, so
+      a key would be published with the page.
 
-  vault = key-vault 'Key Vault' {
-    technology 'Azure Key Vault (standard, RBAC data plane)'
-    description '
-      nygdev — holds whoop-clientsecret, copied in by hand from the WHOOP
-      developer dashboard, and whoop-token, the current refresh token.
-      The second one is not configuration: the API rewrites it every time
-      WHOOP rotates it, so the vault is where that state lives.
+      Three more endpoints hold the WHOOP integration. whoop/authorize and
+      whoop/callback run the one-time consent between them; whoop/status
+      refreshes and reads the profile, which is the cheapest proof that the
+      whole chain is still alive.
     '
   }
 
@@ -122,7 +120,7 @@ model {
 
   // The refresh token is read, spent and rewritten on the same call, which is
   // why the identity holds Secrets Officer here rather than a reader role.
-  api -> vault 'Reads whoop-clientsecret, reads and rewrites whoop-token (id-nygdev-api)' #managed-identity
+  api -> keyvault 'Reads whoop-clientsecret, reads and rewrites whoop-token (id-nygdev-api)' #managed-identity
   api -> whoop 'Refreshes the access token, then reads profile and activity data (HTTPS)'
 
   // Once, by hand. The refresh grant can keep a token pair alive forever but

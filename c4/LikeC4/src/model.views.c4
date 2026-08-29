@@ -62,7 +62,7 @@ views {
       azadmin,
       api,
       cosmos,
-      vault,
+      keyvault,
       whoop
 
     exclude
@@ -97,7 +97,7 @@ views {
       color amber
     }
     // Azure-managed backend
-    style cdn, azadmin, api, cosmos, vault {
+    style cdn, azadmin, api, cosmos, keyvault {
       color primary
     }
     // Outside the estate entirely
@@ -148,5 +148,70 @@ views {
     style cdn {
       color primary
     }
+  }
+
+  dynamic view whoopBootstrap {
+    title 'WHOOP consent — the one-time bootstrap'
+    description '
+      How a refresh token gets into the vault in the first place. It runs
+      once, by hand, and only again if the token is revoked or lost — the
+      refresh grant can keep a token pair alive forever but cannot create
+      one, so a person at the consent screen is the only source.
+
+      Every hop between the API and WHOOP goes through the browser, which
+      is why the visitor appears in the middle of a server-side flow: OAuth
+      redirects are the browser following Location headers, not two servers
+      talking. The client secret and the code exchange never leave Azure.
+
+      The two auth levels differ for a reason. authorize sits behind a
+      function key because it is opened by hand. callback cannot: WHOOP
+      redirects a browser to it, and a key in a registered redirect URL
+      would sit in the developer dashboard and in browser history. What
+      guards it instead is the state parameter, signed with the client
+      secret and good for ten minutes, so only something that can read the
+      vault could have started the flow.
+    '
+
+    user -> api 'Opens /api/whoop/authorize (function key)'
+    api -> keyvault 'Reads whoop-clientsecret, to sign the state with'
+    api -> user '302 to the WHOOP consent screen (client id, scopes, signed state)'
+    user -> whoop 'Signs in and grants the scopes'
+    whoop -> user '302 back to /api/whoop/callback with a code'
+    user -> api 'Browser follows the redirect (anonymous; the state is the gate)'
+    api -> whoop 'Exchanges the code (authorization_code grant, client secret)'
+    whoop -> api 'Access token, and the first refresh token'
+    api -> keyvault 'Writes whoop-token'
+
+    autoLayout TopBottom
+  }
+
+  dynamic view whoopRefresh {
+    title 'WHOOP refresh — spending and replacing the token'
+    description '
+      The steady state, once the vault holds a refresh token. No person and
+      no browser: the API renews on its own, roughly hourly, and the visitor
+      never appears.
+
+      The ordering in the middle is the whole point. WHOOP kills the old
+      refresh token the instant it issues a new one, so the reply to that
+      one call is the only copy of the replacement that will ever exist.
+      It goes to the vault before the access token is used for anything —
+      a rotation that succeeds at WHOOP and fails to persist locks the
+      integration out until someone re-runs the consent.
+
+      This is also why the API refuses to refresh twice at once, and why it
+      re-requests offline every time: without that scope WHOOP returns an
+      access token and no replacement, and that refresh would be the last
+      one that ever worked.
+    '
+
+    api -> keyvault 'Reads whoop-clientsecret and the current whoop-token'
+    api -> whoop 'refresh_token grant, re-requesting the offline scope'
+    whoop -> api 'New access token, and a rotated refresh token — the old one is now dead'
+    api -> keyvault 'Writes the rotated token as a new version of whoop-token'
+    api -> whoop 'Calls the data API with the access token (GET /v2/user/profile/basic)'
+    whoop -> api 'Returns the data, and the access token is cached until it nears expiry'
+
+    autoLayout TopBottom
   }
 }
