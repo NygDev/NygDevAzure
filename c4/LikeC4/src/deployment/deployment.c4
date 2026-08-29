@@ -107,6 +107,13 @@ deployment {
   }
 
   internet.browser -> azure.rgNetwork.pip 'HTTPS to rpg.nygard.dev (rpg.norwayeast.cloudapp.azure.com)'
+  internet.browser -> azure.rgWeb.apex 'HTTPS to nygard.dev'
+  internet.browser -> azure.rgWeb.runDash 'HTTPS to run.nygard.dev'
+
+  // Drawn from the browser, not from the Static Web App: the free SKU has no
+  // linked backend, so the page it served calls the function app directly on
+  // its own hostname. That is why this leg needs CORS at all.
+  internet.browser -> azure.rgConsumption.aspDotnet.apiApp 'GET /api/spotread on func-nygdev-api.azurewebsites.net (CORS, anonymous)'
   azure.rgNetwork.pip -> azure.rgVm.rpgVm.caddyProc 'Forwards 80/443 via rpg-snet'
   azure.rgVm.rpgVm.foundryProc -> azure.rgData.foundryData 'Stores worlds, modules and media on (attached data disk)'
   azure.rgConsumption.aspDotnet.apiApp -> azure.rgDb.cosmosDb 'Point read over HTTPS/443 (gateway mode, Entra token for id-nygdev-api)'

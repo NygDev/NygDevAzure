@@ -19,18 +19,20 @@ views {
       A visitor has three entry points — the apex website, the running
       dashboard and the Foundry client. The first and the last lead to the
       RPG Server, where Caddy terminates TLS and hands the request to the
-      Foundry process on :30000; the running dashboard is a leaf, with no
-      backend wired up to it yet. Foundry asset URLs point at the nygdevcdn
-      storage account, and a blob landing there is what wakes the admin
-      function.
+      Foundry process on :30000; the running dashboard leads to the API and
+      on to Cosmos DB, one point read per button press. That middle leg is
+      drawn site to API, but the browser is what calls: a free-tier Static
+      Web App serves files and nothing else, so the page it served reaches
+      the function app cross-origin. Foundry asset URLs point at the
+      nygdevcdn storage account, and a blob landing there is what wakes the
+      admin function.
 
       The developer pushes to master; the workflows in that same
       repository are what deploy the site into `$web` and the function
       package into func-nygdev-azadmin. Terraform runs from there too, but
       the control plane it goes through is left out here — see `delivery`
       for that, and `oidcTrust` for how a runner gets an Azure token
-      without a stored secret. Placeholder API and Cosmos DB stay grey:
-      provisioned and reachable, carrying no traffic yet.
+      without a stored secret.
 
       Two return legs are deliberately left out, because drawing them
       turns a straight read into a loop — Foundry serving the game UI back
@@ -85,13 +87,8 @@ views {
       color amber
     }
     // Azure-managed backend
-    style cdn, azadmin {
+    style cdn, azadmin, api, cosmos {
       color primary
-    }
-    // Provisioned, no traffic yet
-    style api, cosmos {
-      color muted
-      opacity 15%
     }
   }
 
