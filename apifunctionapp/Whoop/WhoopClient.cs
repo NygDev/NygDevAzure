@@ -194,6 +194,8 @@ public sealed class WhoopClient(
         var records = new List<JsonElement>();
         if (root.TryGetProperty("records", out var array) && array.ValueKind == JsonValueKind.Array)
         {
+            records.Capacity = array.GetArrayLength();
+
             foreach (var record in array.EnumerateArray())
             {
                 // Clone detaches each record from the document disposed above;

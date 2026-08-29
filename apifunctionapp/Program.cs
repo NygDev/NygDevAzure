@@ -46,6 +46,12 @@ builder.Services.AddSingleton(provider =>
         // Serverless/Flex outbound: gateway mode keeps the app to HTTPS/443
         // rather than the direct-mode TCP port range.
         ConnectionMode = ConnectionMode.Gateway,
+
+        // Every write this app makes is an upsert whose response body is
+        // thrown away. Off, Cosmos acknowledges with headers alone instead of
+        // echoing the document back — which on a backfill is the whole synced
+        // payload travelling a second time, for nothing.
+        EnableContentResponseOnWrite = false,
     };
 
     return new CosmosClient(endpoint, provider.GetRequiredService<TokenCredential>(), options);
