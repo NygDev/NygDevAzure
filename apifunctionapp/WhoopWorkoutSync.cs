@@ -76,7 +76,6 @@ public class WhoopWorkoutSync(WhoopStore store, Lazy<WhoopClient> whoop, ILogger
                 {
                     ok = true,
                     id = workoutId,
-                    partition = collection.Type,
                     type = collection.Type,
 
                     // 201 means this workout had not been stored before; 200
