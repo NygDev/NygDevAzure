@@ -56,14 +56,6 @@ specification {
     }
   }
 
-  element key-vault {
-    notation "Azure Key Vault"
-    style {
-      shape storage
-      icon azure:key-vaults
-    }
-  }
-
   element storage-account {
     notation "Azure Storage Account"
     style {
