@@ -33,8 +33,32 @@ public class WhoopCallback(Lazy<WhoopClient> whoop, ILogger<WhoopCallback> logge
             if (request.Query["error"].FirstOrDefault() is { Length: > 0 } error)
             {
                 var description = request.Query["error_description"].FirstOrDefault();
-                logger.LogWarning("WHOOP authorization failed: {Error} {Description}", error, description);
-                return WhoopEndpoint.Text(HttpStatusCode.BadRequest, $"WHOOP authorization failed: {error}. {description}");
+
+                // WHOOP puts the useful part here — error_description is generic
+                // boilerplate, while the hint names the scope actually at fault.
+                var upstreamHint = request.Query["error_hint"].FirstOrDefault();
+
+                logger.LogWarning(
+                    "WHOOP authorization failed: {Error} {Description} {Hint}",
+                    error,
+                    description,
+                    upstreamHint);
+
+                // The one failure worth explaining rather than relaying. A scope
+                // the app registration does not hold sinks the whole request, so
+                // it reads as a broken integration rather than a missing checkbox.
+                var ourHint = error == "invalid_scope"
+                    ? "\n\nThis is the app registration, not the request. WHOOP only lets a "
+                        + "client ask for scopes it was registered with, and refuses the entire "
+                        + "authorization when one of them is missing rather than dropping it. "
+                        + "Enable the named scope on the app in the WHOOP developer dashboard — "
+                        + "all of them in one pass, since only the first disallowed scope is "
+                        + "reported. Failing that, drop it from var.whoop_scopes in terraform."
+                    : string.Empty;
+
+                return WhoopEndpoint.Text(
+                    HttpStatusCode.BadRequest,
+                    $"WHOOP authorization failed: {error}. {description} {upstreamHint}{ourHint}");
             }
 
             var state = request.Query["state"].FirstOrDefault();

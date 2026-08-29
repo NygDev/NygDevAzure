@@ -15,6 +15,13 @@ public sealed class WhoopOptions
     /// renew it with. The read scopes are requested up front because scopes
     /// are fixed at consent: adding one later means sending the user back
     /// through the authorization screen, so the cheap move is to ask once.
+    ///
+    /// Asking for one the app registration does not hold is not a soft failure —
+    /// WHOOP refuses the whole authorization request with invalid_scope rather
+    /// than dropping the scope it will not grant. Terraform sets WHOOP_SCOPES
+    /// from var.whoop_scopes, which is where to narrow the list if the
+    /// registration cannot be widened to match; this constant is the fallback
+    /// for when nothing sets it.
     /// </summary>
     public const string DefaultScopes =
         "offline read:profile read:body_measurement read:cycles read:recovery read:sleep read:workout";

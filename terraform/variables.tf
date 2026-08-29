@@ -105,3 +105,9 @@ variable "whoop_client_id" {
   type        = string
   default     = "9a692aea-e2d9-414c-8324-9ae8d7e1e19b"
 }
+
+variable "whoop_scopes" {
+  description = "Space-separated OAuth scopes to request at consent. Every one of these has to be enabled on the app in the WHOOP developer dashboard, or the consent screen refuses the whole request with invalid_scope — it permits a client only what it was registered for. offline is what makes WHOOP return a refresh token, so dropping it breaks renewal. Scopes are fixed at consent, so narrowing this list later means sending the user back through /api/whoop/authorize."
+  type        = string
+  default     = "offline read:profile read:body_measurement read:cycles read:recovery read:sleep read:workout"
+}
