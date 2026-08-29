@@ -140,6 +140,34 @@ public sealed class WhoopClient(
         await GetAsync<WhoopProfile>("/v2/user/profile/basic", cancellationToken);
 
     /// <summary>
+    /// The account's most recent workout, or null when there is not one.
+    ///
+    /// WHOOP returns the workout collection sorted by start time descending,
+    /// so <c>limit=1</c> is the whole query: the first record is the latest
+    /// workout, finished or still in progress.
+    ///
+    /// It comes back as raw JSON rather than a typed model on purpose. The
+    /// members of <c>score</c> vary by sport and the object is absent
+    /// altogether while <c>score_state</c> is PENDING, and whatever WHOOP
+    /// adds to the shape later should reach storage without a change here.
+    /// </summary>
+    public async Task<JsonElement?> GetLatestWorkoutAsync(CancellationToken cancellationToken)
+    {
+        using var page = await GetAsync<JsonDocument>("/v2/activity/workout?limit=1", cancellationToken);
+
+        if (!page.RootElement.TryGetProperty("records", out var records)
+            || records.ValueKind != JsonValueKind.Array
+            || records.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        // Clone detaches the element from the document being disposed above;
+        // without it the caller would be reading freed memory.
+        return records[0].Clone();
+    }
+
+    /// <summary>
     /// A GET against the WHOOP data API with the current access token. A 401
     /// buys exactly one retry on a freshly refreshed token: WHOOP can revoke an
     /// access token before its stated expiry, and that is indistinguishable
