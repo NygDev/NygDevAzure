@@ -18,8 +18,7 @@ public class WhoopAuthorize(Lazy<WhoopClient> whoop, ILogger<WhoopAuthorize> log
 {
     // Function, not Anonymous: this starts an OAuth flow that ends in a write
     // to the vault, and it is opened by hand a couple of times a year — a
-    // function key in the URL is the right amount of gate for that. Contrast
-    // SpotRead, where a key would only sit in public JavaScript.
+    // function key in the URL is the right amount of gate for that.
     [Function("WhoopAuthorize")]
     public async Task<IActionResult> Run(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "whoop/authorize")] HttpRequest request,

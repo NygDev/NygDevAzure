@@ -45,7 +45,7 @@ public sealed class WhoopOptions
     /// <summary>
     /// Built lazily, on the first WHOOP call rather than at host start, so a
     /// missing setting fails that one endpoint instead of taking the whole
-    /// worker — and SpotRead — down with it.
+    /// worker down with it.
     /// </summary>
     public static WhoopOptions FromEnvironment() => new()
     {

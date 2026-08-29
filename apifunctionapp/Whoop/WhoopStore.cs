@@ -83,8 +83,8 @@ public sealed class WhoopStore(CosmosClient cosmosClient, ILogger<WhoopStore> lo
 
         payload.Position = 0;
 
-        // Stream overload, matching SpotRead: the bytes written are the bytes
-        // stored, with no POCO or serializer settings in between — which also
+        // Stream overload: the bytes written are the bytes stored, with no
+        // POCO or serializer settings in between — which also
         // sidesteps the CosmosClient's default Newtonsoft serializer, whose
         // defaults would reshape a System.Text.Json payload on the way through.
         using var response = await Container.UpsertItemStreamAsync(
