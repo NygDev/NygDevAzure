@@ -51,25 +51,66 @@ public class WhoopWorkoutSync(CosmosClient cosmosClient, WhoopClient whoop, ILog
         [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = "whoop/workout/latest")] HttpRequest request,
         CancellationToken cancellationToken)
     {
-        JsonElement? latest;
-
         try
         {
-            latest = await whoop.GetLatestWorkoutAsync(cancellationToken);
+            var latest = await whoop.GetLatestWorkoutAsync(cancellationToken);
+
+            if (latest is not { } workout)
+            {
+                logger.LogInformation("WHOOP returned no workouts; nothing to write.");
+
+                return new NotFoundObjectResult(new
+                {
+                    ok = false,
+                    error = "no_workouts",
+                    message = "WHOOP returned no workouts for this account.",
+                });
+            }
+
+            // Without an id there is no document to write: Cosmos requires one,
+            // and inventing a surrogate would break the whole point of reusing
+            // WHOOP's, which is that re-running updates the workout instead of
+            // duplicating it.
+            if (ReadString(workout, "id") is not { Length: > 0 } workoutId)
+            {
+                logger.LogError("The WHOOP workout record carried no usable id: {Record}", workout.GetRawText());
+
+                return new ObjectResult(new
+                {
+                    ok = false,
+                    error = "whoop_unexpected_shape",
+                    message = "The WHOOP workout record carried no usable 'id'.",
+                })
+                {
+                    StatusCode = (int)HttpStatusCode.BadGateway,
+                };
+            }
+
+            return await WriteAsync(workoutId, workout, cancellationToken);
         }
         catch (WhoopAuthException ex) when (ex.NeedsReauthorization)
         {
             // WHOOP rejected the credentials rather than failing to answer.
             // Same shape WhoopStatus returns, for the same reason: retrying
             // cannot fix it, only re-authorizing can.
-            logger.LogError(ex, "The stored WHOOP refresh token was rejected.");
+            //
+            // A 403 here rather than a 401 usually means something narrower:
+            // the token is good but was granted without read:workout, which
+            // happens when the account was last authorized before that scope
+            // joined WhoopOptions.DefaultScopes. The fix is the same trip
+            // through /api/whoop/authorize.
+            logger.LogError(ex, "WHOOP rejected the stored credentials for the workout endpoint.");
 
             return new ObjectResult(new
             {
                 ok = false,
                 error = "whoop_reauthorization_required",
-                message = "WHOOP rejected the stored refresh token. Open /api/whoop/authorize "
-                    + $"in a browser to re-authorize; it rewrites '{WhoopSecretStore.RefreshTokenName}'.",
+                message = "WHOOP rejected the stored credentials. Open /api/whoop/authorize in a "
+                    + $"browser to re-authorize; it rewrites '{WhoopSecretStore.RefreshTokenName}'. "
+                    + "If the status endpoint still works, the grant is most likely missing the "
+                    + "read:workout scope.",
+                status = (int)ex.StatusCode,
+                grantedScopes = whoop.GrantedScopes,
                 detail = ex.ResponseBody,
             })
             {
@@ -85,113 +126,16 @@ public class WhoopWorkoutSync(CosmosClient cosmosClient, WhoopClient whoop, ILog
                 ok = false,
                 error = "whoop_upstream_error",
                 message = ex.Message,
+                status = (int)ex.StatusCode,
                 detail = ex.ResponseBody,
             })
             {
                 StatusCode = (int)HttpStatusCode.BadGateway,
             };
         }
-
-        if (latest is not { } workout)
-        {
-            logger.LogInformation("WHOOP returned no workouts; nothing to write.");
-
-            return new NotFoundObjectResult(new
-            {
-                ok = false,
-                error = "no_workouts",
-                message = "WHOOP returned no workouts for this account.",
-            });
-        }
-
-        // Without an id there is no document to write: Cosmos requires one, and
-        // inventing a surrogate would break the whole point of reusing WHOOP's,
-        // which is that re-running this updates the workout instead of
-        // duplicating it.
-        if (ReadString(workout, "id") is not { Length: > 0 } workoutId)
-        {
-            logger.LogError("The WHOOP workout record carried no usable id: {Record}", workout.GetRawText());
-
-            return new ObjectResult(new
-            {
-                ok = false,
-                error = "whoop_unexpected_shape",
-                message = "The WHOOP workout record carried no usable 'id'.",
-            })
-            {
-                StatusCode = (int)HttpStatusCode.BadGateway,
-            };
-        }
-
-        var container = cosmosClient.GetContainer(DatabaseName, ContainerName);
-
-        using var payload = new MemoryStream();
-        WriteDocument(payload, workoutId, workout);
-        payload.Position = 0;
-
-        try
-        {
-            // Stream overload, matching SpotRead: the bytes written are the
-            // bytes stored, with no POCO or serializer settings in between —
-            // which also sidesteps the CosmosClient's default Newtonsoft
-            // serializer, whose defaults would reshape a System.Text.Json
-            // payload on the way through.
-            using var response = await container.UpsertItemStreamAsync(
-                payload,
-                new PartitionKey(PartitionValue),
-                cancellationToken: cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                logger.LogError(
-                    "Upsert of workout {WorkoutId} failed: {StatusCode} {ErrorMessage}",
-                    workoutId,
-                    response.StatusCode,
-                    response.ErrorMessage);
-
-                return new ObjectResult(new
-                {
-                    ok = false,
-                    error = "cosmos_write_failed",
-                    message = response.ErrorMessage,
-                })
-                {
-                    StatusCode = (int)response.StatusCode,
-                };
-            }
-
-            logger.LogInformation(
-                "Wrote WHOOP workout {WorkoutId} ({Sport}, started {Start}) to {Database}/{Container} "
-                + "partition {Partition} for {RequestCharge} RU.",
-                workoutId,
-                ReadString(workout, "sport_name"),
-                ReadString(workout, "start"),
-                DatabaseName,
-                ContainerName,
-                PartitionValue,
-                response.Headers.RequestCharge);
-
-            return new OkObjectResult(new
-            {
-                ok = true,
-                id = workoutId,
-                partition = PartitionValue,
-                type = DocumentType,
-
-                // 201 means this workout had not been stored before; 200 means
-                // an existing document was replaced.
-                created = response.StatusCode == HttpStatusCode.Created,
-
-                start = ReadString(workout, "start"),
-                end = ReadString(workout, "end"),
-                sport = ReadString(workout, "sport_name"),
-                scoreState = ReadString(workout, "score_state"),
-                requestCharge = response.Headers.RequestCharge,
-            });
-        }
         catch (CosmosException ex)
         {
-            logger.LogError(ex, "Cosmos upsert of workout {WorkoutId} failed.", workoutId);
+            logger.LogError(ex, "Cosmos rejected the workout upsert.");
 
             return new ObjectResult(new
             {
@@ -203,6 +147,103 @@ public class WhoopWorkoutSync(CosmosClient cosmosClient, WhoopClient whoop, ILog
                 StatusCode = (int)ex.StatusCode,
             };
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Everything the two clients can throw that is not one of their own
+            // exception types: Key Vault and managed-identity failures
+            // (RequestFailedException, CredentialUnavailableException), a WHOOP
+            // connection that never opened (HttpRequestException), a malformed
+            // body (JsonException). Without this the host logs "An exception was
+            // thrown by the invocation" and the caller gets a bare 500 — the
+            // cause only visible by digging through Application Insights.
+            logger.LogError(ex, "The WHOOP workout sync failed.");
+
+            return new ObjectResult(new
+            {
+                ok = false,
+                error = "unexpected_error",
+                type = ex.GetType().FullName,
+                message = ex.Message,
+
+                // The proximate cause is usually the interesting one: an
+                // AuthenticationFailedException says little, its inner
+                // exception says which credential was tried and why it failed.
+                inner = ex.InnerException?.Message,
+            })
+            {
+                StatusCode = (int)HttpStatusCode.InternalServerError,
+            };
+        }
+    }
+
+    private async Task<IActionResult> WriteAsync(
+        string workoutId,
+        JsonElement workout,
+        CancellationToken cancellationToken)
+    {
+        var container = cosmosClient.GetContainer(DatabaseName, ContainerName);
+
+        using var payload = new MemoryStream();
+        WriteDocument(payload, workoutId, workout);
+        payload.Position = 0;
+
+        // Stream overload, matching SpotRead: the bytes written are the bytes
+        // stored, with no POCO or serializer settings in between — which also
+        // sidesteps the CosmosClient's default Newtonsoft serializer, whose
+        // defaults would reshape a System.Text.Json payload on the way through.
+        using var response = await container.UpsertItemStreamAsync(
+            payload,
+            new PartitionKey(PartitionValue),
+            cancellationToken: cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            logger.LogError(
+                "Upsert of workout {WorkoutId} failed: {StatusCode} {ErrorMessage}",
+                workoutId,
+                response.StatusCode,
+                response.ErrorMessage);
+
+            return new ObjectResult(new
+            {
+                ok = false,
+                error = "cosmos_write_failed",
+                status = (int)response.StatusCode,
+                message = response.ErrorMessage,
+            })
+            {
+                StatusCode = (int)response.StatusCode,
+            };
+        }
+
+        logger.LogInformation(
+            "Wrote WHOOP workout {WorkoutId} ({Sport}, started {Start}) to {Database}/{Container} "
+            + "partition {Partition} for {RequestCharge} RU.",
+            workoutId,
+            ReadString(workout, "sport_name"),
+            ReadString(workout, "start"),
+            DatabaseName,
+            ContainerName,
+            PartitionValue,
+            response.Headers.RequestCharge);
+
+        return new OkObjectResult(new
+        {
+            ok = true,
+            id = workoutId,
+            partition = PartitionValue,
+            type = DocumentType,
+
+            // 201 means this workout had not been stored before; 200 means an
+            // existing document was replaced.
+            created = response.StatusCode == HttpStatusCode.Created,
+
+            start = ReadString(workout, "start"),
+            end = ReadString(workout, "end"),
+            sport = ReadString(workout, "sport_name"),
+            scoreState = ReadString(workout, "score_state"),
+            requestCharge = response.Headers.RequestCharge,
+        });
     }
 
     /// <summary>
@@ -242,7 +283,9 @@ public class WhoopWorkoutSync(CosmosClient cosmosClient, WhoopClient whoop, ILog
     }
 
     private static string? ReadString(JsonElement workout, string propertyName) =>
-        workout.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+        workout.ValueKind == JsonValueKind.Object
+            && workout.TryGetProperty(propertyName, out var value)
+            && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
 }
