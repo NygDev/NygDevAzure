@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace ApiFunctionApp.Whoop;
@@ -53,4 +54,15 @@ public sealed record WhoopProfile
 
     [JsonPropertyName("last_name")]
     public string? LastName { get; init; }
+}
+
+/// <summary>One page of a WHOOP collection: the records, and where to resume.</summary>
+public sealed record WhoopPage
+{
+    public static readonly WhoopPage Empty = new() { Records = [] };
+
+    public required IReadOnlyList<JsonElement> Records { get; init; }
+
+    /// <summary>Null once WHOOP has no more pages to give.</summary>
+    public string? NextToken { get; init; }
 }

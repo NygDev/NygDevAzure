@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -24,6 +25,9 @@ public sealed class WhoopClient(
 
     private const string TokenEndpoint = "https://api.prod.whoop.com/oauth/oauth2/token";
     private const string ApiBaseUrl = "https://api.prod.whoop.com/developer";
+
+    /// <summary>WHOOP's ceiling on a collection page; a larger limit is a 400.</summary>
+    public const int MaxPageSize = 25;
 
     // Renew a little early rather than discovering expiry as a 401 mid-request.
     private static readonly TimeSpan ExpiryMargin = TimeSpan.FromMinutes(2);
@@ -142,33 +146,82 @@ public sealed class WhoopClient(
     /// <summary>
     /// The account's most recent workout, or null when there is not one.
     ///
-    /// WHOOP returns the workout collection sorted by start time descending,
-    /// so <c>limit=1</c> is the whole query: the first record is the latest
-    /// workout, finished or still in progress.
-    ///
-    /// It comes back as raw JSON rather than a typed model on purpose. The
-    /// members of <c>score</c> vary by sport and the object is absent
-    /// altogether while <c>score_state</c> is PENDING, and whatever WHOOP
-    /// adds to the shape later should reach storage without a change here.
+    /// WHOOP returns every collection sorted by start time descending, so a
+    /// page of one is the whole query: the first record is the latest workout,
+    /// finished or still in progress.
     /// </summary>
     public async Task<JsonElement?> GetLatestWorkoutAsync(CancellationToken cancellationToken)
     {
-        using var page = await GetAsync<JsonDocument>("/v2/activity/workout?limit=1", cancellationToken);
+        var page = await GetPageAsync(WhoopCollection.Workout, 1, null, null, cancellationToken);
 
-        // Checked rather than assumed: TryGetProperty throws on anything that
-        // is not a JSON object, so a body that is not the expected envelope
-        // would come back as an unhandled exception rather than "no workout".
-        if (page.RootElement.ValueKind != JsonValueKind.Object
-            || !page.RootElement.TryGetProperty("records", out var records)
-            || records.ValueKind != JsonValueKind.Array
-            || records.GetArrayLength() == 0)
+        return page.Records.Count > 0 ? page.Records[0] : null;
+    }
+
+    /// <summary>
+    /// One page of a WHOOP collection, oldest-bounded by <paramref name="start"/>
+    /// and continued by <paramref name="nextToken"/>.
+    ///
+    /// Records come back as raw JSON rather than typed models on purpose. The
+    /// members of a score vary by sport and the object is absent altogether
+    /// while scoring is pending, the four collections have four different
+    /// record shapes, and whatever WHOOP adds later should reach storage
+    /// without a change here.
+    ///
+    /// Paging with no <paramref name="start"/> walks the whole history newest
+    /// first, which is what the backfill relies on: the most useful records are
+    /// stored first, and an interrupted backfill has still made progress.
+    /// </summary>
+    public async Task<WhoopPage> GetPageAsync(
+        WhoopCollection collection,
+        int limit,
+        DateTimeOffset? start,
+        string? nextToken,
+        CancellationToken cancellationToken)
+    {
+        var query = HttpUtility.ParseQueryString(string.Empty);
+
+        // WHOOP caps limit at 25 and answers a larger one with a 400.
+        query["limit"] = Math.Clamp(limit, 1, MaxPageSize).ToString(CultureInfo.InvariantCulture);
+
+        if (start is { } from)
         {
-            return null;
+            query["start"] = from.UtcDateTime.ToString("o", CultureInfo.InvariantCulture);
         }
 
-        // Clone detaches the element from the document being disposed above;
-        // without it the caller would be reading freed memory.
-        return records[0].Clone();
+        if (nextToken is { Length: > 0 })
+        {
+            query["nextToken"] = nextToken;
+        }
+
+        using var page = await GetAsync<JsonDocument>($"{collection.Path}?{query}", cancellationToken);
+
+        var root = page.RootElement;
+
+        // Checked rather than assumed: TryGetProperty throws on anything that
+        // is not a JSON object, so a body that was not the expected envelope
+        // would surface as an unhandled exception rather than an empty page.
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return WhoopPage.Empty;
+        }
+
+        var records = new List<JsonElement>();
+        if (root.TryGetProperty("records", out var array) && array.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var record in array.EnumerateArray())
+            {
+                // Clone detaches each record from the document disposed above;
+                // without it the caller would be reading freed memory.
+                records.Add(record.Clone());
+            }
+        }
+
+        // An absent or null next_token is WHOOP saying this was the last page.
+        var token = root.TryGetProperty("next_token", out var next) && next.ValueKind == JsonValueKind.String
+            ? next.GetString()
+            : null;
+
+        return new WhoopPage { Records = records, NextToken = token };
     }
 
     /// <summary>
