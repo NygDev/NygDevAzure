@@ -6,13 +6,6 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 4.71"
     }
-
-    # Used only for the free-tier SQL database, whose useFreeLimit /
-    # freeLimitExhaustionBehavior properties azurerm does not expose.
-    azapi = {
-      source  = "Azure/azapi"
-      version = "~> 2.12"
-    }
   }
 
   backend "azurerm" {
@@ -28,8 +21,4 @@ provider "azurerm" {
   subscription_id                 = var.subscription_id
   resource_provider_registrations = "none"
   features {}
-}
-
-provider "azapi" {
-  subscription_id = var.subscription_id
 }
