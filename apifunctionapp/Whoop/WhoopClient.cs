@@ -144,20 +144,6 @@ public sealed class WhoopClient(
         await GetAsync<WhoopProfile>("/v2/user/profile/basic", cancellationToken);
 
     /// <summary>
-    /// The account's most recent workout, or null when there is not one.
-    ///
-    /// WHOOP returns every collection sorted by start time descending, so a
-    /// page of one is the whole query: the first record is the latest workout,
-    /// finished or still in progress.
-    /// </summary>
-    public async Task<JsonElement?> GetLatestWorkoutAsync(CancellationToken cancellationToken)
-    {
-        var page = await GetPageAsync(WhoopCollection.Workout, 1, null, null, cancellationToken);
-
-        return page.Records.Count > 0 ? page.Records[0] : null;
-    }
-
-    /// <summary>
     /// One page of a WHOOP collection, oldest-bounded by <paramref name="start"/>
     /// and continued by <paramref name="nextToken"/>.
     ///
