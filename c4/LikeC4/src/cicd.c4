@@ -37,9 +37,14 @@ model {
         description 'cachecontrol and cachecontrolauto function code'
       }
 
+      srcApi = source-files 'apifunctionapp/**' {
+        technology 'C# / .NET 10 isolated worker'
+        description 'SpotRead function code and its project file'
+      }
+
       srcWf = source-files '.github/workflows/*.yml' {
         technology 'YAML'
-        description 'The three workflows that deploy everything above'
+        description 'The four workflows that deploy everything above'
       }
     }
 
@@ -83,6 +88,18 @@ model {
 
           Save-Module bundles Az.Accounts and Az.Storage into the package,
           then Azure/functions-action@v1 pushes it to func-nygdev-azadmin.
+        '
+      }
+
+      deployApi = workflow 'Deploy API Function App' {
+        technology '.github/workflows/deploy-api-function-app.yml'
+        description '
+          Trigger: push to master touching apifunctionapp/** or the
+          workflow itself, or workflow_dispatch.
+
+          dotnet publish -c Release produces the worker package (a build
+          failure stops the run before Azure is touched), then
+          Azure/functions-action@v1 pushes it to func-nygdev-api.
         '
       }
 
@@ -170,6 +187,7 @@ model {
 
   github.repo.srcC4 -> github.actions.deployC4 'Change here runs' #ci
   github.repo.srcPs -> github.actions.deployFunc 'Change here runs' #ci
+  github.repo.srcApi -> github.actions.deployApi 'Change here runs' #ci
   github.repo.srcTf -> github.actions.tfApply 'Change here runs' #ci
 
   github.ghEnv -> github.actions 'Supplies tenant, subscription and client ids to' #ci
@@ -182,6 +200,7 @@ model {
   // --- pipeline to Azure -------------------------------------------------
   github.actions.deployC4 -> cdn.webSite 'Clears and re-uploads dist/ (az storage blob upload-batch)'
   github.actions.deployFunc -> azadmin 'Deploys the function package (Azure/functions-action@v1)'
+  github.actions.deployApi -> api 'Deploys the published worker (Azure/functions-action@v1)'
   github.actions.tfApply -> keyvault 'Reads HomeIP and the SSH public key'
   github.actions.tfApply -> tfstate 'Locks and writes state'
   github.actions.tfApply -> azurerm 'Creates and updates the estate (terraform apply -auto-approve)'
@@ -189,6 +208,7 @@ model {
   // --- what terraform builds --------------------------------------------
   azurerm -> cdn 'Provisions and configures'
   azurerm -> azadmin 'Provisions and configures'
+  azurerm -> api 'Provisions and configures (incl. COSMOS_ENDPOINT and the Cosmos role assignment)'
 
   // --- the published result ---------------------------------------------
   cdn.webSite.docs -> user 'Serves rendered diagrams to (primary web endpoint)'

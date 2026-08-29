@@ -136,9 +136,9 @@ resource "azurerm_storage_container" "api" {
   container_access_type = "private"
 }
 
-# Placeholder .NET 10 isolated app on Flex Consumption — provisioned empty, no
-# code deployed yet. App-specific settings (CORS, auth, data bindings) get
-# added when something lands here; its Cosmos access is granted below.
+# The API app — .NET 10 isolated on Flex Consumption. Hosts SpotRead, an
+# HTTP-triggered point read of nygdev-cosmos-db / db / primary. Its Cosmos
+# access is granted by the role assignment below.
 resource "azurerm_function_app_flex_consumption" "api" {
   name                = "func-nygdev-api"
   resource_group_name = azurerm_resource_group.consumption.name
@@ -162,6 +162,11 @@ resource "azurerm_function_app_flex_consumption" "api" {
 
   app_settings = {
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
+
+    # The account endpoint the app builds its CosmosClient against. No key or
+    # connection string: local auth is disabled on the account, so the app
+    # authenticates with its managed identity via DefaultAzureCredential.
+    COSMOS_ENDPOINT = azurerm_cosmosdb_account.db.endpoint
   }
 
   site_config {}
