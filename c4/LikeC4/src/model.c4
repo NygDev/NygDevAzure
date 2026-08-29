@@ -11,9 +11,11 @@ model {
   api = function-app 'API' {
     technology '.NET 10 isolated (Flex Consumption)'
     description '
-      func-nygdev-api — SpotRead (HTTP, function key) point-reads
+      func-nygdev-api — SpotRead (HTTP, anonymous) point-reads
       a single document out of Cosmos and returns it verbatim.
-      Runs as the user-assigned identity id-nygdev-api.
+      Called straight from the run.nygard.dev page, so CORS lists
+      that origin and a function key would only sit in public
+      JavaScript. Runs as the user-assigned identity id-nygdev-api.
     '
   }
 
@@ -37,8 +39,9 @@ model {
     technology 'Azure Static Web App (Free SKU, westeurope)'
     description '
       Running/marathon dashboard (nygdevrun) — free-tier Azure Static Web App.
-      Provisioned empty by terraform; content deployed from its own
-      repository. No data source wired up yet.
+      Provisioned empty by terraform; content deployed from the nygdevweb
+      repository. A page with one button that reads the marathon document
+      out of Cosmos through the API.
     '
   }
 
@@ -82,6 +85,13 @@ model {
       on blobs in the foundry container
     '
   }
+
+  // The fetch runs in the visitor's browser, not on the Static Web App: the
+  // free SKU has no linked backend and no proxying, so the page calls the
+  // function app cross-origin. Three settings have to name the same origin or
+  // the call never leaves the browser — SPOT_URL in main.js, connect-src in
+  // staticwebapp.config.json, and the function app's CORS allowed origins.
+  running -> api 'Fetches the spot read from the browser (GET /api/spotread, cross-origin)'
 
   api -> cosmos 'Point-reads id 1 / partition run_marathon (id-nygdev-api)' #managed-identity
 

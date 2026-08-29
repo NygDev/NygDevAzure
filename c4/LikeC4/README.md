@@ -18,7 +18,7 @@ This model is published by `.github/workflows/deploy-likec4.yml`: a push to mast
 ## Layout
 
 - `src/_spec.c4` — element kinds (Azure-flavoured) and tags
-- `src/model.c4` — logical model: RPG Server, nygard.dev, CDN, Admin Automation, Placeholder API, Cosmos DB
+- `src/model.c4` — logical model: RPG Server, nygard.dev, run.nygard.dev, CDN, Admin Automation, API, Cosmos DB
 - `src/model.views.c4` — landscape, top-level data flow + container views
 - `src/cicd.spec.c4` — element kinds for the delivery plane (repository, workflow, Entra app registration, blob container)
 - `src/cicd.c4` — the delivery model: the repo, the three workflows, the OIDC identity, and the `$web` / `foundry` containers on `nygdevcdn`
