@@ -58,3 +58,43 @@ resource "azurerm_cosmosdb_sql_role_assignment" "my_user" {
   scope               = azurerm_cosmosdb_account.db.id
 }
 
+# ---------------------------------------------------------------------------
+# Azure SQL — Sweden Central
+#
+# Pinned to Sweden Central rather than var.location, because the Azure SQL
+# Database free offer is not available in Norway East.
+#
+# The server and its firewall rules are managed here; the free-tier database
+# inside it is created by hand and deliberately left unmanaged, so Terraform
+# will neither create nor destroy it. Adding it here later means importing it
+# rather than applying a new resource.
+# ---------------------------------------------------------------------------
+
+resource "azurerm_mssql_server" "nygdev" {
+  name                = "sql-nygdev"
+  resource_group_name = azurerm_resource_group.databases.name
+  location            = "swedencentral"
+  version             = "12.0"
+  minimum_tls_version = "1.2"
+
+  # Entra ID is the only way in — no SQL login/password to store or rotate,
+  # so administrator_login/_password are deliberately absent. object_id is
+  # what actually grants access; login_username is only the display label
+  # Azure shows for the admin.
+  azuread_administrator {
+    login_username              = "nygdev-owner"
+    object_id                   = var.entra_owner_objectid
+    tenant_id                   = var.tenant_id
+    azuread_authentication_only = true
+  }
+
+  tags = local.common_tags
+}
+
+# Home access for management/queries; nothing else reaches the server.
+resource "azurerm_mssql_firewall_rule" "home" {
+  name             = "home"
+  server_id        = azurerm_mssql_server.nygdev.id
+  start_ip_address = var.home_ip
+  end_ip_address   = var.home_ip
+}
