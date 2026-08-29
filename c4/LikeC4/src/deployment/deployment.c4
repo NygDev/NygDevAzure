@@ -53,6 +53,11 @@ deployment {
         webapex = instanceOf web
       }
 
+      runDash = static-site 'nygdevrun' {
+        description 'Serves https://run.nygard.dev'
+        webrun = instanceOf running
+      }
+
       cdnStorage = blob-storage 'nygdevcdn' {
         cdnBlob = instanceOf cdn
       }

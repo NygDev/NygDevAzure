@@ -1,5 +1,5 @@
 # Static Web Apps in rg-nygdev-web. Static Web Apps are only available in a
-# handful of regions; this one is deployed in West Europe (not the default
+# handful of regions; these are deployed in West Europe (not the default
 # Norway East), so location is set explicitly. Defaults to the Free SKU.
 
 resource "azurerm_static_web_app" "nygdevapex" {
@@ -11,6 +11,19 @@ resource "azurerm_static_web_app" "nygdevapex" {
   # GitHub integration + app settings are wired up by the app's own deploy
   # pipeline; the repository_token is never returned by Azure, so let those
   # attributes drift rather than have Terraform clear them.
+  lifecycle {
+    ignore_changes = [repository_branch, repository_token, repository_url, app_settings]
+  }
+}
+
+# Running/marathon dashboard. Same pattern as the apex site: provisioned
+# empty here, content deployed by the app's own repository.
+resource "azurerm_static_web_app" "nygdevrun" {
+  name                = "nygdevrun"
+  resource_group_name = var.web_resource_group
+  location            = "westeurope"
+  tags                = local.common_tags
+
   lifecycle {
     ignore_changes = [repository_branch, repository_token, repository_url, app_settings]
   }
