@@ -137,8 +137,8 @@ resource "azurerm_storage_container" "api" {
 }
 
 # Placeholder .NET 10 isolated app on Flex Consumption — provisioned empty, no
-# code deployed yet. App-specific settings (CORS, auth, data bindings) and any
-# role assignments the app needs get added when something lands here.
+# code deployed yet. App-specific settings (CORS, auth, data bindings) get
+# added when something lands here; its Cosmos access is granted below.
 resource "azurerm_function_app_flex_consumption" "api" {
   name                = "func-nygdev-api"
   resource_group_name = azurerm_resource_group.consumption.name
@@ -179,4 +179,18 @@ resource "azurerm_function_app_flex_consumption" "api" {
       tags["hidden-link: /app-insights-resource-id"],
     ]
   }
+}
+
+# Data-plane read/write on the Cosmos container for the api app. The account
+# has local_authentication_disabled, so this Entra role assignment is the only
+# way in — there are no keys to fall back on. Cosmos DB Built-in Data
+# Contributor (…0002) is the read/write built-in role; scoped to the primary
+# container rather than the account, so the app can't reach anything else that
+# lands in the account later.
+resource "azurerm_cosmosdb_sql_role_assignment" "api_cosmos_primary" {
+  resource_group_name = azurerm_resource_group.databases.name
+  account_name        = azurerm_cosmosdb_account.db.name
+  role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
+  principal_id        = azurerm_function_app_flex_consumption.api.identity[0].principal_id
+  scope               = "${azurerm_cosmosdb_account.db.id}/dbs/${azurerm_cosmosdb_sql_database.db.name}/colls/${azurerm_cosmosdb_sql_container.primary.name}"
 }
