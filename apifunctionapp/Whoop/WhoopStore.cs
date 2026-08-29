@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text.Json;
 using Microsoft.Azure.Cosmos;
-using Microsoft.Extensions.Logging;
 
 namespace ApiFunctionApp.Whoop;
 
@@ -19,7 +18,7 @@ namespace ApiFunctionApp.Whoop;
 /// in-progress workout's end keeps moving. Re-syncing is meant to bring the
 /// stored copy up to date, not to fail on a conflict.
 /// </summary>
-public sealed class WhoopStore(CosmosClient cosmosClient, ILogger<WhoopStore> logger)
+public sealed class WhoopStore(CosmosClient cosmosClient)
 {
     private const string DatabaseName = "db";
     private const string ContainerName = "primary";
@@ -31,18 +30,14 @@ public sealed class WhoopStore(CosmosClient cosmosClient, ILogger<WhoopStore> lo
     /// </summary>
     public const string SyncStateType = "whoop_sync_state";
 
-    // Written by this app, so a WHOOP field of the same name must not overwrite
-    // them — the copy loop below skips these names.
-    private static readonly HashSet<string> OwnedProperties =
-        new(StringComparer.Ordinal) { "id", "type", "ingested_at" };
+    // Resolved once. GetContainer builds a new proxy on every call, and a
+    // backfill asks for one per record written.
+    private readonly Container container = cosmosClient.GetContainer(DatabaseName, ContainerName);
 
-    private Container Container => cosmosClient.GetContainer(DatabaseName, ContainerName);
+    private static readonly PartitionKey SyncStatePartition = new(SyncStateType);
 
-    /// <summary>
-    /// Stores one record. Returns the status Cosmos gave: 201 for a record not
-    /// stored before, 200 for one that replaced an existing document.
-    /// </summary>
-    public async Task<HttpStatusCode> UpsertRecordAsync(
+    /// <summary>Stores one record, replacing any earlier copy of it.</summary>
+    public async Task UpsertRecordAsync(
         WhoopCollection collection,
         string id,
         JsonElement record,
@@ -69,7 +64,11 @@ public sealed class WhoopStore(CosmosClient cosmosClient, ILogger<WhoopStore> lo
 
             foreach (var property in record.EnumerateObject())
             {
-                if (OwnedProperties.Contains(property.Name))
+                // Written above, so a WHOOP field of the same name must not
+                // overwrite them.
+                if (property.NameEquals("id")
+                    || property.NameEquals("type")
+                    || property.NameEquals("ingested_at"))
                 {
                     continue;
                 }
@@ -78,7 +77,6 @@ public sealed class WhoopStore(CosmosClient cosmosClient, ILogger<WhoopStore> lo
             }
 
             writer.WriteEndObject();
-            writer.Flush();
         }
 
         payload.Position = 0;
@@ -87,29 +85,12 @@ public sealed class WhoopStore(CosmosClient cosmosClient, ILogger<WhoopStore> lo
         // POCO or serializer settings in between — which also
         // sidesteps the CosmosClient's default Newtonsoft serializer, whose
         // defaults would reshape a System.Text.Json payload on the way through.
-        using var response = await Container.UpsertItemStreamAsync(
+        using var response = await container.UpsertItemStreamAsync(
             payload,
             new PartitionKey(collection.Type),
             cancellationToken: cancellationToken);
 
-        if (!response.IsSuccessStatusCode)
-        {
-            logger.LogError(
-                "Upsert of {Type} {Id} failed: {StatusCode} {ErrorMessage}",
-                collection.Type,
-                id,
-                response.StatusCode,
-                response.ErrorMessage);
-
-            throw new CosmosException(
-                response.ErrorMessage ?? $"Upsert of {collection.Type} {id} failed.",
-                response.StatusCode,
-                subStatusCode: 0,
-                activityId: response.Headers.ActivityId,
-                requestCharge: response.Headers.RequestCharge);
-        }
-
-        return response.StatusCode;
+        EnsureSuccess(response, $"Upsert of {collection.Type} {id}");
     }
 
     /// <summary>
@@ -121,9 +102,9 @@ public sealed class WhoopStore(CosmosClient cosmosClient, ILogger<WhoopStore> lo
         WhoopCollection collection,
         CancellationToken cancellationToken)
     {
-        using var response = await Container.ReadItemStreamAsync(
+        using var response = await container.ReadItemStreamAsync(
             collection.Type,
-            new PartitionKey(SyncStateType),
+            SyncStatePartition,
             cancellationToken: cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -131,15 +112,7 @@ public sealed class WhoopStore(CosmosClient cosmosClient, ILogger<WhoopStore> lo
             return WhoopSyncState.NotStarted(collection.Type);
         }
 
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new CosmosException(
-                response.ErrorMessage ?? $"Reading the {collection.Type} cursor failed.",
-                response.StatusCode,
-                subStatusCode: 0,
-                activityId: response.Headers.ActivityId,
-                requestCharge: response.Headers.RequestCharge);
-        }
+        EnsureSuccess(response, $"Reading the {collection.Type} cursor");
 
         var state = await JsonSerializer.DeserializeAsync<WhoopSyncState>(
             response.Content, cancellationToken: cancellationToken);
@@ -153,38 +126,46 @@ public sealed class WhoopStore(CosmosClient cosmosClient, ILogger<WhoopStore> lo
         await JsonSerializer.SerializeAsync(payload, state, cancellationToken: cancellationToken);
         payload.Position = 0;
 
-        using var response = await Container.UpsertItemStreamAsync(
+        using var response = await container.UpsertItemStreamAsync(
             payload,
-            new PartitionKey(SyncStateType),
+            SyncStatePartition,
             cancellationToken: cancellationToken);
 
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new CosmosException(
-                response.ErrorMessage ?? $"Writing the {state.Id} cursor failed.",
-                response.StatusCode,
-                subStatusCode: 0,
-                activityId: response.Headers.ActivityId,
-                requestCharge: response.Headers.RequestCharge);
-        }
+        EnsureSuccess(response, $"Writing the {state.Id} cursor");
     }
 
     public async Task DeleteStateAsync(WhoopCollection collection, CancellationToken cancellationToken)
     {
-        using var response = await Container.DeleteItemStreamAsync(
+        using var response = await container.DeleteItemStreamAsync(
             collection.Type,
-            new PartitionKey(SyncStateType),
+            SyncStatePartition,
             cancellationToken: cancellationToken);
 
         // A cursor that was not there is the state the caller asked for.
-        if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NotFound)
+        if (response.StatusCode != HttpStatusCode.NotFound)
         {
-            throw new CosmosException(
-                response.ErrorMessage ?? $"Deleting the {collection.Type} cursor failed.",
-                response.StatusCode,
-                subStatusCode: 0,
-                activityId: response.Headers.ActivityId,
-                requestCharge: response.Headers.RequestCharge);
+            EnsureSuccess(response, $"Deleting the {collection.Type} cursor");
         }
+    }
+
+    /// <summary>
+    /// The stream overloads report failure in the status code rather than by
+    /// throwing, so every call has to check. Raised as the CosmosException the
+    /// sync endpoint already catches, carrying the activity id and RU charge
+    /// that make a failed write diagnosable.
+    /// </summary>
+    private static void EnsureSuccess(ResponseMessage response, string what)
+    {
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        throw new CosmosException(
+            response.ErrorMessage ?? $"{what} failed.",
+            response.StatusCode,
+            subStatusCode: 0,
+            activityId: response.Headers.ActivityId,
+            requestCharge: response.Headers.RequestCharge);
     }
 }

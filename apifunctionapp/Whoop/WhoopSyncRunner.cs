@@ -55,6 +55,8 @@ public sealed class WhoopSyncRunner(WhoopStore store, ILogger<WhoopSyncRunner> l
 
             pages++;
 
+            var upserts = new List<Task>(page.Records.Count);
+
             foreach (var record in page.Records)
             {
                 if (collection.ReadId(record) is not { Length: > 0 } id)
@@ -71,8 +73,7 @@ public sealed class WhoopSyncRunner(WhoopStore store, ILogger<WhoopSyncRunner> l
                     continue;
                 }
 
-                await store.UpsertRecordAsync(collection, id, record, cancellationToken);
-                written++;
+                upserts.Add(store.UpsertRecordAsync(collection, id, record, cancellationToken));
 
                 if (ReadStart(record) is { } recordStart
                     && (oldestStart is null || recordStart < oldestStart))
@@ -81,17 +82,23 @@ public sealed class WhoopSyncRunner(WhoopStore store, ILogger<WhoopSyncRunner> l
                 }
             }
 
+            // A page's writes go out together rather than one after the next.
+            // A backfill is thousands of round trips to Cosmos and almost
+            // nothing else, so waiting out each one in turn is most of what
+            // the budget gets spent on. WHOOP caps a page at 25 records, which
+            // is what bounds the writes in flight — no throttle needed beyond
+            // the page itself. The writes are independent upserts, so the
+            // order they land in does not matter.
+            await Task.WhenAll(upserts);
+            written += upserts.Count;
+
             token = page.NextToken;
 
             if (token is null)
             {
                 // WHOOP has no more pages. For a backfill that means history is
                 // exhausted and every later run can be incremental.
-                if (backfilling)
-                {
-                    backfilling = false;
-                }
-
+                backfilling = false;
                 break;
             }
 

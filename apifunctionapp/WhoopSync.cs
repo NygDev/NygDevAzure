@@ -55,11 +55,10 @@ public class WhoopSync(
         CancellationToken cancellationToken)
     {
         // ?type= limits the run to one collection, by either its stored name or
-        // its short one — "whoop_workout" or "workout".
-        var requested = request.Query["type"].FirstOrDefault();
+        // its short one — "whoop_workout" or "workout". Absent, every one runs.
+        var collections = WhoopCollection.All;
 
-        IReadOnlyList<WhoopCollection> collections;
-        if (requested is { Length: > 0 })
+        if (request.Query["type"].FirstOrDefault() is { Length: > 0 } requested)
         {
             if (WhoopCollection.Find(requested) is not { } only)
             {
@@ -73,10 +72,6 @@ public class WhoopSync(
             }
 
             collections = [only];
-        }
-        else
-        {
-            collections = WhoopCollection.All;
         }
 
         var budget = ResolveBudget(request.Query["seconds"].FirstOrDefault());
@@ -166,21 +161,21 @@ public class WhoopSync(
                     }
                 }
 
-                var failed = results.Where(r => r.Error is not null).ToList();
+                var failed = results.Count(r => r.Error is not null);
 
                 // Complete means every collection asked for has exhausted its
                 // history and had its recent window re-read. Anything else is a
                 // signal to call again.
-                var complete = failed.Count == 0
+                var complete = failed == 0
                     && results.Count == collections.Count
                     && results.All(r => r.BackfillComplete && !r.MoreWorkRemaining);
 
                 var payload = new
                 {
-                    ok = failed.Count == 0,
+                    ok = failed == 0,
                     complete,
-                    message = failed.Count > 0
-                        ? $"{failed.Count} of {results.Count} collections failed; the rest are stored."
+                    message = failed > 0
+                        ? $"{failed} of {results.Count} collections failed; the rest are stored."
                         : complete
                             ? "Every collection is up to date."
                             : "The budget ran out before the backfill finished; call again to continue.",
@@ -190,7 +185,7 @@ public class WhoopSync(
                     collections = results,
                 };
 
-                if (failed.Count == 0)
+                if (failed == 0)
                 {
                     return new OkObjectResult(payload);
                 }
@@ -199,7 +194,7 @@ public class WhoopSync(
                 // keeps its own status; anything else is reported as upstream.
                 return new ObjectResult(payload)
                 {
-                    StatusCode = failed.Any(r => r.Error == "whoop_reauthorization_required")
+                    StatusCode = results.Any(r => r.Error == "whoop_reauthorization_required")
                         ? (int)HttpStatusCode.Conflict
                         : (int)HttpStatusCode.BadGateway,
                 };
