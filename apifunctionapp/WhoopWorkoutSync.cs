@@ -25,7 +25,10 @@ namespace ApiFunctionApp;
 /// Re-running this endpoint is meant to bring the stored copy up to date, not
 /// to fail on a conflict.
 /// </summary>
-public class WhoopWorkoutSync(CosmosClient cosmosClient, WhoopClient whoop, ILogger<WhoopWorkoutSync> logger)
+public class WhoopWorkoutSync(
+    CosmosClient cosmosClient,
+    Lazy<WhoopClient> whoop,
+    ILogger<WhoopWorkoutSync> logger)
 {
     private const string DatabaseName = "db";
     private const string ContainerName = "primary";
@@ -51,156 +54,103 @@ public class WhoopWorkoutSync(CosmosClient cosmosClient, WhoopClient whoop, ILog
         [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = "whoop/workout/latest")] HttpRequest request,
         CancellationToken cancellationToken)
     {
-        try
+        return await WhoopEndpoint.RunAsync(whoop, logger, async client =>
         {
-            var latest = await whoop.GetLatestWorkoutAsync(cancellationToken);
-
-            if (latest is not { } workout)
+            try
             {
-                logger.LogInformation("WHOOP returned no workouts; nothing to write.");
+                var latest = await client.GetLatestWorkoutAsync(cancellationToken);
 
-                return new NotFoundObjectResult(new
+                if (latest is not { } workout)
                 {
-                    ok = false,
-                    error = "no_workouts",
-                    message = "WHOOP returned no workouts for this account.",
-                });
-            }
+                    logger.LogInformation("WHOOP returned no workouts; nothing to write.");
 
-            // Without an id there is no document to write: Cosmos requires one,
-            // and inventing a surrogate would break the whole point of reusing
-            // WHOOP's, which is that re-running updates the workout instead of
-            // duplicating it.
-            if (ReadString(workout, "id") is not { Length: > 0 } workoutId)
+                    return new NotFoundObjectResult(new
+                    {
+                        ok = false,
+                        error = "no_workouts",
+                        message = "WHOOP returned no workouts for this account.",
+                    });
+                }
+
+                // Without an id there is no document to write: Cosmos requires
+                // one, and inventing a surrogate would break the whole point of
+                // reusing WHOOP's, which is that re-running updates the workout
+                // instead of duplicating it.
+                if (ReadString(workout, "id") is not { Length: > 0 } workoutId)
+                {
+                    logger.LogError(
+                        "The WHOOP workout record carried no usable id: {Record}", workout.GetRawText());
+
+                    return new ObjectResult(new
+                    {
+                        ok = false,
+                        error = "whoop_unexpected_shape",
+                        message = "The WHOOP workout record carried no usable 'id'.",
+                    })
+                    {
+                        StatusCode = (int)HttpStatusCode.BadGateway,
+                    };
+                }
+
+                return await WriteAsync(workoutId, workout, cancellationToken);
+            }
+            catch (WhoopAuthException ex) when (ex.NeedsReauthorization)
             {
-                logger.LogError("The WHOOP workout record carried no usable id: {Record}", workout.GetRawText());
+                // WHOOP rejected the credentials rather than failing to answer:
+                // the stored refresh token is spent, revoked, or still the
+                // placeholder value. No amount of retrying fixes that.
+                //
+                // A 403 while /api/whoop/status still works means something
+                // narrower: the token is good but the grant predates
+                // read:workout joining WhoopOptions.DefaultScopes. Same fix,
+                // so the granted scopes come back with the error to tell the
+                // two apart at a glance.
+                logger.LogError(ex, "WHOOP rejected the stored credentials for the workout endpoint.");
 
                 return new ObjectResult(new
                 {
                     ok = false,
-                    error = "whoop_unexpected_shape",
-                    message = "The WHOOP workout record carried no usable 'id'.",
+                    error = "whoop_reauthorization_required",
+                    message = "WHOOP rejected the stored credentials. Open /api/whoop/authorize "
+                        + $"in a browser to re-authorize; it rewrites '{WhoopSecretStore.RefreshTokenName}'.",
+                    status = (int)ex.StatusCode,
+                    grantedScopes = client.GrantedScopes,
+                    detail = ex.ResponseBody,
+                })
+                {
+                    StatusCode = (int)HttpStatusCode.Conflict,
+                };
+            }
+            catch (WhoopAuthException ex)
+            {
+                logger.LogError(ex, "Fetching the latest WHOOP workout failed upstream.");
+
+                return new ObjectResult(new
+                {
+                    ok = false,
+                    error = "whoop_upstream_error",
+                    message = ex.Message,
+                    detail = ex.ResponseBody,
                 })
                 {
                     StatusCode = (int)HttpStatusCode.BadGateway,
                 };
             }
+            catch (CosmosException ex)
+            {
+                logger.LogError(ex, "Cosmos rejected the workout upsert.");
 
-            return await WriteAsync(workoutId, workout, cancellationToken);
-        }
-        catch (WhoopAuthException ex) when (ex.NeedsReauthorization)
-        {
-            // WHOOP rejected the credentials rather than failing to answer.
-            // Same shape WhoopStatus returns, for the same reason: retrying
-            // cannot fix it, only re-authorizing can.
-            //
-            // A 403 here rather than a 401 usually means something narrower:
-            // the token is good but was granted without read:workout, which
-            // happens when the account was last authorized before that scope
-            // joined WhoopOptions.DefaultScopes. The fix is the same trip
-            // through /api/whoop/authorize.
-            logger.LogError(ex, "WHOOP rejected the stored credentials for the workout endpoint.");
-
-            return new ObjectResult(new
-            {
-                ok = false,
-                error = "whoop_reauthorization_required",
-                message = "WHOOP rejected the stored credentials. Open /api/whoop/authorize in a "
-                    + $"browser to re-authorize; it rewrites '{WhoopSecretStore.RefreshTokenName}'. "
-                    + "If the status endpoint still works, the grant is most likely missing the "
-                    + "read:workout scope.",
-                status = (int)ex.StatusCode,
-                grantedScopes = whoop.GrantedScopes,
-                detail = ex.ResponseBody,
-            })
-            {
-                StatusCode = (int)HttpStatusCode.Conflict,
-            };
-        }
-        catch (WhoopAuthException ex)
-        {
-            logger.LogError(ex, "Fetching the latest WHOOP workout failed upstream.");
-
-            return new ObjectResult(new
-            {
-                ok = false,
-                error = "whoop_upstream_error",
-                message = ex.Message,
-                status = (int)ex.StatusCode,
-                detail = ex.ResponseBody,
-            })
-            {
-                StatusCode = (int)HttpStatusCode.BadGateway,
-            };
-        }
-        catch (CosmosException ex)
-        {
-            logger.LogError(ex, "Cosmos rejected the workout upsert.");
-
-            return new ObjectResult(new
-            {
-                ok = false,
-                error = "cosmos_write_failed",
-                status = (int)ex.StatusCode,
-                message = ex.Message,
-            })
-            {
-                StatusCode = SafeStatusCode(ex.StatusCode),
-            };
-        }
-        catch (OperationCanceledException ex)
-        {
-            // Normally this is just a client disconnect or a host shutdown and
-            // not worth a stack trace. It is reported anyway because it is
-            // otherwise indistinguishable from the failures below: an
-            // HttpClient whose token is already cancelled throws this
-            // instantly, which looks exactly like a fast crash.
-            logger.LogWarning(
-                ex,
-                "The WHOOP workout sync was canceled. Request token cancelled: {Cancelled}.",
-                cancellationToken.IsCancellationRequested);
-
-            return new ObjectResult(new
-            {
-                ok = false,
-                error = "canceled",
-                type = ex.GetType().FullName,
-                message = ex.Message,
-                requestTokenCancelled = cancellationToken.IsCancellationRequested,
-            })
-            {
-                // 499, nginx's "client closed request": not a server fault, and
-                // distinguishable at a glance from the 500 below.
-                StatusCode = 499,
-            };
-        }
-        catch (Exception ex)
-        {
-            // Everything else the two clients can throw that is not one of
-            // their own types: Key Vault and managed-identity failures
-            // (RequestFailedException, CredentialUnavailableException), a WHOOP
-            // connection that never opened (HttpRequestException), a malformed
-            // body (JsonException). Without this the host logs "An exception was
-            // thrown by the invocation" and the caller gets a bare 500 — the
-            // cause only visible by digging through Application Insights.
-            logger.LogError(ex, "The WHOOP workout sync failed.");
-
-            return new ObjectResult(new
-            {
-                ok = false,
-                error = "unexpected_error",
-                type = ex.GetType().FullName,
-                message = ex.Message,
-
-                // The proximate cause is usually the interesting one: an
-                // AuthenticationFailedException says little, its inner
-                // exception says which credential was tried and why it failed.
-                inner = ex.InnerException?.Message,
-            })
-            {
-                StatusCode = (int)HttpStatusCode.InternalServerError,
-            };
-        }
+                return new ObjectResult(new
+                {
+                    ok = false,
+                    error = "cosmos_write_failed",
+                    message = ex.Message,
+                })
+                {
+                    StatusCode = (int)ex.StatusCode,
+                };
+            }
+        });
     }
 
     private async Task<IActionResult> WriteAsync(
@@ -235,11 +185,10 @@ public class WhoopWorkoutSync(CosmosClient cosmosClient, WhoopClient whoop, ILog
             {
                 ok = false,
                 error = "cosmos_write_failed",
-                status = (int)response.StatusCode,
                 message = response.ErrorMessage,
             })
             {
-                StatusCode = SafeStatusCode(response.StatusCode),
+                StatusCode = (int)response.StatusCode,
             };
         }
 
@@ -308,21 +257,6 @@ public class WhoopWorkoutSync(CosmosClient cosmosClient, WhoopClient whoop, ILog
         writer.WriteEndObject();
         writer.Flush();
     }
-
-    /// <summary>
-    /// A status code that ASP.NET Core will accept on the response.
-    ///
-    /// ObjectResult writes its StatusCode straight onto the response and the
-    /// framework rejects anything outside 100..999 — thrown while the result
-    /// executes, which is after Run has returned and therefore outside every
-    /// catch in it. A CosmosException raised before any response came back
-    /// carries StatusCode 0, so casting it is not safe on its own; the real
-    /// status is reported in the body either way.
-    /// </summary>
-    private static int SafeStatusCode(HttpStatusCode statusCode) =>
-        (int)statusCode is >= 100 and <= 999
-            ? (int)statusCode
-            : (int)HttpStatusCode.InternalServerError;
 
     private static string? ReadString(JsonElement workout, string propertyName) =>
         workout.ValueKind == JsonValueKind.Object
