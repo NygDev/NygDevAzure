@@ -68,6 +68,11 @@ builder.Services.AddSingleton(provider => new SecretClient(
 
 builder.Services.AddSingleton<WhoopSecretStore>();
 
+// Cosmos-side WHOOP storage and the sync loop over it. Neither reads the WHOOP
+// app settings, so unlike the client below they are safe to construct eagerly.
+builder.Services.AddSingleton<WhoopStore>();
+builder.Services.AddSingleton<WhoopSyncRunner>();
+
 // Lazy, and injected as Lazy into the endpoints. Constructing the client reads
 // the app settings, and the worker builds a function's constructor arguments
 // before it invokes the function — so a configuration error thrown here would
