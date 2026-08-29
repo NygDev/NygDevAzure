@@ -4,6 +4,7 @@ model {
     description 'Uses the websites and game server'
 
     -> web 'Visits (https://nygard.dev)'
+    -> running 'Visits (https://run.nygard.dev)'
     -> rpg.client 'Plays on (rpg.nygard.dev)'
   }
 
@@ -28,6 +29,15 @@ model {
     description '
       Personal apex website (nygdevapex) — free-tier Azure Static Web App.
       Links and Foundry RPG server status.
+    '
+  }
+
+  running = static-web-app 'run.nygard.dev' {
+    technology 'Azure Static Web App (Free SKU, westeurope)'
+    description '
+      Running/marathon dashboard (nygdevrun) — free-tier Azure Static Web App.
+      Provisioned empty by terraform; content deployed from its own
+      repository. No data source wired up yet.
     '
   }
 

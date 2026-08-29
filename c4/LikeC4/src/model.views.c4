@@ -16,11 +16,13 @@ views {
       and what every box actually runs on. Two people start two very
       different flows.
 
-      A visitor has two entry points — the apex website and the Foundry
-      client — and both lead to the RPG Server, where Caddy terminates TLS
-      and hands the request to the Foundry process on :30000. Foundry
-      asset URLs point at the nygdevcdn storage account, and a blob
-      landing there is what wakes the admin function.
+      A visitor has three entry points — the apex website, the running
+      dashboard and the Foundry client. The first and the last lead to the
+      RPG Server, where Caddy terminates TLS and hands the request to the
+      Foundry process on :30000; the running dashboard is a leaf, with no
+      backend wired up to it yet. Foundry asset URLs point at the nygdevcdn
+      storage account, and a blob landing there is what wakes the admin
+      function.
 
       The developer pushes to master; the workflows in that same
       repository are what deploy the site into `$web` and the function
@@ -43,6 +45,7 @@ views {
       github.repo,
       github.actions,
       web,
+      running,
       rpg,
       rpg.*,
       cdn,
@@ -65,7 +68,7 @@ views {
       color green
     }
     // Runs in the visitor browser
-    style web, rpg.client {
+    style web, running, rpg.client {
       color sky
     }
     // Boundaries, not things
