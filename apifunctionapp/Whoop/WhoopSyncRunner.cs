@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 
 namespace ApiFunctionApp.Whoop;
@@ -16,6 +17,17 @@ namespace ApiFunctionApp.Whoop;
 public sealed class WhoopSyncRunner(WhoopStore store, ILogger<WhoopSyncRunner> logger)
 {
     /// <summary>
+    /// One sync at a time, whatever started it. Two overlapping runs would
+    /// read the same cursor, fetch the same pages and race each other writing
+    /// it back, so the second caller is turned away rather than queued — by
+    /// the time a run finishes, whatever the second caller wanted is already
+    /// done. Static because the worker builds a new instance per invocation,
+    /// and the app is capped at maximum_instance_count = 1, so one process is
+    /// the whole story.
+    /// </summary>
+    private static readonly SemaphoreSlim SyncGate = new(1, 1);
+
+    /// <summary>
     /// How far back an incremental run re-reads by default. WHOOP filters a
     /// collection by start time, so a record rescored after it was first
     /// stored keeps its original start and would never come back in a "since
@@ -24,6 +36,89 @@ public sealed class WhoopSyncRunner(WhoopStore store, ILogger<WhoopSyncRunner> l
     /// records may have moved on WHOOP's side while nothing was syncing.
     /// </summary>
     public static readonly TimeSpan DefaultRefreshWindow = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// Syncs every collection asked for, or returns null when another run
+    /// already holds the gate.
+    ///
+    /// Each collection is isolated: one that fails should not cost the others
+    /// their run. That is what makes an unattended sync worth scheduling — a
+    /// WHOOP hiccup on recovery still leaves cycles, sleep and workouts
+    /// current. The deadline is shared across all of them, so a backfill that
+    /// eats the whole budget leaves the rest for the next run rather than
+    /// overrunning on their behalf.
+    /// </summary>
+    public async Task<IReadOnlyList<WhoopSyncResult>?> TrySyncAllAsync(
+        IReadOnlyList<WhoopCollection> collections,
+        WhoopClient client,
+        DateTimeOffset deadline,
+        TimeSpan refreshWindow,
+        bool reset,
+        CancellationToken cancellationToken)
+    {
+        if (!await SyncGate.WaitAsync(TimeSpan.Zero, cancellationToken))
+        {
+            return null;
+        }
+
+        try
+        {
+            var results = new List<WhoopSyncResult>(collections.Count);
+
+            foreach (var collection in collections)
+            {
+                try
+                {
+                    if (reset)
+                    {
+                        await store.DeleteStateAsync(collection, cancellationToken);
+                    }
+
+                    results.Add(await SyncAsync(
+                        collection, client, deadline, refreshWindow, cancellationToken));
+                }
+                catch (WhoopAuthException ex) when (ex.NeedsReauthorization)
+                {
+                    logger.LogError(ex, "WHOOP rejected the stored credentials during a sync.");
+
+                    results.Add(WhoopSyncResult.Failed(
+                        collection, "whoop_reauthorization_required", ex.ResponseBody ?? ex.Message));
+
+                    // Every remaining collection would fail the same way on the
+                    // same credentials, so there is nothing to gain by asking
+                    // WHOOP three more times.
+                    break;
+                }
+                catch (WhoopAuthException ex)
+                {
+                    logger.LogError(ex, "Syncing {Type} failed upstream.", collection.Type);
+                    results.Add(WhoopSyncResult.Failed(
+                        collection, "whoop_upstream_error", ex.ResponseBody ?? ex.Message));
+                }
+                catch (CosmosException ex)
+                {
+                    logger.LogError(ex, "Cosmos rejected a {Type} write.", collection.Type);
+                    results.Add(WhoopSyncResult.Failed(collection, "cosmos_write_failed", ex.Message));
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogError(ex, "Syncing {Type} failed.", collection.Type);
+                    results.Add(WhoopSyncResult.Failed(collection, "unexpected_error", ex.Message));
+                }
+
+                if (DateTimeOffset.UtcNow >= deadline)
+                {
+                    break;
+                }
+            }
+
+            return results;
+        }
+        finally
+        {
+            SyncGate.Release();
+        }
+    }
 
     public async Task<WhoopSyncResult> SyncAsync(
         WhoopCollection collection,
