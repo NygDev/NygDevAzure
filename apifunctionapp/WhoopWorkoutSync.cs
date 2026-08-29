@@ -141,16 +141,43 @@ public class WhoopWorkoutSync(CosmosClient cosmosClient, WhoopClient whoop, ILog
             {
                 ok = false,
                 error = "cosmos_write_failed",
+                status = (int)ex.StatusCode,
                 message = ex.Message,
             })
             {
-                StatusCode = (int)ex.StatusCode,
+                StatusCode = SafeStatusCode(ex.StatusCode),
             };
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            // Everything the two clients can throw that is not one of their own
-            // exception types: Key Vault and managed-identity failures
+            // Normally this is just a client disconnect or a host shutdown and
+            // not worth a stack trace. It is reported anyway because it is
+            // otherwise indistinguishable from the failures below: an
+            // HttpClient whose token is already cancelled throws this
+            // instantly, which looks exactly like a fast crash.
+            logger.LogWarning(
+                ex,
+                "The WHOOP workout sync was canceled. Request token cancelled: {Cancelled}.",
+                cancellationToken.IsCancellationRequested);
+
+            return new ObjectResult(new
+            {
+                ok = false,
+                error = "canceled",
+                type = ex.GetType().FullName,
+                message = ex.Message,
+                requestTokenCancelled = cancellationToken.IsCancellationRequested,
+            })
+            {
+                // 499, nginx's "client closed request": not a server fault, and
+                // distinguishable at a glance from the 500 below.
+                StatusCode = 499,
+            };
+        }
+        catch (Exception ex)
+        {
+            // Everything else the two clients can throw that is not one of
+            // their own types: Key Vault and managed-identity failures
             // (RequestFailedException, CredentialUnavailableException), a WHOOP
             // connection that never opened (HttpRequestException), a malformed
             // body (JsonException). Without this the host logs "An exception was
@@ -212,7 +239,7 @@ public class WhoopWorkoutSync(CosmosClient cosmosClient, WhoopClient whoop, ILog
                 message = response.ErrorMessage,
             })
             {
-                StatusCode = (int)response.StatusCode,
+                StatusCode = SafeStatusCode(response.StatusCode),
             };
         }
 
@@ -281,6 +308,21 @@ public class WhoopWorkoutSync(CosmosClient cosmosClient, WhoopClient whoop, ILog
         writer.WriteEndObject();
         writer.Flush();
     }
+
+    /// <summary>
+    /// A status code that ASP.NET Core will accept on the response.
+    ///
+    /// ObjectResult writes its StatusCode straight onto the response and the
+    /// framework rejects anything outside 100..999 — thrown while the result
+    /// executes, which is after Run has returned and therefore outside every
+    /// catch in it. A CosmosException raised before any response came back
+    /// carries StatusCode 0, so casting it is not safe on its own; the real
+    /// status is reported in the body either way.
+    /// </summary>
+    private static int SafeStatusCode(HttpStatusCode statusCode) =>
+        (int)statusCode is >= 100 and <= 999
+            ? (int)statusCode
+            : (int)HttpStatusCode.InternalServerError;
 
     private static string? ReadString(JsonElement workout, string propertyName) =>
         workout.ValueKind == JsonValueKind.Object
