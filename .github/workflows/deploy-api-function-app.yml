@@ -1,0 +1,37 @@
+name: Deploy API Function App
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'apifunctionapp/**'
+      - '.github/workflows/deploy-api-function-app.yml'
+  workflow_dispatch:
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: NygDevAzure
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish
+        run: dotnet publish apifunctionapp/ApiFunctionApp.csproj -c Release -o publish
+
+      - name: Az CLI login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Azure Functions (Flex Consumption)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: func-nygdev-api
+          package: publish

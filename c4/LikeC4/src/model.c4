@@ -8,19 +8,19 @@ model {
     -> rpg.client 'Plays on (rpg.nygard.dev)'
   }
 
-  api = function-app 'Placeholder API' {
+  api = function-app 'API' {
     technology '.NET 10 isolated (Flex Consumption)'
     description '
-      func-nygdev-api — provisioned empty by terraform,
-      reserved for a future app. No code deployed.
+      func-nygdev-api — SpotRead (HTTP, function key) point-reads
+      a single document out of Cosmos and returns it verbatim
     '
   }
 
   cosmos = cosmos-db 'Cosmos DB' {
     technology 'Azure Cosmos DB (NoSQL)'
     description '
-      nygdev-cosmos-db / db / primary — provisioned on the free tier,
-      currently unused by any app
+      nygdev-cosmos-db / db / primary — free tier, indexing_mode "none".
+      Point reads only: with no index there is nothing to query against.
     '
   }
 
@@ -81,6 +81,8 @@ model {
       on blobs in the foundry container
     '
   }
+
+  api -> cosmos 'Point-reads id 1 / partition run_marathon (managed identity)' #managed-identity
 
   web -> rpg.caddy 'Polls Foundry status (GET /api/status)'
   rpg.foundry -> cdn 'Holds asset URLs pointing to'

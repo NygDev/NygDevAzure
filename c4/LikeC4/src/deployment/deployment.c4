@@ -18,7 +18,7 @@ deployment {
       aspDotnet = service-plan 'asp-nygdev-flex-dotnet' {
         technology 'FC1 / Linux'
         apiApp = instanceOf api {
-          description 'func-nygdev-api — 512 MB instances, empty (no code deployed)'
+          description 'func-nygdev-api — 512 MB instances, hosts SpotRead'
         }
       }
 
@@ -109,6 +109,7 @@ deployment {
   internet.browser -> azure.rgNetwork.pip 'HTTPS to rpg.nygard.dev (rpg.norwayeast.cloudapp.azure.com)'
   azure.rgNetwork.pip -> azure.rgVm.rpgVm.caddyProc 'Forwards 80/443 via rpg-snet'
   azure.rgVm.rpgVm.foundryProc -> azure.rgData.foundryData 'Stores worlds, modules and media on (attached data disk)'
+  azure.rgConsumption.aspDotnet.apiApp -> azure.rgDb.cosmosDb 'Point read over HTTPS/443 (gateway mode, Entra token)'
   azure.rgConsumption.aspDotnet.apiApp -> azure.rgConsumption.appInsights 'Telemetry (OpenTelemetry)'
   azure.rgConsumption.aspPs.azadminApp -> azure.rgConsumption.appInsights 'Telemetry'
 }
