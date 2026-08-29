@@ -155,7 +155,11 @@ public sealed class WhoopClient(
     {
         using var page = await GetAsync<JsonDocument>("/v2/activity/workout?limit=1", cancellationToken);
 
-        if (!page.RootElement.TryGetProperty("records", out var records)
+        // Checked rather than assumed: TryGetProperty throws on anything that
+        // is not a JSON object, so a body that is not the expected envelope
+        // would come back as an unhandled exception rather than "no workout".
+        if (page.RootElement.ValueKind != JsonValueKind.Object
+            || !page.RootElement.TryGetProperty("records", out var records)
             || records.ValueKind != JsonValueKind.Array
             || records.GetArrayLength() == 0)
         {
