@@ -209,6 +209,18 @@ resource "azurerm_function_app_flex_consumption" "api" {
     # attribute is a dependency cycle. The app builds the URL from the
     # platform's WEBSITE_HOSTNAME instead; the whoop_redirect_uri output below
     # is the same string, for pasting into the developer dashboard.
+
+    # WEBSITE_TIME_ZONE is deliberately not set either, and should not be. It
+    # is what would let the WhoopSyncTimer function write its NCRONTAB schedule
+    # in local time rather than UTC, but Microsoft does not support it on Linux
+    # under Flex Consumption — setting it there causes TLS errors and stops the
+    # app's metrics. The timer runs on UTC instead.
+
+    # AzureWebJobsStorage is not listed here either, and is not missing: the
+    # timer trigger needs it for the blob lease that keeps one firing from
+    # overlapping the next, and the azurerm provider derives it from the
+    # storage account and storage_access_key above. Adding it by hand would
+    # fight the value the provider injects on every apply.
   }
 
   site_config {
