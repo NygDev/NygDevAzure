@@ -188,7 +188,27 @@ resource "azurerm_function_app_flex_consumption" "api" {
     MANAGED_IDENTITY_CLIENT_ID = azurerm_user_assigned_identity.api.client_id
   }
 
-  site_config {}
+  site_config {
+    # Browser calls come from the run.nygard.dev static site, a different
+    # origin, so the platform has to stamp Access-Control-Allow-Origin onto the
+    # function's responses — without it the browser discards the response and
+    # reports a bare network failure. Listing the origins here is the only way
+    # to get that header; the function code never sees the preflight.
+    cors {
+      allowed_origins = [
+        "https://run.nygard.dev",
+
+        # The Static Web App's own hostname, so the site still works when
+        # opened there instead of through the custom domain (the deploy
+        # pipeline publishes to the app, and DNS is a separate step).
+        "https://${azurerm_static_web_app.nygdevrun.default_host_name}",
+      ]
+
+      # No cookies or Authorization header on the call, and support_credentials
+      # would force an exact-origin echo we don't need.
+      support_credentials = false
+    }
+  }
 
   tags = local.common_tags
 

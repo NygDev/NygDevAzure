@@ -42,3 +42,8 @@ output "sql_server_fqdn" {
   description = "Fully qualified domain name of the Azure SQL server"
   value       = azurerm_mssql_server.nygdev.fully_qualified_domain_name
 }
+
+output "api_function_app_hostname" {
+  description = "Default hostname of the api function app. The run.nygard.dev site hardcodes this origin in main.js (SPOT_URL) and in the connect-src of its staticwebapp.config.json; both have to match it, and it has to appear in the app's CORS allowed origins."
+  value       = azurerm_function_app_flex_consumption.api.default_hostname
+}

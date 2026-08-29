@@ -24,9 +24,14 @@ public class SpotRead(CosmosClient cosmosClient, ILogger<SpotRead> logger)
     // The container's partition key path is /partition.
     private const string PartitionValue = "run_marathon";
 
+    // Anonymous, not Function: the caller is a static page with no server side,
+    // so any function key it sent would be sitting in public JavaScript — an
+    // access control in name only, and one that can't be rotated without
+    // redeploying the site. The endpoint takes no input and returns a single
+    // hardcoded public document, so there is nothing here to gate.
     [Function("SpotRead")]
     public async Task<IActionResult> Run(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "spotread")] HttpRequest request,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "spotread")] HttpRequest request,
         CancellationToken cancellationToken)
     {
         var container = cosmosClient.GetContainer(DatabaseName, ContainerName);
