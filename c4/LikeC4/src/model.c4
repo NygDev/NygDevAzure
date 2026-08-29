@@ -12,7 +12,8 @@ model {
     technology '.NET 10 isolated (Flex Consumption)'
     description '
       func-nygdev-api — SpotRead (HTTP, function key) point-reads
-      a single document out of Cosmos and returns it verbatim
+      a single document out of Cosmos and returns it verbatim.
+      Runs as the user-assigned identity id-nygdev-api.
     '
   }
 
@@ -82,7 +83,7 @@ model {
     '
   }
 
-  api -> cosmos 'Point-reads id 1 / partition run_marathon (managed identity)' #managed-identity
+  api -> cosmos 'Point-reads id 1 / partition run_marathon (id-nygdev-api)' #managed-identity
 
   web -> rpg.caddy 'Polls Foundry status (GET /api/status)'
   rpg.foundry -> cdn 'Holds asset URLs pointing to'

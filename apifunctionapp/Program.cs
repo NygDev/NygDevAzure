@@ -16,13 +16,21 @@ builder.Services
 // One CosmosClient for the lifetime of the host — it owns the connection pool
 // and the Entra token cache, so a per-request client would re-authenticate on
 // every call. The account has local_authentication_disabled, so the app's
-// system-assigned managed identity is the only way in; DefaultAzureCredential
-// picks it up in Azure and falls back to a developer login locally.
+// managed identity is the only way in.
 builder.Services.AddSingleton(_ =>
 {
     var endpoint = Environment.GetEnvironmentVariable("COSMOS_ENDPOINT")
         ?? throw new InvalidOperationException(
             "COSMOS_ENDPOINT is not configured; terraform sets it on the function app.");
+
+    // The app runs on a user-assigned identity, which has to be named: an app
+    // can carry several, so the platform won't pick one. Terraform supplies the
+    // client id. Left unset locally, where the value is null and
+    // DefaultAzureCredential falls through to a developer sign-in instead.
+    var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
+    {
+        ManagedIdentityClientId = Environment.GetEnvironmentVariable("MANAGED_IDENTITY_CLIENT_ID"),
+    });
 
     var options = new CosmosClientOptions
     {
@@ -31,7 +39,7 @@ builder.Services.AddSingleton(_ =>
         ConnectionMode = ConnectionMode.Gateway,
     };
 
-    return new CosmosClient(endpoint, new DefaultAzureCredential(), options);
+    return new CosmosClient(endpoint, credential, options);
 });
 
 builder.Build().Run();

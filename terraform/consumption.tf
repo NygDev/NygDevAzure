@@ -136,6 +136,18 @@ resource "azurerm_storage_container" "api" {
   container_access_type = "private"
 }
 
+# Identity for the api app. User-assigned rather than system-assigned so the
+# principal exists independently of the app: its Cosmos role assignment can be
+# made before the app is created and survives the app being recreated, where a
+# system-assigned principal is destroyed with the app and every assignment
+# naming it has to be rebuilt.
+resource "azurerm_user_assigned_identity" "api" {
+  name                = "id-nygdev-api"
+  resource_group_name = azurerm_resource_group.consumption.name
+  location            = azurerm_resource_group.consumption.location
+  tags                = local.common_tags
+}
+
 # The API app — .NET 10 isolated on Flex Consumption. Hosts SpotRead, an
 # HTTP-triggered point read of nygdev-cosmos-db / db / primary. Its Cosmos
 # access is granted by the role assignment below.
@@ -157,7 +169,8 @@ resource "azurerm_function_app_flex_consumption" "api" {
   maximum_instance_count = 1
 
   identity {
-    type = "SystemAssigned"
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.api.id]
   }
 
   app_settings = {
@@ -167,6 +180,12 @@ resource "azurerm_function_app_flex_consumption" "api" {
     # connection string: local auth is disabled on the account, so the app
     # authenticates with its managed identity via DefaultAzureCredential.
     COSMOS_ENDPOINT = azurerm_cosmosdb_account.db.endpoint
+
+    # Which identity to authenticate as. A user-assigned identity has to be
+    # named explicitly — unlike a system-assigned one, the platform can't infer
+    # it, and a token request without a client id fails on an app that has no
+    # system-assigned identity.
+    MANAGED_IDENTITY_CLIENT_ID = azurerm_user_assigned_identity.api.client_id
   }
 
   site_config {}
@@ -196,6 +215,6 @@ resource "azurerm_cosmosdb_sql_role_assignment" "api_cosmos_primary" {
   resource_group_name = azurerm_resource_group.databases.name
   account_name        = azurerm_cosmosdb_account.db.name
   role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
-  principal_id        = azurerm_function_app_flex_consumption.api.identity[0].principal_id
+  principal_id        = azurerm_user_assigned_identity.api.principal_id
   scope               = "${azurerm_cosmosdb_account.db.id}/dbs/${azurerm_cosmosdb_sql_database.db.name}/colls/${azurerm_cosmosdb_sql_container.primary.name}"
 }

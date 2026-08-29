@@ -208,7 +208,7 @@ model {
   // --- what terraform builds --------------------------------------------
   azurerm -> cdn 'Provisions and configures'
   azurerm -> azadmin 'Provisions and configures'
-  azurerm -> api 'Provisions and configures (incl. COSMOS_ENDPOINT and the Cosmos role assignment)'
+  azurerm -> api 'Provisions and configures (incl. id-nygdev-api and its Cosmos role assignment)'
 
   // --- the published result ---------------------------------------------
   cdn.webSite.docs -> user 'Serves rendered diagrams to (primary web endpoint)'

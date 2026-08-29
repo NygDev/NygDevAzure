@@ -11,7 +11,12 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
-    <PackageReference Include="Microsoft.ApplicationInsights.WorkerService" Version="3.1.2" />
+    <!-- Pinned to the 2.x line on purpose. Microsoft.Azure.Functions.Worker.
+         ApplicationInsights builds against Microsoft.ApplicationInsights 2.23.x;
+         the 3.x SDK drops ITelemetryInitializer, so ConfigureFunctionsApplication-
+         Insights() throws TypeLoadException before the host is built and the
+         worker dies with no functions indexed. -->
+    <PackageReference Include="Microsoft.ApplicationInsights.WorkerService" Version="2.23.0" />
     <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.62.1" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.52.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.ApplicationInsights" Version="2.51.0" />
