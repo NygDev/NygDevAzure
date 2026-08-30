@@ -1,4 +1,3 @@
-using ApiFunctionApp.Running;
 using ApiFunctionApp.Whoop;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
@@ -6,8 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace ApiFunctionApp;
 
 /// <summary>
-/// The morning WHOOP sync: every collection into Cosmos once a day,
-/// unattended.
+/// The unattended WHOOP sync: every collection into Cosmos, four times a day.
 ///
 /// It does the same work as <see cref="WhoopSync"/> and shares its runner, so
 /// the two cannot overlap. Whatever the night produced — last night's sleep,
@@ -15,35 +13,48 @@ namespace ApiFunctionApp;
 /// anything reads it, and the seven-day refresh window means a day this misses
 /// is picked up by the next run rather than lost.
 ///
-/// Then it rebuilds the running dashboard from what was just stored, so the
-/// charts are current by the same morning. The HTTP sync deliberately does not:
-/// it is called over and over through a backfill, and rebuilding after each
-/// call would recompute the whole history for a document nobody reads until the
-/// backfill is done. <see cref="RunningDashboard"/> covers that case by hand.
+/// Repeating it costs nothing and cannot compound: an incremental run re-reads
+/// the same seven days from scratch and upserts each record on its own id, so
+/// a run that finds nothing new writes the same documents back. What the extra
+/// runs buy is WHOOP's own lateness — a sleep scored after you wake, a workout
+/// that arrives PENDING_SCORE and is scored a few minutes later — reaching
+/// Cosmos in hours rather than waiting for tomorrow.
+///
+/// Storing is all it does. The marathon dashboard built from these workouts is
+/// rebuilt by <see cref="RunningDashboardTimer"/> a quarter of an hour later,
+/// on a timer of its own, so that neither job's failure is reported as the
+/// other's.
 /// </summary>
 public class WhoopSyncTimer(
     WhoopSyncRunner runner,
-    RunningDashboardBuilder dashboard,
     Lazy<WhoopClient> whoop,
     ILogger<WhoopSyncTimer> logger)
 {
     /// <summary>
-    /// 07:00 UTC, daily — the platform's own clock, which is what Functions
-    /// reads an NCRONTAB expression in.
+    /// 00:00, 06:00, 12:00 and 18:00 UTC — the platform's own clock, which is
+    /// what Functions reads an NCRONTAB expression in.
     ///
-    /// That is 09:00 in Oslo through the summer and 08:00 through the winter;
-    /// the hour it lands on matters less than that it lands after the night's
-    /// data has settled on WHOOP's side. Nothing here tracks daylight saving,
-    /// deliberately: the setting that would move the schedule to a named zone,
-    /// WEBSITE_TIME_ZONE, is unsupported on Linux under Flex Consumption, and
-    /// converting in code costs more than the drifting hour is worth.
+    /// 06:00 is the one that matters: 08:00 in Oslo through the summer and
+    /// 07:00 through the winter, which is the first run of the day that can
+    /// see the night. It is deliberately not the only chance at it. A night
+    /// that has not settled on WHOOP's side by then — a late morning, a
+    /// recovery still being scored — is picked up at 12:00 the same day
+    /// instead of being a day stale, which is what one daily run could not do.
+    ///
+    /// Nothing here tracks daylight saving, deliberately: the setting that
+    /// would move the schedule to a named zone, WEBSITE_TIME_ZONE, is
+    /// unsupported on Linux under Flex Consumption, and converting in code
+    /// costs more than the drifting hour is worth — the more so at six-hour
+    /// spacing, where an hour either way changes nothing.
     /// </summary>
-    private const string Schedule = "0 0 7 * * *";
+    private const string Schedule = "0 0 */6 * * *";
 
     /// <summary>
     /// Long enough to finish a backfill that a manual run left unfinished, and
     /// far enough inside Flex Consumption's 30-minute function timeout that the
-    /// run ends by saving its cursor rather than by being killed.
+    /// run ends by saving its cursor rather than by being killed. Well inside
+    /// the six hours to the next run, too, so a long backfill slice is never
+    /// still holding the gate when the following one fires.
     ///
     /// A timer has no load balancer over it, so unlike the HTTP endpoint's 100
     /// seconds this is not bounded at 230.
@@ -117,36 +128,6 @@ public class WhoopSyncTimer(
                 written,
                 results.Count,
                 results.Any(r => !r.BackfillComplete || r.MoreWorkRemaining));
-        }
-
-        // Rebuilt even when a collection failed above. The dashboard is built
-        // from the workouts already in Cosmos rather than from this run's
-        // writes, so a recovery that would not sync costs it nothing — and a
-        // partial sync still leaves it more current than yesterday's copy.
-        await RebuildDashboardAsync(cancellationToken);
-    }
-
-    /// <summary>
-    /// Rebuilds the running dashboard, and swallows a failure into the log.
-    ///
-    /// Deliberately not allowed to fail the invocation: the sync above is the
-    /// part that cannot be caught up later — its cursor has moved and WHOOP's
-    /// window is finite — while the dashboard is a projection that the next
-    /// morning, or one call to /api/running/dashboard, rebuilds from scratch.
-    /// Throwing here would mark a run failed for the recoverable half of it.
-    /// </summary>
-    private async Task RebuildDashboardAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            await dashboard.BuildAsync(cancellationToken);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogError(
-                ex,
-                "The WHOOP sync finished but the running dashboard could not be rebuilt; "
-                + "it still holds the previous build. Call /api/running/dashboard to retry.");
         }
     }
 }

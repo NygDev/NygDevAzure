@@ -25,20 +25,27 @@ model {
       is still alive; whoop/sync walks the WHOOP collections into Cosmos on
       demand, a budgeted slice at a time.
 
-      One timer trigger runs that same sync unattended, daily at 07:00 UTC.
-      Both go through a single runner holding a single gate, so a manual
-      call landing on top of the scheduled run stands down rather than
-      racing it for the cursor.
+      One timer trigger runs that same sync unattended, every six hours at
+      00:00, 06:00, 12:00 and 18:00 UTC. Repeating it is free of duplicates
+      and of drift — an incremental run re-reads the same seven days and
+      upserts each record on its own id — and buys the hours between WHOOP
+      scoring a night and us holding it. Both paths go through a single
+      runner holding a single gate, so a manual call landing on top of the
+      scheduled run stands down rather than racing it for the cursor.
 
       running/dashboard is the second half of that schedule: it reads the
       stored workouts back out of Cosmos, computes the running charts — pace
       by run type, aerobic efficiency, weekly volume, acute:chronic workload,
       weekly time in zones — and publishes them as one JSON file on the CDN
-      account, where a browser reads it directly. The timer rebuilds it
-      straight after each sync; the endpoint is for a backfill, where
-      rebuilding on every one of many sync calls would be waste, and for a
-      change to the arithmetic, which reshapes the whole history rather than
-      only its recent end.
+      account, where a browser reads it directly. A second timer trigger
+      rebuilds it a quarter of an hour behind each sync, at 00:15, 06:15,
+      12:15 and 18:15 UTC, and independent of it — the sync only has to have
+      finished, not to have succeeded, because the build reads the stored
+      workouts rather than that run's writes. The blob carries a five-minute
+      cache lifetime, so each rebuild reaches the page before the next one
+      runs. The endpoint is for a backfill, where rebuilding on every one of
+      many sync calls would be waste, and for a change to the arithmetic,
+      which reshapes the whole history rather than only its recent end.
     '
   }
 

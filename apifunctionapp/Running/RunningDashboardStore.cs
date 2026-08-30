@@ -9,7 +9,7 @@ namespace ApiFunctionApp.Running;
 /// Publishes the dashboard as a JSON blob on the CDN storage account.
 ///
 /// A blob rather than a Cosmos document because of who reads it. The dashboard
-/// is one file, rewritten whole once a day, and read by a browser on
+/// is one file, rewritten whole on a timer, and read by a browser on
 /// run.nygard.dev — which through Cosmos would mean a function call on every
 /// page load, a function key to hold or an anonymous endpoint to expose, and
 /// RU spent per visitor on a document that did not change between them. As a
@@ -40,11 +40,11 @@ public sealed class RunningDashboardStore(BlobClient blob)
     };
 
     /// <summary>
-    /// How long a browser or the CDN may serve a cached copy. The file changes
-    /// once a day, so this could be far longer — it is kept short because the
-    /// other way it changes is somebody rebuilding it by hand after changing
-    /// how a chart is computed, and waiting an hour to see whether that worked
-    /// is worse than the requests five minutes costs.
+    /// How long a browser or the CDN may serve a cached copy. The file is
+    /// rewritten every six hours, so this could be far longer — it is kept
+    /// short because the other way it changes is somebody rebuilding it by
+    /// hand after changing how a chart is computed, and waiting an hour to see
+    /// whether that worked is worse than the requests five minutes costs.
     /// </summary>
     private const string CacheControl = "public, max-age=300";
 
