@@ -54,12 +54,20 @@ public class RunningDashboard(
 
             var hint = ex.StatusCode switch
             {
+                // What an unindexed filter comes back as. The query asks for no
+                // scan on purpose, so this is the container's indexing policy
+                // being older than the code that reads it.
+                HttpStatusCode.BadRequest =>
+                    "Cosmos would not run the query. If it names an unindexed path, db/primary is still "
+                    + "carrying an older indexing policy — /sport_name and /score_state have to be indexed, "
+                    + "which terraform sets in terraform/db.tf. A code deploy does not carry that: run the "
+                    + "Terraform Apply workflow and try again.",
                 HttpStatusCode.Forbidden =>
                     "id-nygdev-api needs data-plane read/write on db/primary; terraform grants it in "
                     + "terraform/consumption.tf.",
                 HttpStatusCode.TooManyRequests =>
-                    "The account is throttling. The database is provisioned at 1000 RU/s shared, and this "
-                    + "query scans the whoop_workout partition.",
+                    "The account is throttling. The database is provisioned at 1000 RU/s shared across "
+                    + "everything on it, and this reads every stored run in one go.",
                 _ => "The container is db/primary on nygdev-cosmos-db.",
             };
 

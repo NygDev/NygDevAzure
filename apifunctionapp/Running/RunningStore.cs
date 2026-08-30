@@ -51,14 +51,18 @@ public sealed class RunningStore(Container container)
     /// Every scored run in the container, parsed, with a count of what could
     /// not be used and why.
     ///
-    /// This is a scan, and knowingly so. The container is created with
-    /// indexing_mode "none" to keep the free tier's writes cheap, which leaves
-    /// no index for a WHERE clause to seek on — hence EnableScanInQuery, which
-    /// Cosmos otherwise refuses the query without. The cost is bounded by the
-    /// partition rather than the container: /type is the partition key, so this
-    /// reads the workouts and never touches the cycles, sleep or recovery
-    /// stored beside them. That, plus running once a day, is what makes a scan
-    /// the cheaper answer than turning indexing on for every write to earn it.
+    /// Both halves of the filter are indexed — /sport_name and /score_state,
+    /// the only two paths in the container's policy — so this seeks rather
+    /// than scans, and the charge falls to the runs it actually returns
+    /// instead of every workout ever stored. The partition key narrows it
+    /// again before that: /type is what Cosmos routes on, so the cycles, sleep
+    /// and recovery records sitting beside these are never touched.
+    ///
+    /// EnableScanInQuery is deliberately not set. Without it a filter on a
+    /// path the policy does not cover is refused outright, which is the answer
+    /// to want: a query that has outgrown terraform/db.tf should fail and say
+    /// so on the first run rather than quietly cost a hundred times the RU on
+    /// every one after it.
     /// </summary>
     public async Task<(List<RunningWorkout> Runs, Dictionary<string, int> Skipped)> ReadRunsAsync(
         CancellationToken cancellationToken)
@@ -70,7 +74,12 @@ public sealed class RunningStore(Container container)
         var options = new QueryRequestOptions
         {
             PartitionKey = WorkoutPartition,
-            EnableScanInQuery = true,
+
+            // A page per round trip, so a few thousand runs come back in a
+            // handful rather than in tens. The runs are read in full and held
+            // in memory regardless — the whole history is what the charts are
+            // computed from — so a larger page costs nothing it does not
+            // already cost.
             MaxItemCount = 1000,
         };
 
