@@ -1,31 +1,21 @@
 namespace ApiFunctionApp.Running;
 
 /// <summary>
-/// The <c>dashboard</c> document: everything the running dashboard draws, in
-/// the order the charts appear on it.
+/// The published dashboard: everything the running charts draw, in the order
+/// the charts appear on the page.
 ///
-/// One document rather than five. The container is partitioned on /type with
-/// indexing off, so a reader's only cheap operation is a point read — and a
-/// point read of this id returns every chart at once, already computed, for a
-/// single-digit RU charge. That is the whole reason the arithmetic happens
-/// here on a schedule rather than in the browser on every page load.
+/// One file rather than five. It is fetched whole by a browser on every page
+/// load, so the arithmetic is done once a day on the way in rather than per
+/// visitor on the way out, and a reader gets every chart in a single request
+/// against a CDN.
 ///
 /// Every series is rebuilt from the full workout history on each run, so this
-/// document is a projection and never a source: it can be deleted and
-/// regenerated, and a changed threshold reshapes the whole of it rather than
-/// only its recent end.
+/// is a projection and never a source: it can be deleted and regenerated, and
+/// a changed threshold reshapes the whole of it rather than only its recent
+/// end.
 /// </summary>
 public sealed record RunningDashboardDocument
 {
-    public const string DocumentId = "dashboard";
-
-    /// <summary>Its own partition, separate from the WHOOP records it is built from.</summary>
-    public const string DocumentType = "dashboard";
-
-    public string Id { get; init; } = DocumentId;
-
-    public string Type { get; init; } = DocumentType;
-
     /// <summary>When this build ran, as distinct from the day it describes.</summary>
     public required DateTimeOffset GeneratedAt { get; init; }
 

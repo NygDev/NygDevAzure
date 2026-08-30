@@ -182,6 +182,13 @@ resource "azurerm_function_app_flex_consumption" "api" {
     # authenticates with its managed identity via DefaultAzureCredential.
     COSMOS_ENDPOINT = azurerm_cosmosdb_account.db.endpoint
 
+    # Where the running dashboard is published — the whole blob URI, so the app
+    # builds one client from it and carries no account, container or file name
+    # of its own. Composed from the account's own endpoint rather than typed
+    # out, so it cannot drift from the account the role assignment below grants
+    # against.
+    DASHBOARD_BLOB_URL = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${azurerm_storage_container.data.name}/marathonprep.json"
+
     # Which identity to authenticate as. A user-assigned identity has to be
     # named explicitly — unlike a system-assigned one, the platform can't infer
     # it, and a token request without a client id fails on an app that has no
@@ -272,4 +279,20 @@ resource "azurerm_cosmosdb_sql_role_assignment" "api_cosmos_primary" {
   role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
   principal_id        = azurerm_user_assigned_identity.api.principal_id
   scope               = "${azurerm_cosmosdb_account.db.id}/dbs/${azurerm_cosmosdb_sql_database.db.name}/colls/${azurerm_cosmosdb_sql_container.primary.name}"
+}
+
+# Write access on the data container for the api app, and on nothing else in
+# that account. Scoped to the container rather than the account — the same
+# reasoning as the Cosmos assignment above, and it matters more here: nygdevcdn
+# also holds Foundry's media and the published LikeC4 site, neither of which is
+# this app's business. Contributor rather than a reader role because the
+# dashboard blob is rewritten in place on every build.
+resource "azurerm_role_assignment" "api_cdn_data" {
+  # The container's own id is the Resource Manager id — which is what a role
+  # assignment scope has to be — because the resource is declared with
+  # storage_account_id rather than the older storage_account_name. That is also
+  # what deprecated resource_manager_id: the two now say the same thing.
+  scope                = azurerm_storage_container.data.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = azurerm_user_assigned_identity.api.principal_id
 }

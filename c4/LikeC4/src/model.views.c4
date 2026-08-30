@@ -186,9 +186,11 @@ views {
 
       The timer then turns around and reads the workouts back out of Cosmos
       to rebuild the running dashboard, which is why the Cosmos leg runs
-      both ways. That second step is allowed to fail on its own: the sync
-      moved a cursor and cannot be repeated, while the dashboard is a
-      projection that the next morning rebuilds from scratch either way.
+      both ways. Where that lands is off this page — a JSON blob on the CDN
+      account, drawn on the landscape view. The step is allowed to fail on
+      its own: the sync moved a cursor and cannot be repeated, while the
+      dashboard is a projection that the next morning rebuilds from scratch
+      either way.
     '
 
     include

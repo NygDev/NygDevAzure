@@ -31,13 +31,14 @@ model {
       racing it for the cursor.
 
       running/dashboard is the second half of that schedule: it reads the
-      stored workouts back out of Cosmos and computes the running charts —
-      pace by run type, aerobic efficiency, weekly volume, acute:chronic
-      workload, weekly time in zones — into a single dashboard document. The
-      timer rebuilds it straight after each sync; the endpoint is for a
-      backfill, where rebuilding on every one of many sync calls would be
-      waste, and for a change to the arithmetic, which reshapes the whole
-      history rather than only its recent end.
+      stored workouts back out of Cosmos, computes the running charts — pace
+      by run type, aerobic efficiency, weekly volume, acute:chronic workload,
+      weekly time in zones — and publishes them as one JSON file on the CDN
+      account, where a browser reads it directly. The timer rebuilds it
+      straight after each sync; the endpoint is for a backfill, where
+      rebuilding on every one of many sync calls would be waste, and for a
+      change to the arithmetic, which reshapes the whole history rather than
+      only its recent end.
     '
   }
 
@@ -58,13 +59,15 @@ model {
       nygdev-cosmos-db / db / primary — free tier, partitioned on /type.
 
       Indexed opt-in: /* excluded, and two properties included for the one
-      query that exists, the dashboard build reading scored runs out of the
-      whoop_workout partition. Everything else is a point read by id, which
-      is what the dashboard document is for — one id holding every running
-      chart, precomputed. A record is stored as WHOOP sends it and the
-      dashboard is a few hundred kilobytes of series, so indexing either in
-      full would be paid on every write to earn nothing; a filter on a path
-      outside the policy is refused rather than quietly scanned.
+      query that exists — the dashboard build reading scored runs out of the
+      whoop_workout partition. Everything else here is written and read by
+      id: the records as WHOOP sends them, and one sync cursor per
+      collection. Indexing a record in full would be paid on every write of
+      every sync to earn nothing, and a filter on a path outside the policy
+      is refused rather than quietly scanned.
+
+      What the dashboard build produces does not come back here; it goes to
+      a blob on the CDN account, because a browser is what reads it.
     '
   }
 
@@ -113,8 +116,10 @@ model {
   cdn = storage-account 'CDN Storage' {
     technology 'Azure Blob Storage — foundry media + $web static website'
     description '
-      nygdevcdn storage account — CDN for Foundry media
-      (foundry container)
+      nygdevcdn storage account. Foundry media in `foundry`, the LikeC4
+      site in `$web`, and the running dashboard in `data` — one JSON file
+      the API rewrites after every WHOOP sync and run.nygard.dev fetches
+      straight from the browser, anonymous-read and no function in the path.
     '
   }
 
@@ -136,9 +141,14 @@ model {
 
   // Upserts by WHOOP's own id, which is what makes a re-sync idempotent: a
   // record WHOOP rescored overwrites its earlier self rather than landing
-  // beside it. The cursors live in the same container, one per collection,
-  // and so does the dashboard the workouts are read back out to build.
-  api -> cosmos 'Upserts WHOOP records, sync cursors and the running dashboard; queries the scored runs to build it (id-nygdev-api)' #managed-identity
+  // beside it. The cursors live in the same container, one per collection.
+  // The read back out is the dashboard build's, and the only query here.
+  api -> cosmos 'Upserts WHOOP records and sync cursors; queries the scored runs back out (id-nygdev-api)' #managed-identity
+
+  // Where the dashboard ends up. Written as id-nygdev-api, which holds
+  // Storage Blob Data Contributor on that one container and nothing else on
+  // the account — the Foundry media and the published LikeC4 site share it.
+  api -> cdn 'Publishes the running dashboard (PUT data/marathonprep.json)' #managed-identity
 
   // The refresh token is read, spent and rewritten on the same call, which is
   // why the identity holds Secrets Officer here rather than a reader role.

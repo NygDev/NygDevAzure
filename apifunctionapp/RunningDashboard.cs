@@ -1,5 +1,6 @@
 using System.Net;
 using ApiFunctionApp.Running;
+using Azure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Cosmos;
@@ -9,7 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace ApiFunctionApp;
 
 /// <summary>
-/// Rebuilds the running dashboard on demand, and answers with what it stored.
+/// Rebuilds the running dashboard on demand, and answers with what it published.
 ///
 /// The scheduled path is <see cref="WhoopSyncTimer"/>, which rebuilds this
 /// straight after the morning sync — so on an ordinary day nobody calls this at
@@ -20,6 +21,8 @@ namespace ApiFunctionApp;
 ///
 /// It reads WHOOP data out of Cosmos and never talks to WHOOP, so unlike the
 /// sync endpoints it needs no access token and cannot fail on an expired one.
+/// The two things it does touch are the ones it answers for below: the Cosmos
+/// container it reads the runs from, and the blob it publishes them to.
 /// </summary>
 public class RunningDashboard(
     RunningDashboardBuilder builder,
@@ -41,12 +44,38 @@ public class RunningDashboard(
             {
                 ok = true,
                 message = document.Source.Runs > 0
-                    ? $"Built from {document.Source.Runs} runs; stored as "
-                        + $"{RunningDashboardDocument.DocumentType}/{RunningDashboardDocument.DocumentId}."
-                    : "No scored running workouts are stored yet; the dashboard was written empty. "
+                    ? $"Built from {document.Source.Runs} runs and published to {builder.PublishedTo}."
+                    : "No scored running workouts are stored yet; the dashboard was published empty. "
                         + "Run /api/whoop/sync first.",
+                publishedTo = builder.PublishedTo,
                 dashboard = document,
             });
+        }
+        catch (RequestFailedException ex)
+        {
+            // The publish half. Storage answers in the same shape whichever
+            // way it refuses, so the status is what tells them apart.
+            logger.LogError(ex, "Storage returned {Status} publishing the running dashboard.", ex.Status);
+
+            var hint = ex.Status switch
+            {
+                403 => "id-nygdev-api needs Storage Blob Data Contributor on the data container of "
+                    + "nygdevcdn; terraform grants it in terraform/consumption.tf.",
+                404 => "The container the blob lives in does not exist. Terraform creates it in "
+                    + "terraform/cdn.tf.",
+                _ => $"The target is {builder.PublishedTo}, set by DASHBOARD_BLOB_URL.",
+            };
+
+            return new ObjectResult(new
+            {
+                ok = false,
+                error = "blob_write_failed",
+                message = $"Storage returned {ex.Status} publishing the running dashboard. {hint}",
+                detail = ex.Message,
+            })
+            {
+                StatusCode = (int)HttpStatusCode.BadGateway,
+            };
         }
         catch (CosmosException ex)
         {

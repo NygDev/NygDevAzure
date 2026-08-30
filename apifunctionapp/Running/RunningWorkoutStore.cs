@@ -1,14 +1,16 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.Azure.Cosmos;
 
 namespace ApiFunctionApp.Running;
 
 /// <summary>
-/// The Cosmos half of the dashboard: reading the stored runs, and writing the
-/// document built from them.
+/// Reads the runs the WHOOP sync stored, out of Cosmos.
+///
+/// The read half of the dashboard only. What is built from these goes to a
+/// blob on the CDN account rather than back into Cosmos — see
+/// <see cref="RunningDashboardStore"/>.
 /// </summary>
-public sealed class RunningStore(Container container)
+public sealed class RunningWorkoutStore(Container container)
 {
     /// <summary>
     /// Only the fields the charts need, aliased away from Cosmos SQL's reserved
@@ -32,20 +34,6 @@ public sealed class RunningStore(Container container)
     private const string ScoredState = "SCORED";
 
     private static readonly PartitionKey WorkoutPartition = new(Whoop.WhoopCollection.Workout.Type);
-
-    private static readonly PartitionKey DashboardPartition = new(RunningDashboardDocument.DocumentType);
-
-    /// <summary>
-    /// camelCase, matching what the HTTP endpoints already return, so the
-    /// stored document and the API response are the same shape. Nulls are kept
-    /// rather than dropped: a null rolling average or ratio is a gap the chart
-    /// is meant to see, and a missing property would read as zero.
-    /// </summary>
-    private static readonly JsonSerializerOptions DocumentJson = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
-    };
 
     /// <summary>
     /// Every scored run in the container, parsed, with a count of what could
@@ -128,32 +116,5 @@ public sealed class RunningStore(Container container)
         }
 
         return (runs, skipped);
-    }
-
-    /// <summary>
-    /// Stores the dashboard, replacing the previous build. An upsert on a fixed
-    /// id, so there is exactly one of these and a reader never has to work out
-    /// which is current.
-    /// </summary>
-    public async Task WriteAsync(RunningDashboardDocument document, CancellationToken cancellationToken)
-    {
-        using var payload = new MemoryStream();
-        await JsonSerializer.SerializeAsync(payload, document, DocumentJson, cancellationToken);
-        payload.Position = 0;
-
-        using var response = await container.UpsertItemStreamAsync(
-            payload,
-            DashboardPartition,
-            cancellationToken: cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new CosmosException(
-                response.ErrorMessage ?? "Writing the dashboard document failed.",
-                response.StatusCode,
-                subStatusCode: 0,
-                activityId: response.Headers.ActivityId,
-                requestCharge: response.Headers.RequestCharge);
-        }
     }
 }

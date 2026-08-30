@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 namespace ApiFunctionApp.Running;
 
 /// <summary>
-/// Reads the stored runs, computes the five charts, stores the result.
+/// Reads the stored runs, computes the five charts, publishes the result.
 ///
 /// The whole build is a rebuild. There is no incremental path and there should
 /// not be: WHOOP rescores a workout after the fact, the sync re-reads a week of
@@ -14,22 +14,27 @@ namespace ApiFunctionApp.Running;
 /// incremental build would need.
 /// </summary>
 public sealed class RunningDashboardBuilder(
-    RunningStore store,
+    RunningWorkoutStore workouts,
+    RunningDashboardStore dashboard,
     ILogger<RunningDashboardBuilder> logger)
 {
+    /// <summary>Where the last build was published.</summary>
+    public Uri PublishedTo => dashboard.Uri;
+
     public async Task<RunningDashboardDocument> BuildAsync(CancellationToken cancellationToken)
     {
-        var (runs, skipped) = await store.ReadRunsAsync(cancellationToken);
+        var (runs, skipped) = await workouts.ReadRunsAsync(cancellationToken);
 
         var generatedAt = DateTimeOffset.UtcNow;
         var document = RunningAnalytics.Build(runs, skipped, AsOf(runs, generatedAt), generatedAt);
 
-        await store.WriteAsync(document, cancellationToken);
+        await dashboard.WriteAsync(document, cancellationToken);
 
         logger.LogInformation(
-            "Built the running dashboard from {Runs} runs up to {AsOf} "
+            "Published the running dashboard to {Uri}: {Runs} runs up to {AsOf} "
             + "({Weeks} weeks, {AcwrDays} ACWR days, {Skipped} workouts skipped); "
             + "current ACWR {Acwr}.",
+            dashboard.Uri,
             document.Source.Runs,
             document.AsOf,
             document.WeeklyVolume.Weeks.Count,

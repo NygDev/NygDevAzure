@@ -55,12 +55,11 @@ resource "azurerm_cosmosdb_sql_container" "primary" {
   #
   # Opt-in rather than opt-out — /* excluded, the filter's own paths included —
   # because almost nothing in this container is ever filtered on. A WHOOP
-  # record is stored field for field as WHOOP sends it, and the dashboard
-  # document is a few hundred kilobytes of chart series; indexing either in
-  # full would put a write cost on every sync and every rebuild to earn
-  # nothing back. Under this policy the dashboard carries neither included
-  # path, so it still writes at the price it did with indexing off, and the
-  # sync pays for two properties per record.
+  # record is stored field for field as WHOOP sends it, most of it properties
+  # no query will ever mention; indexing all of them would be paid on every
+  # record of every sync to earn nothing back. Under this policy a sync pays
+  # for two properties per record and the cursors, which carry neither
+  # included path, still write at the price they did with indexing off.
   #
   # Adding a path here is what a new query needs. Without one Cosmos refuses
   # the filter outright rather than quietly scanning the partition, which is
