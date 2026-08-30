@@ -5,14 +5,14 @@ resource "azurerm_resource_group" "databases" {
 }
 
 resource "azurerm_cosmosdb_account" "db" {
-  name                          = "nygdev-cosmos-db"
-  location                      = azurerm_resource_group.databases.location
-  resource_group_name           = azurerm_resource_group.databases.name
-  kind                          = "GlobalDocumentDB"
-  offer_type                    = "Standard"
-  free_tier_enabled             = true
-  local_authentication_disabled = true
-  burst_capacity_enabled        = true
+  name                         = "nygdev-cosmos-db"
+  location                     = azurerm_resource_group.databases.location
+  resource_group_name          = azurerm_resource_group.databases.name
+  kind                         = "GlobalDocumentDB"
+  offer_type                   = "Standard"
+  free_tier_enabled            = true
+  local_authentication_enabled = false
+  burst_capacity_enabled       = true
 
   capacity {
     total_throughput_limit = 1000

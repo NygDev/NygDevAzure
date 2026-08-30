@@ -268,8 +268,8 @@ resource "azurerm_function_app_flex_consumption" "api" {
 }
 
 # Data-plane read/write on the Cosmos container for the api app. The account
-# has local_authentication_disabled, so this Entra role assignment is the only
-# way in — there are no keys to fall back on. Cosmos DB Built-in Data
+# has local_authentication_enabled = false, so this Entra role assignment is
+# the only way in — there are no keys to fall back on. Cosmos DB Built-in Data
 # Contributor (…0002) is the read/write built-in role; scoped to the primary
 # container rather than the account, so the app can't reach anything else that
 # lands in the account later.
