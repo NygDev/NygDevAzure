@@ -1,6 +1,8 @@
+using ApiFunctionApp.Running;
 using ApiFunctionApp.Whoop;
 using Azure.Core;
 using Azure.Identity;
+using Azure.Storage.Blobs;
 using Azure.Security.KeyVault.Secrets;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Functions.Worker;
@@ -57,6 +59,13 @@ builder.Services.AddSingleton(provider =>
     return new CosmosClient(endpoint, provider.GetRequiredService<TokenCredential>(), options);
 });
 
+// The one container the app uses, resolved once. GetContainer builds a fresh
+// proxy on every call and a backfill would ask for one per record written, so
+// the names live here — the single place that knows them — rather than in each
+// store that needs one. Both are fixed by terraform, in terraform/db.tf.
+builder.Services.AddSingleton(provider =>
+    provider.GetRequiredService<CosmosClient>().GetContainer("db", "primary"));
+
 // ---------------------------------------------------------------------------
 // WHOOP
 //
@@ -77,6 +86,34 @@ builder.Services.AddSingleton<WhoopSecretStore>();
 // app settings, so unlike the client below they are safe to construct eagerly.
 builder.Services.AddSingleton<WhoopStore>();
 builder.Services.AddSingleton<WhoopSyncRunner>();
+
+// ---------------------------------------------------------------------------
+// Running analytics
+//
+// Reads the workouts the sync stored out of Cosmos, and publishes the charts
+// built from them as a JSON blob on the CDN account. No WHOOP credentials
+// anywhere in it, so nothing here needs the lazy treatment the WHOOP client
+// gets — and a factory registration is only run on first resolve anyway, so a
+// checkout without DASHBOARD_BLOB_URL fails the dashboard rather than the
+// worker.
+// ---------------------------------------------------------------------------
+builder.Services.AddSingleton(provider =>
+{
+    var url = Environment.GetEnvironmentVariable("DASHBOARD_BLOB_URL")
+        ?? throw new InvalidOperationException(
+            "DASHBOARD_BLOB_URL is not configured; terraform sets it on the function app.");
+
+    // The whole blob URI in one setting, so the account, container and file
+    // name are terraform's to decide and this knows only where to put the
+    // file. Authenticated with the same managed identity as everything else —
+    // the app holds no storage key, and its role assignment is scoped to that
+    // one container.
+    return new BlobClient(new Uri(url), provider.GetRequiredService<TokenCredential>());
+});
+
+builder.Services.AddSingleton<RunningWorkoutStore>();
+builder.Services.AddSingleton<RunningDashboardStore>();
+builder.Services.AddSingleton<RunningDashboardBuilder>();
 
 // Lazy, and injected as Lazy into the endpoints. Constructing the client reads
 // the app settings, and the worker builds a function's constructor arguments

@@ -18,21 +18,14 @@ namespace ApiFunctionApp.Whoop;
 /// in-progress workout's end keeps moving. Re-syncing is meant to bring the
 /// stored copy up to date, not to fail on a conflict.
 /// </summary>
-public sealed class WhoopStore(CosmosClient cosmosClient)
+public sealed class WhoopStore(Container container)
 {
-    private const string DatabaseName = "db";
-    private const string ContainerName = "primary";
-
     /// <summary>
     /// Where the cursors live. The container is partitioned on /type, so
     /// giving the cursors a type of their own keeps them out of the partitions
     /// holding the records they track.
     /// </summary>
     public const string SyncStateType = "whoop_sync_state";
-
-    // Resolved once. GetContainer builds a new proxy on every call, and a
-    // backfill asks for one per record written.
-    private readonly Container container = cosmosClient.GetContainer(DatabaseName, ContainerName);
 
     private static readonly PartitionKey SyncStatePartition = new(SyncStateType);
 

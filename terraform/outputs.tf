@@ -57,3 +57,8 @@ output "whoop_authorize_url" {
   description = "Open this once, in a browser, to grant the app access to a WHOOP account and seed the whoop-token secret. Needs ?code=<function key> appended — the endpoint is at Function auth level."
   value       = "https://${azurerm_function_app_flex_consumption.api.default_hostname}/api/whoop/authorize"
 }
+
+output "running_dashboard_url" {
+  description = "Where the running dashboard JSON is published. This is the URL the run.nygard.dev page fetches; it is anonymous-read, so no key or function call is involved. Rewritten by the API after every WHOOP sync."
+  value       = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${data.azurerm_storage_container.cdn_data.name}/marathonprep.json"
+}

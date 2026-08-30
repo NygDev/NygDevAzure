@@ -50,8 +50,45 @@ resource "azurerm_cosmosdb_sql_container" "primary" {
   partition_key_paths   = ["/type"]
   partition_key_version = 2
 
+  # Indexed for exactly one query: the running dashboard reading the scored
+  # runs out of the whoop_workout partition. Two paths, and nothing else.
+  #
+  # Opt-in rather than opt-out — /* excluded, the filter's own paths included —
+  # because almost nothing in this container is ever filtered on. A WHOOP
+  # record is stored field for field as WHOOP sends it, most of it properties
+  # no query will ever mention; indexing all of them would be paid on every
+  # record of every sync to earn nothing back. Under this policy a sync pays
+  # for two properties per record and the cursors, which carry neither
+  # included path, still write at the price they did with indexing off.
+  #
+  # Adding a path here is what a new query needs. Without one Cosmos refuses
+  # the filter outright rather than quietly scanning the partition, which is
+  # the behaviour to want: a query that has outgrown the policy should say so
+  # rather than get slower.
+  #
+  # This is an in-place update, not a replacement — Cosmos reindexes in the
+  # background on spare throughput and keeps serving reads throughout.
   indexing_policy {
-    indexing_mode = "none"
+    indexing_mode = "consistent"
+
+    included_path {
+      path = "/sport_name/?"
+    }
+
+    included_path {
+      path = "/score_state/?"
+    }
+
+    excluded_path {
+      path = "/*"
+    }
+
+    # Cosmos writes this into the policy whether or not it is asked to.
+    # Declaring it is what keeps `terraform plan` from reporting the same
+    # drift on every run.
+    excluded_path {
+      path = "/\"_etag\"/?"
+    }
   }
 }
 

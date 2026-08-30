@@ -182,6 +182,13 @@ resource "azurerm_function_app_flex_consumption" "api" {
     # authenticates with its managed identity via DefaultAzureCredential.
     COSMOS_ENDPOINT = azurerm_cosmosdb_account.db.endpoint
 
+    # Where the running dashboard is published — the whole blob URI, so the app
+    # builds one client from it and carries no account, container or file name
+    # of its own. Composed from the account's own endpoint rather than typed
+    # out, so it cannot drift from the account the role assignment below grants
+    # against.
+    DASHBOARD_BLOB_URL = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${data.azurerm_storage_container.cdn_data.name}/marathonprep.json"
+
     # Which identity to authenticate as. A user-assigned identity has to be
     # named explicitly — unlike a system-assigned one, the platform can't infer
     # it, and a token request without a client id fails on an app that has no
@@ -273,3 +280,16 @@ resource "azurerm_cosmosdb_sql_role_assignment" "api_cosmos_primary" {
   principal_id        = azurerm_user_assigned_identity.api.principal_id
   scope               = "${azurerm_cosmosdb_account.db.id}/dbs/${azurerm_cosmosdb_sql_database.db.name}/colls/${azurerm_cosmosdb_sql_container.primary.name}"
 }
+
+# The Storage Blob Data Contributor assignment that lets the api app write the
+# dashboard blob was granted out of band and is not declared here, for the
+# reason the Key Vault one in security.tf is not: azurerm_role_assignment fails
+# on an assignment that already exists, so adopting it means a terraform import
+# rather than an add.
+#
+# What it has to be, if it is ever rebuilt: Storage Blob Data Contributor for
+# id-nygdev-api, scoped to the data container of nygdevcdn rather than to the
+# account. Contributor rather than a reader role because the blob is rewritten
+# in place on every build, and container-scoped because the same account holds
+# Foundry's media and the published LikeC4 site, neither of which is this app's
+# business.
