@@ -59,10 +59,16 @@ public class RunningDashboard(
 
             var hint = ex.Status switch
             {
+                // Neither of these is fixed by an apply. The data container
+                // and the role assignment on it were both made by hand — see
+                // terraform/cdn.tf, which reads the container rather than
+                // declaring it, and says what the assignment has to be.
                 403 => "id-nygdev-api needs Storage Blob Data Contributor on the data container of "
-                    + "nygdevcdn; terraform grants it in terraform/consumption.tf.",
-                404 => "The container the blob lives in does not exist. Terraform creates it in "
-                    + "terraform/cdn.tf.",
+                    + "nygdevcdn. That assignment is granted out of band, not by terraform; "
+                    + "terraform/cdn.tf records what it has to be.",
+                404 => "The data container on nygdevcdn is missing, or the blob path is wrong. The "
+                    + "container is created by hand — terraform reads it, and a plan fails there "
+                    + "first if it has gone.",
                 _ => $"The target is {builder.PublishedTo}, set by DASHBOARD_BLOB_URL.",
             };
 
