@@ -3,7 +3,8 @@ data "azurerm_storage_account" "nygdevcdn" {
   resource_group_name = var.cdn_resource_group
 }
 
-# The container the API publishes the running dashboard into, as
+# Where the API publishes the running dashboard: one JSON blob, rewritten in
+# place after every sync, served at
 # https://nygdevcdn.blob.core.windows.net/data/marathonprep.json
 #
 # A third thing out of an account that already serves two — Foundry media in
@@ -12,23 +13,23 @@ data "azurerm_storage_account" "nygdevcdn" {
 # it, and this is the account that is already public and already fronted by the
 # CDN.
 #
-# Read rather than declared, and deliberately so. The container was created by
-# hand, like the account holding it, and azurerm_storage_container fails on one
-# that already exists rather than adopting it — the same reason the Key Vault
-# role assignment in security.tf is not declared either. Adopting it would mean
-# a terraform import, not an add.
+# The container was created by hand and adopted into state by the Terraform
+# Import workflow, not created by an apply — terraform creates rather than
+# adopts, and would have failed on one that already exists. The account around
+# it stays unmanaged, as the data source above.
 #
-# A data source still earns its place over hardcoding the name: if the
-# container is ever renamed or removed, the plan fails here rather than the
-# app discovering it at 07:00 the next morning.
+# `blob` rather than `container`: the file is readable by anyone holding the
+# URL, but the container cannot be listed. What is in it is aggregate
+# distances, paces and heart rates published on purpose — and anonymous read
+# is what lets the static site fetch it with no key, no token and no function
+# call in between. If the container was made private, the first plan after the
+# import is where that shows up, as a change to this argument.
 #
-# Two things this configuration therefore does not control, and that the blob
-# being publicly readable depends on:
-#   - the container's public access level, which has to be blob (anonymous
-#     read of a known URL, no listing) for run.nygard.dev to fetch it;
-#   - blob-service CORS, which lives on the account and governs whether a
-#     cross-origin fetch from run.nygard.dev is allowed at all.
-data "azurerm_storage_container" "cdn_data" {
-  name               = "data"
-  storage_account_id = data.azurerm_storage_account.nygdevcdn.id
+# Blob-service CORS is not set here and cannot be: the allowed origins live on
+# the account, which this configuration reads rather than owns. A cross-origin
+# fetch from run.nygard.dev needs that rule added on the account by hand.
+resource "azurerm_storage_container" "data" {
+  name                  = "data"
+  storage_account_id    = data.azurerm_storage_account.nygdevcdn.id
+  container_access_type = "blob"
 }

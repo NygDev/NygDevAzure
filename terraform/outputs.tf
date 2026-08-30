@@ -60,5 +60,5 @@ output "whoop_authorize_url" {
 
 output "running_dashboard_url" {
   description = "Where the running dashboard JSON is published. This is the URL the run.nygard.dev page fetches; it is anonymous-read, so no key or function call is involved. Rewritten by the API after every WHOOP sync."
-  value       = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${data.azurerm_storage_container.cdn_data.name}/marathonprep.json"
+  value       = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${azurerm_storage_container.data.name}/marathonprep.json"
 }
