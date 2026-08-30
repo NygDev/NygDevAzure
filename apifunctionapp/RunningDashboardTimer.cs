@@ -5,8 +5,8 @@ using Microsoft.Extensions.Logging;
 namespace ApiFunctionApp;
 
 /// <summary>
-/// The morning rebuild of the marathon dashboard: the whole document, from
-/// whatever is in Cosmos by the time it runs.
+/// The rebuild of the marathon dashboard, four times a day: the whole
+/// document, from whatever is in Cosmos by the time it runs.
 ///
 /// It is the second half of the morning, deliberately on its own schedule
 /// rather than hanging off the end of <see cref="WhoopSyncTimer"/>. The two
@@ -20,16 +20,23 @@ namespace ApiFunctionApp;
 /// it reads the stored runs, not the run's writes, so a morning where WHOOP was
 /// unreachable still republishes yesterday's history against today's date.
 /// <see cref="RunningDashboard"/> is the same build on demand, for a backfill
-/// or a change to the arithmetic that should not wait until tomorrow.
+/// or a change to the arithmetic that should not wait for the next slot.
+///
+/// Rebuilding this often is safe because the build is a pure function of the
+/// stored runs and the day it is bounded by: a slot that finds no new run
+/// republishes byte-for-byte what is already there. The published blob carries
+/// a five-minute Cache-Control, so every rebuild is visible to the page well
+/// before the next one.
 /// </summary>
 public class RunningDashboardTimer(
     RunningDashboardBuilder dashboard,
     ILogger<RunningDashboardTimer> logger)
 {
     /// <summary>
-    /// 07:15 UTC, daily — fifteen minutes behind the WHOOP sync at 07:00, in
-    /// the same platform clock and with the same standing indifference to
-    /// daylight saving that <see cref="WhoopSyncTimer"/> explains.
+    /// 00:15, 06:15, 12:15 and 18:15 UTC — fifteen minutes behind each WHOOP
+    /// sync, in the same platform clock and with the same standing
+    /// indifference to daylight saving that <see cref="WhoopSyncTimer"/>
+    /// explains.
     ///
     /// Fifteen rather than five: the sync runs on a ten-minute budget, so by
     /// this point it has either finished or stopped itself and saved its
@@ -37,9 +44,18 @@ public class RunningDashboardTimer(
     /// timers, not a chain — and nothing needs to. A rebuild that overlapped a
     /// sync still reads a consistent set of documents out of Cosmos; the worst
     /// it could do is miss the last few workouts of a run that overran, which
-    /// tomorrow's rebuild picks up.
+    /// the next slot picks up six hours later rather than tomorrow.
+    ///
+    /// The 00:15 slot is the one that does something the others do not. The
+    /// series are bounded by today in the time zone of the most recent run, so
+    /// that is the rebuild where the day rolls over: the daily walk gains an
+    /// empty day, the acute window drops the day that fell off the back of it,
+    /// and the current ACWR ratio steps down before the day's running climbs
+    /// it again. That is the same partial-day arithmetic the once-daily build
+    /// already published — it is now just visible as it happens rather than
+    /// once each morning.
     /// </summary>
-    private const string Schedule = "0 15 7 * * *";
+    private const string Schedule = "0 15 */6 * * *";
 
     [Function("RunningDashboardTimer")]
     public async Task Run([TimerTrigger(Schedule)] TimerInfo timer, CancellationToken cancellationToken)
@@ -67,7 +83,8 @@ public class RunningDashboardTimer(
             logger.LogError(
                 ex,
                 "The scheduled rebuild of the marathon dashboard failed; {Uri} still holds the previous "
-                + "build. Call /api/running/dashboard to retry and to see what storage or Cosmos objected to.",
+                + "build. The next slot retries in six hours; /api/running/dashboard retries now, and "
+                + "answers with what storage or Cosmos objected to.",
                 dashboard.PublishedTo);
 
             throw;
