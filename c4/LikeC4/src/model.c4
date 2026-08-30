@@ -29,6 +29,15 @@ model {
       Both go through a single runner holding a single gate, so a manual
       call landing on top of the scheduled run stands down rather than
       racing it for the cursor.
+
+      running/dashboard is the second half of that schedule: it reads the
+      stored workouts back out of Cosmos and computes the running charts —
+      pace by run type, aerobic efficiency, weekly volume, acute:chronic
+      workload, weekly time in zones — into a single dashboard document. The
+      timer rebuilds it straight after each sync; the endpoint is for a
+      backfill, where rebuilding on every one of many sync calls would be
+      waste, and for a change to the arithmetic, which reshapes the whole
+      history rather than only its recent end.
     '
   }
 
@@ -46,8 +55,15 @@ model {
   cosmos = cosmos-db 'Cosmos DB' {
     technology 'Azure Cosmos DB (NoSQL)'
     description '
-      nygdev-cosmos-db / db / primary — free tier, indexing_mode "none".
-      Point reads only: with no index there is nothing to query against.
+      nygdev-cosmos-db / db / primary — free tier, indexing_mode "none",
+      partitioned on /type.
+
+      With no index there is nothing for a query to seek on, so reads are
+      point reads by id — which is what the dashboard document is for: one
+      id holding every running chart, precomputed. The one exception is the
+      build behind it, a deliberate scan of the whoop_workout partition
+      once a day. Cosmos will only run it with the scan flag set, and the
+      partition key is what bounds what it costs.
     '
   }
 
@@ -119,8 +135,9 @@ model {
 
   // Upserts by WHOOP's own id, which is what makes a re-sync idempotent: a
   // record WHOOP rescored overwrites its earlier self rather than landing
-  // beside it. The cursors live in the same container, one per collection.
-  api -> cosmos 'Upserts WHOOP records and sync cursors, partitioned by type (id-nygdev-api)' #managed-identity
+  // beside it. The cursors live in the same container, one per collection,
+  // and so does the dashboard the workouts are read back out to build.
+  api -> cosmos 'Upserts WHOOP records, sync cursors and the running dashboard; scans the workouts to build it (id-nygdev-api)' #managed-identity
 
   // The refresh token is read, spent and rewritten on the same call, which is
   // why the identity holds Secrets Officer here rather than a reader role.

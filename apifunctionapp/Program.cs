@@ -1,3 +1,4 @@
+using ApiFunctionApp.Running;
 using ApiFunctionApp.Whoop;
 using Azure.Core;
 using Azure.Identity;
@@ -57,6 +58,13 @@ builder.Services.AddSingleton(provider =>
     return new CosmosClient(endpoint, provider.GetRequiredService<TokenCredential>(), options);
 });
 
+// The one container the app uses, resolved once. GetContainer builds a fresh
+// proxy on every call and a backfill would ask for one per record written, so
+// the names live here — the single place that knows them — rather than in each
+// store that needs one. Both are fixed by terraform, in terraform/db.tf.
+builder.Services.AddSingleton(provider =>
+    provider.GetRequiredService<CosmosClient>().GetContainer("db", "primary"));
+
 // ---------------------------------------------------------------------------
 // WHOOP
 //
@@ -77,6 +85,16 @@ builder.Services.AddSingleton<WhoopSecretStore>();
 // app settings, so unlike the client below they are safe to construct eagerly.
 builder.Services.AddSingleton<WhoopStore>();
 builder.Services.AddSingleton<WhoopSyncRunner>();
+
+// ---------------------------------------------------------------------------
+// Running analytics
+//
+// Reads the workouts the sync stored and writes the dashboard document built
+// from them. Cosmos on both sides and no WHOOP credentials anywhere in it, so
+// nothing here needs the lazy treatment the WHOOP client gets.
+// ---------------------------------------------------------------------------
+builder.Services.AddSingleton<RunningStore>();
+builder.Services.AddSingleton<RunningDashboardBuilder>();
 
 // Lazy, and injected as Lazy into the endpoints. Constructing the client reads
 // the app settings, and the worker builds a function's constructor arguments

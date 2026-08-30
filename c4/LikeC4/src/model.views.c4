@@ -183,6 +183,12 @@ views {
       only ever one of them is walking the cursor. The timer does not call
       the endpoint — there is no HTTP hop between them, and drawing a second
       box for the schedule would suggest one.
+
+      The timer then turns around and reads the workouts back out of Cosmos
+      to rebuild the running dashboard, which is why the Cosmos leg runs
+      both ways. That second step is allowed to fail on its own: the sync
+      moved a cursor and cannot be repeated, while the dashboard is a
+      projection that the next morning rebuilds from scratch either way.
     '
 
     include

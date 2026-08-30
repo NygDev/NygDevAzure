@@ -1,3 +1,4 @@
+using ApiFunctionApp.Running;
 using ApiFunctionApp.Whoop;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
@@ -13,9 +14,16 @@ namespace ApiFunctionApp;
 /// this morning's recovery, yesterday's workouts — is stored by the time
 /// anything reads it, and the seven-day refresh window means a day this misses
 /// is picked up by the next run rather than lost.
+///
+/// Then it rebuilds the running dashboard from what was just stored, so the
+/// charts are current by the same morning. The HTTP sync deliberately does not:
+/// it is called over and over through a backfill, and rebuilding after each
+/// call would recompute the whole history for a document nobody reads until the
+/// backfill is done. <see cref="RunningDashboard"/> covers that case by hand.
 /// </summary>
 public class WhoopSyncTimer(
     WhoopSyncRunner runner,
+    RunningDashboardBuilder dashboard,
     Lazy<WhoopClient> whoop,
     ILogger<WhoopSyncTimer> logger)
 {
@@ -100,15 +108,45 @@ public class WhoopSyncTimer(
                 failures.Count,
                 results.Count,
                 string.Join(", ", failures.Select(f => $"{f.Type} ({f.Error})")));
-
-            return;
+        }
+        else
+        {
+            logger.LogInformation(
+                "The scheduled WHOOP sync wrote {Written} records across {Total} collections; "
+                + "more work remaining: {More}.",
+                written,
+                results.Count,
+                results.Any(r => !r.BackfillComplete || r.MoreWorkRemaining));
         }
 
-        logger.LogInformation(
-            "The scheduled WHOOP sync wrote {Written} records across {Total} collections; "
-            + "more work remaining: {More}.",
-            written,
-            results.Count,
-            results.Any(r => !r.BackfillComplete || r.MoreWorkRemaining));
+        // Rebuilt even when a collection failed above. The dashboard is built
+        // from the workouts already in Cosmos rather than from this run's
+        // writes, so a recovery that would not sync costs it nothing — and a
+        // partial sync still leaves it more current than yesterday's copy.
+        await RebuildDashboardAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Rebuilds the running dashboard, and swallows a failure into the log.
+    ///
+    /// Deliberately not allowed to fail the invocation: the sync above is the
+    /// part that cannot be caught up later — its cursor has moved and WHOOP's
+    /// window is finite — while the dashboard is a projection that the next
+    /// morning, or one call to /api/running/dashboard, rebuilds from scratch.
+    /// Throwing here would mark a run failed for the recoverable half of it.
+    /// </summary>
+    private async Task RebuildDashboardAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await dashboard.BuildAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(
+                ex,
+                "The WHOOP sync finished but the running dashboard could not be rebuilt; "
+                + "it still holds the previous build. Call /api/running/dashboard to retry.");
+        }
     }
 }
