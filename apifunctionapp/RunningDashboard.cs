@@ -12,12 +12,13 @@ namespace ApiFunctionApp;
 /// <summary>
 /// Rebuilds the running dashboard on demand, and answers with what it published.
 ///
-/// The scheduled path is <see cref="WhoopSyncTimer"/>, which rebuilds this
-/// straight after the morning sync — so on an ordinary day nobody calls this at
-/// all. It exists for the two occasions that are not ordinary: a backfill,
-/// where the sync runs many times over and rebuilding after each call would be
-/// waste, and a change to how a run is classified or a chart computed, which
-/// reshapes history and wants to take effect before tomorrow morning.
+/// The scheduled path is <see cref="RunningDashboardTimer"/>, which rebuilds
+/// this every morning a quarter of an hour after the WHOOP sync — so on an
+/// ordinary day nobody calls this at all. It exists for the two occasions that
+/// are not ordinary: a backfill, where the sync runs many times over and
+/// rebuilding after each call would be waste, and a change to how a run is
+/// classified or a chart computed, which reshapes history and wants to take
+/// effect before tomorrow morning.
 ///
 /// It reads WHOOP data out of Cosmos and never talks to WHOOP, so unlike the
 /// sync endpoints it needs no access token and cannot fail on an expired one.
