@@ -41,7 +41,7 @@ model {
       rebuilds it a quarter of an hour behind each sync, at 00:15, 06:15,
       12:15 and 18:15 UTC, and independent of it — the sync only has to have
       finished, not to have succeeded, because the build reads the stored
-      workouts rather than that run's writes. The blob carries a five-minute
+      workouts rather than that run\'s writes. The blob carries a five-minute
       cache lifetime, so each rebuild reaches the page before the next one
       runs. The endpoint is for a backfill, where rebuilding on every one of
       many sync calls would be waste, and for a change to the arithmetic,
