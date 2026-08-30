@@ -74,9 +74,9 @@ resource "azurerm_virtual_machine_data_disk_attachment" "foundry" {
 
 # Auto-shutdown schedule at 11 PM Oslo time
 resource "azurerm_dev_test_global_vm_shutdown_schedule" "rpg" {
-  virtual_machine_id = azurerm_linux_virtual_machine.rpg.id
-  location           = azurerm_resource_group.rpg.location
-  enabled            = true
+  virtual_machine_id    = azurerm_linux_virtual_machine.rpg.id
+  location              = azurerm_resource_group.rpg.location
+  enabled               = true
   daily_recurrence_time = "2300"
   timezone              = "W. Europe Standard Time"
   notification_settings {

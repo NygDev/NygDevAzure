@@ -20,7 +20,7 @@ jobs:
       TF_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
       TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: 'Az CLI login'
         uses: azure/login@v3
@@ -31,7 +31,7 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v4
         with:
-          terraform_version: 1.15.1
+          terraform_version: 1.16.0
           terraform_wrapper: false
 
       - name: 'Retrieve Home IP from Key Vault'
@@ -57,7 +57,7 @@ jobs:
 
       - run: mkdir -p $TF_PLUGIN_CACHE_DIR
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: ${{ env.TF_PLUGIN_CACHE_DIR }}
           key: ${{ runner.os }}-tf-${{ hashFiles('**/.terraform.lock.hcl') }}
