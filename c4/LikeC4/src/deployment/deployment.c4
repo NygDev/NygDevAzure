@@ -1,7 +1,10 @@
+// Where every element in the logical model physically sits, as terraform
+// provisions it. Names here are the real Azure resource names.
 deployment {
 
   internet = internet 'Internet' {
     browser = instanceOf user {
+      title 'Visitor browser'
       style {
         size sm
         color green
@@ -10,7 +13,7 @@ deployment {
 
     whoopApi = instanceOf whoop {
       title 'api.prod.whoop.com'
-      description 'OAuth token endpoint and the v2 data API, both outside the subscription'
+      description 'The OAuth token endpoint and the v2 data API, both outside the subscription'
     }
   }
 
@@ -22,60 +25,79 @@ deployment {
 
       aspDotnet = service-plan 'asp-nygdev-flex-dotnet' {
         technology 'FC1 / Linux'
+
         apiApp = instanceOf api {
-          description 'func-nygdev-api — 512 MB instances, hosts SpotRead and the WHOOP endpoints, runs as id-nygdev-api'
+          title 'func-nygdev-api'
+          description '512 MB instances, max 1. Runs as id-nygdev-api; CORS allows run.nygard.dev.'
         }
       }
 
       aspPs = service-plan 'asp-nygdev-flex-ps' {
         technology 'FC1 / Linux'
+
         azadminApp = instanceOf azadmin {
-          description 'func-nygdev-azadmin — 512 MB instances'
+          title 'func-nygdev-azadmin'
+          description '512 MB instances, max 1. System-assigned identity.'
         }
       }
 
       funcStorage = blob-storage 'nygdevfunc' {
-        description 'Deployment packages (azadmin-deploy, api-deploy containers)'
+        description 'Deployment packages — the azadmin-deploy and api-deploy containers'
       }
 
       appInsights = monitoring 'appi-nygdev-consumption' {
-        description 'Application Insights, backed by log-nygdev-consumption workspace'
+        description 'Application Insights, backed by the log-nygdev-consumption workspace'
       }
     }
 
     rgDb = resource-group 'rg-nygdev-db' {
       cosmosDb = instanceOf cosmos {
         title 'nygdev-cosmos-db'
-        description 'GlobalDocumentDB / db / primary container'
+        description 'GlobalDocumentDB, free tier, local auth disabled — db / primary'
       }
     }
 
     rgWeb = resource-group 'rg-nygdev-web' {
-      description 'Web front-ends (Static Web App in westeurope, Free SKU)'
+      description 'Web front-ends. The Static Web Apps are in westeurope, Free SKU.'
 
       apex = static-site 'nygdevapex' {
         description 'Serves https://nygard.dev'
-        webapex = instanceOf web
+        webApex = instanceOf web
       }
 
       runDash = static-site 'nygdevrun' {
         description 'Serves https://run.nygard.dev'
-        webrun = instanceOf running
+        webRun = instanceOf running
       }
 
+      // The account itself is read by terraform, not owned by it; only the
+      // `data` container below is managed here.
       cdnStorage = blob-storage 'nygdevcdn' {
-        cdnBlob = instanceOf cdn
+        mediaContainer = storage-container 'foundry' {
+          mediaBlobs = instanceOf cdn.foundryMedia
+        }
+
+        dataContainer = storage-container 'data' {
+          dashboardBlob = instanceOf cdn.dashboardData
+        }
+
+        webContainer = storage-container '$web' {
+          siteBlobs = instanceOf cdn.webSite
+        }
       }
     }
 
     rgNetwork = resource-group 'rg-nygdev-network' {
       pip = public-ip 'rpg-pip' {
-        description 'Static public IP, DNS label "rpg"'
+        description 'Static public IP, DNS label "rpg" — rpg.norwayeast.cloudapp.azure.com'
       }
 
       vnetMain = vnet 'nygdev-vnet' {
+        technology '10.0.0.0/24'
+
         subnetRpg = subnet 'rpg-snet' {
-          description 'NSG nygdev-nsg: 80/443 from anywhere; 22/30000/30001 from home IP only'
+          technology '10.0.0.0/29'
+          description 'NSG nygdev-nsg: 80/443 from anywhere; 22, 30000 and 30001 from the home IP only'
         }
       }
     }
@@ -84,8 +106,9 @@ deployment {
       rpgVm = vm 'rpg-vm' {
         technology 'Standard_B2s, Ubuntu 26.04 LTS minimal'
         description '
-          30 GB os disk + foundrydata data disk (persistent, in rg-nygdev-data);
-          auto-shutdown 23:00 Oslo time
+          30 GB StandardSSD OS disk, SSH key only, no VM agent and no
+          extensions. Configured entirely by cloud-init; auto-shutdown at
+          23:00 Oslo time.
         '
 
         caddyProc = instanceOf rpg.caddy
@@ -97,36 +120,44 @@ deployment {
       description 'Persistent data — survives VM rebuilds'
 
       foundryData = disk 'foundrydata' {
-        technology 'Azure Managed Disk'
-        description 'Dedicated data disk for Foundry VTT worlds, modules and media'
+        technology 'Azure Managed Disk, attached at LUN 0'
+        description '
+          Worlds, modules, media, the Caddyfile and the Foundry install.
+          Referenced by terraform as a data source and attached, never
+          created — which is what lets the VM be destroyed and rebuilt.
+        '
       }
     }
 
     rgSecurity = resource-group 'rg-nygdev-security' {
-      description 'Not created by terraform — managed as minimal definitions'
+      description 'The resource group is not created by this configuration; the vault in it is'
 
       kv = key-vault 'nygdev' {
-        description '
-          Secrets, on an RBAC data plane; alongside the nygdev-ed25519 SSH
-          public key resource. Holds whoop-clientsecret and whoop-token.
-        '
+        description 'RBAC data plane. Holds HomeIP, whoop-clientsecret and whoop-token, alongside the nygdev-ed25519 SSH public key resource.'
       }
     }
   }
 
-  internet.browser -> azure.rgNetwork.pip 'HTTPS to rpg.nygard.dev (rpg.norwayeast.cloudapp.azure.com)'
+  // --- what a visitor reaches --------------------------------------------
   internet.browser -> azure.rgWeb.apex 'HTTPS to nygard.dev'
   internet.browser -> azure.rgWeb.runDash 'HTTPS to run.nygard.dev'
+  internet.browser -> azure.rgNetwork.pip 'HTTPS to rpg.nygard.dev'
 
-  // Drawn from the browser, not from the Static Web App: the free SKU has no
-  // linked backend, so the page it served calls the function app directly on
-  // its own hostname. That is why this leg needs CORS at all.
-  internet.browser -> azure.rgConsumption.aspDotnet.apiApp 'GET /api/spotread on func-nygdev-api.azurewebsites.net (CORS, anonymous)'
-  azure.rgNetwork.pip -> azure.rgVm.rpgVm.caddyProc 'Forwards 80/443 via rpg-snet'
-  azure.rgVm.rpgVm.foundryProc -> azure.rgData.foundryData 'Stores worlds, modules and media on (attached data disk)'
-  azure.rgConsumption.aspDotnet.apiApp -> azure.rgDb.cosmosDb 'Point read over HTTPS/443 (gateway mode, Entra token for id-nygdev-api)'
-  azure.rgConsumption.aspDotnet.apiApp -> azure.rgSecurity.kv 'Reads whoop-clientsecret, writes the rotated whoop-token (HTTPS/443, Entra token for id-nygdev-api)'
-  azure.rgConsumption.aspDotnet.apiApp -> internet.whoopApi 'OAuth token grants and v2 reads (HTTPS to api.prod.whoop.com)'
+  // The page on run.nygard.dev fetches the built dashboard straight off the
+  // storage account. The free Static Web App SKU has no linked backend, so
+  // there is nothing server-side behind the site that could hold a key —
+  // which is why the container is anonymous-read rather than proxied.
+  internet.browser -> azure.rgWeb.cdnStorage.dataContainer 'GET data/marathonprep.json (anonymous, cross-origin)'
+
+  // --- inside ------------------------------------------------------------
+  azure.rgNetwork.pip -> azure.rgVm.rpgVm.caddyProc 'Forwards 80/443 through rpg-snet'
+  azure.rgVm.rpgVm.foundryProc -> azure.rgData.foundryData 'Stores worlds, modules and media on the attached disk'
+
+  azure.rgConsumption.aspDotnet.apiApp -> azure.rgDb.cosmosDb 'HTTPS/443, gateway mode, Entra token for id-nygdev-api'
+  azure.rgConsumption.aspDotnet.apiApp -> azure.rgSecurity.kv 'HTTPS/443, Entra token for id-nygdev-api'
+  azure.rgConsumption.aspDotnet.apiApp -> azure.rgWeb.cdnStorage.dataContainer 'Publishes marathonprep.json as id-nygdev-api'
+  azure.rgConsumption.aspDotnet.apiApp -> internet.whoopApi 'OAuth token grants and v2 reads'
+
   azure.rgConsumption.aspDotnet.apiApp -> azure.rgConsumption.appInsights 'Telemetry (OpenTelemetry)'
   azure.rgConsumption.aspPs.azadminApp -> azure.rgConsumption.appInsights 'Telemetry'
 }

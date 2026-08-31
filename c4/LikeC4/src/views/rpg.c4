@@ -1,0 +1,142 @@
+views {
+
+  view rpg of rpg {
+    title 'rpg.nygard.dev — Foundry VTT'
+    description '
+      Journey three, at the level of processes. A player opens
+      rpg.nygard.dev; Caddy terminates TLS on 80/443 and reverse-proxies to
+      the Foundry process on :30000, which serves the game UI and the world
+      back over the same connection.
+
+      Media is the one thing that does not come from the VM. Foundry holds
+      asset URLs pointing at the nygdevcdn storage account, so a player
+      browser fetches images and audio straight from blob storage and never
+      asks the B2s for them.
+
+      What the VM actually is — the public IP in front of it, the subnet and
+      NSG around it, the disk under it — is `rpgInfra`. How it comes to
+      exist at all is `rpgTerraform`.
+    '
+
+    include
+      rpg,
+      rpg.*,
+      user,
+      cdn,
+      cdn.foundryMedia,
+      cdn.foundryMedia -> user
+
+    autoLayout LeftRight 180 100
+
+    style rpg {
+      opacity 0%
+    }
+  }
+
+  deployment view rpgInfra {
+    title 'The infrastructure behind rpg.nygard.dev'
+    description '
+      What terraform builds for journey three, and nothing else.
+
+      Traffic lands on rpg-pip — a static public IP with the DNS label
+      "rpg", which is what rpg.nygard.dev is a CNAME to — and reaches the VM
+      through rpg-snet. The NSG on that subnet is the only access control:
+      80 and 443 from anywhere, and 22, 30000 and 30001 from the home IP
+      alone, so Foundry own port is unreachable from the internet and only
+      Caddy answers on it.
+
+      The split between rg-nygdev-vm and rg-nygdev-data is the point of the
+      whole layout. The VM, its NIC and its OS disk are disposable — no VM
+      agent, no extensions, configured entirely by cloud-init on first boot.
+      Everything worth keeping is on foundrydata, which terraform reads as a
+      data source and attaches rather than creates, so a rebuild replaces
+      the machine and leaves the worlds alone.
+    '
+
+    include
+      internet.browser,
+      azure,
+      azure.rgNetwork,
+      azure.rgNetwork.*,
+      azure.rgNetwork.vnetMain.*,
+      azure.rgVm,
+      azure.rgVm.*,
+      azure.rgVm.rpgVm.*,
+      azure.rgData,
+      azure.rgData.*,
+      azure.rgWeb,
+      azure.rgWeb.cdnStorage,
+      // The container, not the blobs inside it — one fewer box to read
+      // through for a leg that is only here to show the media does not
+      // come off the VM.
+      azure.rgWeb.cdnStorage.mediaContainer
+
+    // Each of these is a leg belonging to another journey that, with its own
+    // endpoint off this page, rolls up onto a resource group and reads as
+    // something this one does.
+    exclude
+      internet.browser -> azure,                        // the WHOOP consent
+      internet.browser -> azure.rgWeb,                  // visits to the two Static Web Apps
+      internet.browser -> azure.rgWeb.cdnStorage,       // the running dashboard fetch
+      azure.rgWeb -> azure.rgVm.rpgVm.caddyProc,        // the nygard.dev status poll
+      azure.rgWeb.cdnStorage -> internet.browser        // the published diagrams
+
+    autoLayout TopBottom 140 120
+
+    style azure {
+      color muted
+    }
+    style azure.rgVm._, azure.rgVm.rpgVm._, azure.rgNetwork._, azure.rgData._ {
+      color indigo
+    }
+  }
+
+  view rpgTerraform {
+    title 'How terraform creates the RPG server'
+    description '
+      terraform/ is the only description of that machine that exists — there
+      is no console-built anything behind it — and Terraform Apply is the
+      only thing that can run it.
+
+      That workflow is workflow_dispatch only, deliberately. There is no
+      plan step and no approval gate, so dispatching it by hand is the
+      decision point; a push to master does not rebuild a virtual machine on
+      its own.
+
+      Two values it needs are not in the repository and are fetched at run
+      time from the vault: the home IP the NSG opens SSH and the Foundry
+      ports to, and the nygdev-ed25519 public key the VM admin account is
+      built with. Neither is ever written to state as a secret, and nothing
+      in this picture holds an Azure credential — the runner mints an OIDC
+      token, Entra trades it for a short-lived access token, and RBAC on
+      that principal is the real blast radius.
+    '
+
+    include
+      dev,
+      github,
+      github.repo,
+      github.repo.srcTf,
+      github.ghEnv,
+      github.actions,
+      github.actions.tfApply,
+      entra,
+      entra.ghOidc,
+      azurerm,
+      tfstate,
+      keyvault,
+      rpg
+
+    // The vault is here because an apply reads two values out of it at run
+    // time. That it also creates the vault is true and belongs elsewhere.
+    exclude
+      azurerm -> keyvault
+
+    autoLayout LeftRight 160 110
+
+    style rpg {
+      color indigo
+      opacity 25%
+    }
+  }
+}

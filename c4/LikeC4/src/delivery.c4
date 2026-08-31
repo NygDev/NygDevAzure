@@ -1,0 +1,157 @@
+// How text in this repository becomes running Azure resources.
+//
+// Each workflow is one element. What happens inside a run is described, not
+// modelled — steps churn far faster than the shape of the pipeline, and a
+// diagram of actions/checkout teaches nobody anything.
+//
+// terraform-import.yml is deliberately absent: it is a one-shot migration that
+// adopts two hand-made resources into state and is meant to be deleted once it
+// has run, not a pipeline.
+model {
+
+  github = external-system 'GitHub' {
+    technology 'github.com'
+    description 'Source of truth and CI/CD control plane for the whole estate'
+
+    repo = repository 'NygDevAzure' {
+      description 'Single repository; master is the deploy branch'
+
+      srcC4 = source-files 'c4/LikeC4/**' {
+        technology 'LikeC4 DSL'
+        description 'This model — specification, logical model, delivery, deployment and views'
+      }
+
+      srcTf = source-files 'terraform/**' {
+        technology 'Terraform HCL'
+        description 'The Azure estate: resource groups, VNet, VM, storage, Cosmos, function apps, Key Vault'
+      }
+
+      srcApi = source-files 'apifunctionapp/**' {
+        technology 'C# / .NET 10 isolated worker'
+        description 'The WHOOP endpoints, the two timers, and the running dashboard build'
+      }
+
+      srcPs = source-files 'psfunctionapp/**' {
+        technology 'PowerShell 7.4'
+        description 'cachecontrol and cachecontrolauto'
+      }
+    }
+
+    ghEnv = ci-environment 'Environment "NygDevAzure"' {
+      technology 'GitHub Actions environment'
+      description '
+        AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+        AZURE_KEYVAULT_NAME, AZURE_VM_USERNAME, ENTRA_OWNER_OBJECTID.
+        Identifiers only — no credential is stored here.
+      '
+    }
+
+    actions = ci-platform 'GitHub Actions' {
+      technology 'ubuntu-latest hosted runners'
+      description '
+        Every job declares id-token write and contents read, and
+        authenticates to Azure with azure/login@v3 over OIDC.
+      '
+
+      deployC4 = workflow 'Deploy LikeC4' {
+        technology 'deploy-likec4.yml — push to master on c4/LikeC4/**'
+        description '
+          Installs from the lockfile, runs likec4 validate (a broken model
+          fails the run before anything is touched), renders with likec4
+          build, then empties $web and uploads dist/ twice — everything as
+          no-cache, then assets/* again as immutable.
+
+          Concurrency group deploy-likec4 with cancel-in-progress false,
+          because the delete-then-upload sequence must not interleave.
+        '
+      }
+
+      deployApi = workflow 'Deploy API Function App' {
+        technology 'deploy-api-function-app.yml — push to master on apifunctionapp/**'
+        description 'dotnet publish -c Release, then Azure/functions-action@v1 to func-nygdev-api. A build failure stops the run before Azure is touched.'
+      }
+
+      deployFunc = workflow 'Deploy PS Function App' {
+        technology 'deploy-ps-function-app.yml — push to master on psfunctionapp/**'
+        description 'Save-Module bundles Az.Accounts and Az.Storage into the package, then Azure/functions-action@v1 to func-nygdev-azadmin.'
+      }
+
+      tfApply = workflow 'Terraform Apply' {
+        technology 'terraform-apply.yml — workflow_dispatch only'
+        description '
+          Authenticates with ARM_USE_OIDC, fetches the home IP and the SSH
+          public key at run time, then terraform apply -auto-approve.
+
+          Run by hand rather than on a push: there is no plan step and no
+          approval gate, so dispatching it is the decision point. Everything
+          this configuration manages can be recreated without data loss —
+          the Foundry disk and the Cosmos account are read or adopted, not
+          replaced. State is serialised by a terraform-apply concurrency
+          group.
+        '
+      }
+    }
+  }
+
+  entra = identity-provider 'Microsoft Entra ID' {
+    description 'The tenant that issues the access tokens the workflows use'
+
+    ghOidc = app-registration 'GitHub deploy identity' {
+      technology 'Workload identity federation'
+      description '
+        The AZURE_CLIENT_ID principal. Federated credentials trust
+        token.actions.githubusercontent.com for this repository and the
+        NygDevAzure environment, so there is no client secret to leak.
+        Managed outside terraform — it is the identity terraform runs as,
+        and RBAC on it is the real blast radius of a compromised workflow.
+      '
+    }
+  }
+
+  azurerm = external-system 'Azure Resource Manager' {
+    technology 'management.azure.com'
+    description 'The Azure control plane. Terraform and the az CLI both reach the estate through it.'
+  }
+
+  tfstate = storage-account 'Terraform State' {
+    technology 'Azure Blob Storage, AzureAD auth'
+    description 'nygdevtfstate / tfstate / azure-infrastructure.tfstate in rg-nygdev-data'
+  }
+
+  // --- source to pipeline ------------------------------------------------
+  dev -> github.repo 'git push (master)'
+
+  github.repo.srcC4 -> github.actions.deployC4 'Change here runs' #ci
+  github.repo.srcApi -> github.actions.deployApi 'Change here runs' #ci
+  github.repo.srcPs -> github.actions.deployFunc 'Change here runs' #ci
+  github.repo.srcTf -> github.actions.tfApply 'Change here is applied by' #ci
+
+  github.ghEnv -> github.actions 'Supplies tenant, subscription and client ids to' #ci
+
+  // --- pipeline to identity ----------------------------------------------
+  github.actions -> entra.ghOidc 'Presents the runner OIDC token (azure/login@v3)' #oidc
+  entra.ghOidc -> github.actions 'Issues a short-lived Azure access token to' #oidc
+  entra.ghOidc -> azurerm 'Authorises calls against (RBAC on the subscription)'
+
+  // --- pipeline to Azure -------------------------------------------------
+  github.actions.deployC4 -> cdn.webSite 'Clears and re-uploads dist/ (az storage blob upload-batch)'
+  github.actions.deployApi -> api 'Deploys the published worker'
+  github.actions.deployFunc -> azadmin 'Deploys the function package'
+  github.actions.tfApply -> keyvault 'Reads HomeIP and the SSH public key at run time'
+  github.actions.tfApply -> tfstate 'Locks and writes state'
+  github.actions.tfApply -> azurerm 'terraform apply -auto-approve'
+
+  // --- what an apply builds ----------------------------------------------
+  azurerm -> rpg 'Creates rpg-vm and its NIC, the public IP, the VNet, subnet and NSG, and attaches the foundrydata disk'
+  azurerm -> web 'Creates the nygdevapex Static Web App'
+  azurerm -> running 'Creates the nygdevrun Static Web App'
+  azurerm -> api 'Creates func-nygdev-api, id-nygdev-api, its Cosmos and blob role assignments, its CORS rules and the app settings the WHOOP code reads'
+  azurerm -> azadmin 'Creates func-nygdev-azadmin and its blob role assignment'
+  azurerm -> cosmos 'Creates the account, database, container and indexing policy'
+  azurerm -> cdn.dashboardData 'Creates the data container (the account around it is read, not owned)'
+  azurerm -> keyvault 'Creates the vault and the SSH public key resource — but none of the secrets'
+
+  // --- the published result ----------------------------------------------
+  cdn.webSite -> user 'Serves the rendered diagrams (account primary web endpoint)'
+  dev -> cdn.webSite 'Reviews the rendered model on'
+}

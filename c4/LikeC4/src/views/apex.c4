@@ -1,0 +1,27 @@
+views {
+
+  view apex {
+    title 'nygard.dev — the apex site'
+    description '
+      The whole of journey one. A visitor opens nygard.dev and gets a
+      free-tier Static Web App serving files, plus one live thing on the
+      page: whether the Foundry server is up.
+
+      That status check is drawn from the site, but it runs in the visitor
+      browser. The free SKU has no linked backend and no proxying, so
+      nothing executes server-side here — the page it served calls Caddy on
+      rpg.nygard.dev cross-origin, and Caddy answers from the Foundry
+      process behind it. If the VM is on its nightly shutdown, this is the
+      call that fails and the page that says so.
+    '
+
+    include
+      user,
+      web,
+      rpg,
+      rpg.caddy,
+      rpg.foundry
+
+    autoLayout LeftRight 170 100
+  }
+}
