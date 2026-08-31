@@ -2,11 +2,13 @@ using ApiFunctionApp.Running;
 using ApiFunctionApp.Whoop;
 using Azure.Core;
 using Azure.Identity;
+using Azure.Monitor.OpenTelemetry.Exporter;
 using Azure.Storage.Blobs;
 using Azure.Security.KeyVault.Secrets;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
+using Microsoft.Azure.Functions.Worker.OpenTelemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -15,9 +17,42 @@ var builder = FunctionsApplication.CreateBuilder(args);
 
 builder.ConfigureFunctionsWebApplication();
 
-builder.Services
-    .AddApplicationInsightsTelemetryWorkerService()
-    .ConfigureFunctionsApplicationInsights();
+// Telemetry leaves the worker as OpenTelemetry. host.json puts the Functions
+// host in the same mode, so the host's request per invocation and this
+// process's logs and spans arrive as one correlated operation instead of two
+// SDKs' worth of separate telemetry.
+//
+// UseFunctionsWorkerDefaults subscribes the pipeline to the worker's own
+// invocation ActivitySource and to the trace context the host propagates,
+// which is what parents a function's spans under that request.
+//
+// The Azure Monitor exporter rather than the Azure.Monitor.OpenTelemetry.
+// AspNetCore distro: the distro switches on ASP.NET Core instrumentation, and
+// because the host already emits a request for every invocation, each call
+// would be reported twice. Its connection string is read from
+// APPLICATIONINSIGHTS_CONNECTION_STRING, the same app setting the retired
+// Application Insights SDK used, which terraform leaves to the platform.
+var telemetry = builder.Services.AddOpenTelemetry()
+    .UseFunctionsWorkerDefaults();
+
+// Only when there is somewhere to send it. UseAzureMonitorExporter throws
+// "A connection string was not found" if the setting is missing, and it throws
+// while the host is still being built — the worker exits with no functions
+// indexed and the host reports only a dotnet.exe crash code, which is the
+// whole app gone rather than telemetry lost. The setting is always present on
+// Azure, where the platform manages it; it is a local checkout that has none,
+// and there a run should just come up without an exporter.
+if (!string.IsNullOrWhiteSpace(
+        Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING")))
+{
+    telemetry.UseAzureMonitorExporter();
+}
+
+// Off by default in the worker, unlike the Application Insights SDK this
+// replaces. The scopes are where the invocation id and the function name sit,
+// so without this a log line arrives with no way back to the call that wrote
+// it.
+builder.Logging.AddOpenTelemetry(options => options.IncludeScopes = true);
 
 // One credential for every Azure client in the app. It caches tokens per
 // scope, so sharing it means Cosmos and Key Vault each authenticate once per

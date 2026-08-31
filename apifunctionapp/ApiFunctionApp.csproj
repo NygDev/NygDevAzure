@@ -10,6 +10,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Ships the worker telemetry to the same Application Insights resource
+         the host writes to, reading APPLICATIONINSIGHTS_CONNECTION_STRING out
+         of the app settings exactly as the old SDK did. The exporter, not the
+         Azure.Monitor.OpenTelemetry.AspNetCore distro: the distro turns on
+         ASP.NET Core instrumentation, and since the host already emits a
+         request per invocation, every call would be reported twice. -->
+    <PackageReference Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.8.3" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <!-- The WHOOP client secret and refresh token live in the nygdev vault;
          the app reads both and writes the refresh token back on every
@@ -19,26 +26,27 @@
          the run.nygard.dev page fetches directly. Written as the app's managed
          identity — the account holds no key this app is given. -->
     <PackageReference Include="Azure.Storage.Blobs" Version="12.29.2" />
-    <!-- Pinned to the 2.x line on purpose. Microsoft.Azure.Functions.Worker.
-         ApplicationInsights builds against Microsoft.ApplicationInsights 2.23.x;
-         the 3.x SDK drops ITelemetryInitializer, so ConfigureFunctionsApplication-
-         Insights() throws TypeLoadException before the host is built and the
-         worker dies with no functions indexed. -->
-    <PackageReference Include="Microsoft.ApplicationInsights.WorkerService" Version="2.23.0" />
     <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.62.1" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.52.0" />
-    <PackageReference Include="Microsoft.Azure.Functions.Worker.ApplicationInsights" Version="2.51.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.1.1" />
     <!-- The scheduled WHOOP sync. The extension takes a blob lease on
          AzureWebJobsStorage to keep one instance's timer from firing while
          another's is running; terraform does not set that connection by hand,
          the azurerm provider derives it from the app's storage account. -->
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Timer" Version="4.3.1" />
+    <!-- Teaches the OpenTelemetry pipeline about the worker: it activates the
+         invocation ActivitySource and stamps the trace context the host
+         propagates onto the worker's spans, which is what keeps a function's
+         host-side request and its own logs under one operation. -->
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.OpenTelemetry" Version="1.2.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="2.1.0" />
     <!-- Microsoft.Azure.Cosmos still uses Newtonsoft.Json internally and, since
          3.62, requires the consumer to reference it explicitly rather than
          pulling it in transitively. -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <!-- Brings AddOpenTelemetry() and the hosted service that owns the tracer
+         and logger providers, so they are started and flushed with the host. -->
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
   </ItemGroup>
 
   <ItemGroup>
