@@ -1,3 +1,4 @@
+using ApiFunctionApp.Gps;
 using ApiFunctionApp.Running;
 using ApiFunctionApp.Whoop;
 using Azure.Core;
@@ -121,6 +122,16 @@ builder.Services.AddSingleton<WhoopSecretStore>();
 // app settings, so unlike the client below they are safe to construct eagerly.
 builder.Services.AddSingleton<WhoopStore>();
 builder.Services.AddSingleton<WhoopSyncRunner>();
+
+// ---------------------------------------------------------------------------
+// GPS
+//
+// The phone's location spool, written into a partition of its own on the same
+// container. Nothing but the Cosmos container behind it, so there is no
+// configuration to be missing and nothing to defer — see the endpoint,
+// GpsLocations, for the upload contract it is holding up.
+// ---------------------------------------------------------------------------
+builder.Services.AddSingleton<GpsFixStore>();
 
 // ---------------------------------------------------------------------------
 // Running analytics
