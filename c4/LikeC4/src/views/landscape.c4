@@ -1,0 +1,101 @@
+views {
+
+  view index {
+    title 'The estate — three front doors'
+    description '
+      Everything a visitor can reach, and what sits behind it. Read it as
+      three journeys that share a backend and almost nothing else:
+
+      nygard.dev is a page of links that polls the game server for its
+      status. run.nygard.dev is a page that draws one JSON file. And
+      rpg.nygard.dev is a virtual machine running Foundry VTT.
+
+      The only real depth is behind the running dashboard: the API walks
+      WHOOP into Cosmos on a timer, builds the charts back out of Cosmos,
+      and publishes them as a blob the page fetches directly. `running`
+      opens that up, and `runningPipeline` is the same thing in order.
+
+      What builds all of this is left out on purpose — see `delivery`, and
+      `rpgTerraform` for the virtual machine specifically. So is the
+      one-time WHOOP consent, which is a person clicking through an OAuth
+      screen once and not something either site does; that is
+      `whoopBootstrap`.
+    '
+
+    include
+      user,
+      web,
+      running,
+      rpg,
+      api,
+      cosmos,
+      keyvault,
+      cdn,
+      azadmin,
+      whoop
+
+    exclude
+      user -> api,             // the one-time consent — see `whoopBootstrap`
+      cdn.webSite -> user      // the published diagrams — see `delivery`
+
+    autoLayout LeftRight 150 110
+
+    // The one box that is not ours
+    style whoop {
+      color muted
+    }
+  }
+
+  deployment view azureDeployment {
+    title 'Deployment — the whole subscription'
+    description '
+      Every resource group and what is in it, as terraform provisions it.
+      The one node outside Azure is the visitor browser, which is where
+      three of these arrows start.
+
+      Two accounts are read rather than owned: nygdevcdn, of which only the
+      `data` container is managed here, and the foundrydata disk, which is
+      attached and never created — that is what lets rpg-vm be destroyed and
+      rebuilt without losing a world.
+    '
+
+    include
+      internet,
+      internet.*,
+      azure,
+      azure.rgConsumption,
+      azure.rgConsumption.*,
+      azure.rgConsumption.aspDotnet.*,
+      azure.rgConsumption.aspPs.*,
+      azure.rgDb,
+      azure.rgDb.*,
+      azure.rgWeb,
+      azure.rgWeb.*,
+      azure.rgWeb.cdnStorage.*,
+      azure.rgNetwork,
+      azure.rgNetwork.*,
+      azure.rgNetwork.vnetMain.*,
+      azure.rgVm,
+      azure.rgVm.*,
+      azure.rgVm.rpgVm.*,
+      azure.rgData,
+      azure.rgData.*,
+      azure.rgSecurity,
+      azure.rgSecurity.*
+
+    autoLayout LeftRight 180 110
+
+    style azure {
+      color muted
+    }
+    style azure.rgVm._, azure.rgNetwork._, azure.rgData._ {
+      color indigo
+    }
+    style azure.rgConsumption._ {
+      color primary
+    }
+    style azure.rgWeb._, azure.rgDb._ {
+      color amber
+    }
+  }
+}

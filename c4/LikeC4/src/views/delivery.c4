@@ -1,0 +1,58 @@
+views {
+
+  view delivery {
+    title 'Delivery — GitHub to Azure'
+    description '
+      One question: which workflow can touch what. Read it in four columns —
+      the developer and the paths they change, the workflow each path
+      triggers, the identity every one of them authenticates through, and
+      what it is then allowed to reach.
+
+      Three of the four run on a push to master under a path filter, so
+      editing the matching directory is the whole deploy act. Terraform
+      Apply does not; it is dispatched by hand, because it is the one that
+      can destroy and rebuild a virtual machine.
+
+      No Azure credential is stored in GitHub. The environment holds
+      identifiers only — tenant, subscription, client id — and the runner
+      mints a signed OIDC token that Entra trades for a short-lived access
+      token. The return leg of that trade is left off so the page stays a
+      left-to-right read; so is what an apply then builds, which is on the
+      journey views and on `rpgTerraform`.
+    '
+
+    include
+      dev,
+      github,
+      github.repo,
+      github.repo.*,
+      github.ghEnv,
+      github.actions,
+      github.actions.*,
+      entra,
+      entra.ghOidc,
+      azurerm,
+      tfstate,
+      keyvault,
+      api,
+      azadmin,
+      cdn,
+      cdn.webSite
+
+    exclude
+      entra.ghOidc -> github.actions,   // return leg of the token exchange
+      azurerm -> api,                   // what an apply builds — see the journey views
+      azurerm -> azadmin,
+      azurerm -> cdn,
+      azurerm -> keyvault,
+      api -> keyvault,                  // runtime, not delivery — see `running`
+      dev -> cdn.webSite,               // reading the published site is not delivery
+      cdn.webSite -> user
+
+    autoLayout LeftRight 170 100
+
+    style azurerm, tfstate, keyvault, api, azadmin, cdn, cdn.webSite {
+      color primary
+    }
+  }
+}

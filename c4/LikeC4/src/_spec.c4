@@ -1,87 +1,207 @@
+// One specification for the whole model.
+//
+// Colour is set here, on the kind, rather than in each view. A box is coloured
+// by what it is — a person, a page in a browser, something Azure runs, a step
+// in the pipeline, something outside the estate — and that holds on every page,
+// so a view only overrides colour when it is making a point.
 specification {
 
+  // --- people -------------------------------------------------------------
+
   element actor {
+    notation 'Person'
     style {
       shape person
       color green
     }
   }
 
-  element system {
-    notation "Software System"
-    style {
-      opacity 20%
-    }
-  }
+  // --- what runs in a visitor browser ------------------------------------
 
-  element external-system {
-    notation "External Software System"
+  element static-web-app {
+    notation 'Azure Static Web App'
     style {
-      opacity 20%
-      color muted
+      shape browser
+      icon azure:static-apps
+      color sky
     }
   }
 
   element webapp {
-    notation "Progressive Web App"
+    notation 'Web App (browser)'
     style {
       shape browser
+      color sky
     }
   }
 
-  element service {
-    notation "Service / Process"
-  }
+  // --- what Azure runs for us --------------------------------------------
 
   element function-app {
-    notation "Azure Function App"
+    notation 'Azure Function App'
     style {
       icon azure:function-apps
+      color primary
+    }
+  }
+
+  // A named piece of work inside a function app: one trigger, one job. Used
+  // only where two jobs in the same app do genuinely different things and a
+  // single box would hide that.
+  element job {
+    notation 'Scheduled / triggered job'
+    style {
+      color primary
+      opacity 40%
     }
   }
 
   element cosmos-db {
-    notation "Azure Cosmos DB"
+    notation 'Azure Cosmos DB'
     style {
       shape storage
       icon azure:azure-cosmos-db
-    }
-  }
-
-  element static-web-app {
-    notation "Azure Static Web App"
-    style {
-      shape browser
-      icon azure:static-apps
+      color primary
     }
   }
 
   element storage-account {
-    notation "Azure Storage Account"
+    notation 'Azure Storage Account'
     style {
       shape storage
       icon azure:storage-accounts
+      color primary
+      opacity 20%
     }
   }
 
+  element blob-container {
+    notation 'Blob Container'
+    style {
+      shape storage
+      icon azure:storage-container
+      color primary
+    }
+  }
+
+  element secret-store {
+    notation 'Azure Key Vault'
+    style {
+      shape storage
+      icon azure:key-vaults
+      color primary
+    }
+  }
+
+  // --- the RPG virtual machine and the processes on it --------------------
+
   element virtual-machine {
-    notation "Azure Virtual Machine"
+    notation 'Azure Virtual Machine'
     style {
       icon azure:virtual-machine
+      color indigo
+      opacity 15%
+    }
+  }
+
+  element service {
+    notation 'Process on a VM'
+    style {
+      color indigo
+    }
+  }
+
+  // --- the delivery plane -------------------------------------------------
+
+  element repository {
+    notation 'Git Repository'
+    style {
+      shape storage
+      icon tech:github
+      color amber
+      opacity 20%
+    }
+  }
+
+  element source-files {
+    notation 'Source Files (text)'
+    style {
+      icon tech:git
+      color amber
+    }
+  }
+
+  element ci-platform {
+    notation 'CI/CD Platform'
+    style {
+      icon tech:github-actions
+      color amber
+      opacity 15%
+    }
+  }
+
+  element ci-environment {
+    notation 'CI Environment / Variables'
+    style {
+      icon tech:github
+      color amber
+    }
+  }
+
+  element workflow {
+    notation 'GitHub Actions Workflow'
+    style {
+      icon tech:github-actions
+      color amber
+    }
+  }
+
+  element app-registration {
+    notation 'Entra App Registration'
+    style {
+      icon azure:app-registrations
+      color amber
+    }
+  }
+
+  // --- outside the estate -------------------------------------------------
+
+  element external-system {
+    notation 'External System'
+    style {
+      color muted
       opacity 20%
     }
   }
 
   element identity-provider {
-    notation "Identity Provider"
+    notation 'Identity Provider'
     style {
       icon azure:external-identities
-      opacity 20%
       color muted
+      opacity 15%
     }
   }
 
+  // --- tags ---------------------------------------------------------------
+
+  // Reaches Azure as a managed identity: no key, no connection string
   tag managed-identity {
     color rgb(7 115 175)
+  }
+
+  // Carries a federated (secretless) token exchange
+  tag oidc {
+    color rgb(217 119 6)
+  }
+
+  // Only exists at build/deploy time
+  tag ci {
+    color rgb(99 102 241)
+  }
+
+  // Runs on a timer, with nobody watching
+  tag scheduled {
+    color rgb(22 163 74)
   }
 }
