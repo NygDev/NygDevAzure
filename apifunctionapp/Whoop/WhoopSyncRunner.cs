@@ -138,6 +138,7 @@ public sealed class WhoopSyncRunner(WhoopStore store, ILogger<WhoopSyncRunner> l
         var token = backfilling ? state.NextToken : null;
 
         var written = 0;
+        var unchanged = 0;
         var skipped = 0;
         var pages = 0;
         var oldestStart = state.OldestStart;
@@ -150,7 +151,7 @@ public sealed class WhoopSyncRunner(WhoopStore store, ILogger<WhoopSyncRunner> l
 
             pages++;
 
-            var upserts = new List<Task>(page.Records.Count);
+            var upserts = new List<Task<WhoopWriteOutcome>>(page.Records.Count);
 
             foreach (var record in page.Records)
             {
@@ -168,7 +169,13 @@ public sealed class WhoopSyncRunner(WhoopStore store, ILogger<WhoopSyncRunner> l
                     continue;
                 }
 
-                upserts.Add(store.UpsertRecordAsync(collection, id, record, cancellationToken));
+                // The store checks what is already there before writing, except
+                // while backfilling — there every record is one this app has
+                // never seen, so the check would be a round trip per record
+                // spent to discover exactly that, and the budget is the scarce
+                // thing rather than the RU.
+                upserts.Add(store.UpsertRecordAsync(
+                    collection, id, record, checkStored: !backfilling, cancellationToken));
 
                 if (ReadStart(record) is { } recordStart
                     && (oldestStart is null || recordStart < oldestStart))
@@ -177,15 +184,28 @@ public sealed class WhoopSyncRunner(WhoopStore store, ILogger<WhoopSyncRunner> l
                 }
             }
 
-            // A page's writes go out together rather than one after the next.
-            // A backfill is thousands of round trips to Cosmos and almost
-            // nothing else, so waiting out each one in turn is most of what
-            // the budget gets spent on. WHOOP caps a page at 25 records, which
-            // is what bounds the writes in flight — no throttle needed beyond
-            // the page itself. The writes are independent upserts, so the
-            // order they land in does not matter.
-            await Task.WhenAll(upserts);
-            written += upserts.Count;
+            // A page's records go to Cosmos together rather than one after the
+            // next. A backfill is thousands of round trips and almost nothing
+            // else, so waiting out each one in turn is most of what the budget
+            // gets spent on — and an incremental run now makes up to two round
+            // trips per record rather than one, which is more reason to
+            // overlap them, not less. WHOOP caps a page at 25 records, which is
+            // what bounds the work in flight — no throttle needed beyond the
+            // page itself. The writes are independent upserts, so the order
+            // they land in does not matter.
+            var outcomes = await Task.WhenAll(upserts);
+
+            foreach (var outcome in outcomes)
+            {
+                if (outcome == WhoopWriteOutcome.Written)
+                {
+                    written++;
+                }
+                else
+                {
+                    unchanged++;
+                }
+            }
 
             token = page.NextToken;
 
@@ -212,17 +232,23 @@ public sealed class WhoopSyncRunner(WhoopStore store, ILogger<WhoopSyncRunner> l
             NextToken = backfilling ? token : null,
             OldestStart = oldestStart,
             LastRunAt = DateTimeOffset.UtcNow,
+
+            // Writes that actually happened, not records seen. Since the store
+            // began skipping records it already had, a run over a week of
+            // settled WHOOP data can legitimately add nothing to this.
             RecordsWritten = state.RecordsWritten + written,
         };
 
         await store.WriteStateAsync(updated, cancellationToken);
 
         logger.LogInformation(
-            "Synced {Written} {Type} records over {Pages} pages (skipped {Skipped}); "
+            "Synced {Written} {Type} records over {Pages} pages "
+            + "({Unchanged} already current, {Skipped} unusable); "
             + "backfill complete: {Complete}, more work: {More}.",
             written,
             collection.Type,
             pages,
+            unchanged,
             skipped,
             updated.BackfillComplete,
             ranOutOfTime);
@@ -231,6 +257,7 @@ public sealed class WhoopSyncRunner(WhoopStore store, ILogger<WhoopSyncRunner> l
         {
             Type = collection.Type,
             Written = written,
+            Unchanged = unchanged,
             Skipped = skipped,
             Pages = pages,
             BackfillComplete = updated.BackfillComplete,
@@ -268,6 +295,16 @@ public sealed record WhoopSyncResult
     public required string Type { get; init; }
 
     public required int Written { get; init; }
+
+    /// <summary>
+    /// Records WHOOP returned that the container already held unchanged, so
+    /// only the point read that established it was paid for. On a settled
+    /// incremental run this is most of the window.
+    ///
+    /// Not required, so <see cref="Failed"/> keeps working without it: a
+    /// collection that threw checked nothing.
+    /// </summary>
+    public int Unchanged { get; init; }
 
     public required int Skipped { get; init; }
 

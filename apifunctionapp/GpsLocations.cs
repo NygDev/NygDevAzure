@@ -28,8 +28,11 @@ namespace ApiFunctionApp;
 /// timeout. Past that the upload is a failure however it ends here, so the
 /// write is given a budget inside that and gives up in time to say so.</item>
 /// <item>Duplicates are expected, not exceptional. A batch whose response was
-/// lost is resent verbatim, so the store keys documents on <c>ts</c> and
-/// upserts — see <see cref="GpsFixStore"/>.</item>
+/// lost is resent verbatim, so the store groups the fixes into segment
+/// documents keyed on the span of <c>ts</c> they cover and upserts — a
+/// verbatim resend rebuilds the same ids and lands on the same documents. See
+/// <see cref="GpsFixStore"/>, which also covers what a partially overlapping
+/// resend does instead.</item>
 /// </list>
 ///
 /// The one cost worth knowing about is what a rejection does: the phone keeps
@@ -133,9 +136,11 @@ public class GpsLocations(GpsFixStore store, ILogger<GpsLocations> logger)
         // Keyed by ts, because one array can carry the same fix twice: the
         // phone appends batches in order and resends anything it did not get
         // acknowledged, so a resend can overlap an upload that did land. Left
-        // in, the duplicates would be two operations on one document id in a
-        // single transactional batch, which Cosmos refuses outright — and it
-        // would refuse the other ninety-eight fixes with them.
+        // in, the duplicates would be stored twice inside the same segment
+        // document — and, because the segment ids are derived from the span
+        // they cover, would shift the boundaries of every segment after them
+        // so that a resend no longer landed on the documents it wrote first
+        // time round.
         var byTimestamp = new Dictionary<long, GpsFix>(length);
         var index = 0;
 
@@ -154,10 +159,15 @@ public class GpsLocations(GpsFixStore store, ILogger<GpsLocations> logger)
             index++;
         }
 
-        // Oldest first. Nothing downstream depends on the order — every write
-        // is an independent upsert — but a batch that fails partway leaves the
-        // oldest fixes stored rather than an arbitrary scatter of them, and the
-        // logged span below reads as a span rather than as two numbers.
+        // Oldest first, and this one is load-bearing rather than tidiness. The
+        // store chunks this list into fixed-size segments and names each
+        // document after the span it covers, so the order decides the ids. Two
+        // uploads of the same fixes have to sort the same way to rebuild the
+        // same documents, which is the whole of the resend contract.
+        //
+        // It also means a run that fails partway leaves the oldest fixes
+        // stored rather than an arbitrary scatter of them, and the logged span
+        // below reads as a span rather than as two numbers.
         var ordered = byTimestamp.Values.ToList();
         ordered.Sort((left, right) => left.TimestampMs.CompareTo(right.TimestampMs));
 
@@ -175,9 +185,11 @@ public class GpsLocations(GpsFixStore store, ILogger<GpsLocations> logger)
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         budget.CancelAfter(WriteBudget);
 
+        GpsWriteReport report;
+
         try
         {
-            await store.WriteAsync(fixes, budget.Token);
+            report = await store.WriteAsync(fixes, budget.Token);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -194,10 +206,11 @@ public class GpsLocations(GpsFixStore store, ILogger<GpsLocations> logger)
                 Storing {fixes.Count} fixes did not finish within {WriteBudget.TotalSeconds:0} seconds.
 
                 Nothing is lost — the spool stays on the phone and the fixes that did land are
-                upserted over on the next attempt. A batch this size is the likely cause: db/primary
-                is on a database provisioned at 1000 RU/s shared with everything else on the account,
-                which is a few hundred fixes a second, so a backlog of many thousands cannot be
-                written inside the phone's 20 second read timeout however it is sent.
+                upserted over on the next attempt. A backlog this size is the likely cause:
+                db/primary is on a database provisioned at 1000 RU/s shared with everything else on
+                the account, and while the fixes are stored in segments of 150 rather than one
+                document apiece, a large enough spool still cannot be written inside the phone's
+                20 second read timeout.
                 """);
         }
         catch (CosmosException ex)
@@ -220,8 +233,9 @@ public class GpsLocations(GpsFixStore store, ILogger<GpsLocations> logger)
                     "The account is throttling and the SDK's retries did not outlast it. The database is "
                     + "provisioned at 1000 RU/s shared across everything on it.",
                 HttpStatusCode.RequestEntityTooLarge =>
-                    "A single fix serialized larger than Cosmos accepts, which should not be possible for "
-                    + "six numbers — check what was actually posted.",
+                    "A segment serialized larger than the 2 MB Cosmos accepts for one document, which "
+                    + "150 fixes of six numbers each should come nowhere near — check what was actually "
+                    + "posted, and FixesPerSegment in GpsFixStore.",
                 _ => "The container is db/primary on nygdev-cosmos-db.",
             };
 
@@ -242,11 +256,18 @@ public class GpsLocations(GpsFixStore store, ILogger<GpsLocations> logger)
         var oldest = fixes[0].RecordedAt;
         var newest = fixes[^1].RecordedAt;
 
+        // The RU charge is logged rather than discarded because it is the only
+        // way to see what an upload actually costs against the account's
+        // 1000 RU/s — and the number that says whether the segment size is
+        // pulling its weight.
         logger.LogInformation(
-            "Stored {Count} location fixes spanning {Oldest} to {Newest}.",
+            "Stored {Count} location fixes spanning {Oldest} to {Newest} "
+            + "in {Segments} segments for {Charge:0.##} RU.",
             fixes.Count,
             oldest,
-            newest);
+            newest,
+            report.Segments,
+            report.RequestCharge);
 
         // 200 and a short summary. The phone drains the body and ignores it —
         // only the status matters to it — but the same call made by hand
@@ -257,6 +278,7 @@ public class GpsLocations(GpsFixStore store, ILogger<GpsLocations> logger)
         {
             ok = true,
             stored = fixes.Count,
+            segments = report.Segments,
             oldest = oldest.ToString("O", CultureInfo.InvariantCulture),
             newest = newest.ToString("O", CultureInfo.InvariantCulture),
         });

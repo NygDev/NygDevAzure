@@ -7,11 +7,27 @@ namespace ApiFunctionApp.Gps;
 /// Writes location fixes into the same Cosmos container everything else in
 /// this app uses, under a partition of their own.
 ///
-/// Every write is an upsert keyed on the fix's <c>ts</c>, because the phone
-/// deletes a batch only after it has seen a 2xx and resends the identical
-/// batch whenever that response was lost. Storing the same fix twice would be
-/// the ordinary case rather than the rare one, so the write is built to land
-/// on the same document the second time round.
+/// A document here is a <em>segment</em>: one upload's worth of fixes, in
+/// order, on a single document. That is a storage shape chosen for RU rather
+/// than for readability. Cosmos charges a floor of roughly 5 RU for any write
+/// regardless of size, so a fix stored on a document of its own costs the same
+/// as a fix stored alongside a hundred and forty-nine others — which made the
+/// old one-document-per-fix shape roughly a 5 RU tax per reading. Packed into
+/// segments the same fixes cost a fraction of that, and a large backlog stops
+/// being able to exhaust the account's throughput on its own.
+///
+/// Every write is still an upsert, because the phone deletes a batch only
+/// after it has seen a 2xx and resends the identical batch whenever that
+/// response was lost. The segment id is derived from the timestamps it spans,
+/// so a verbatim resend rebuilds the same id and lands on the same document —
+/// the same idempotency the per-fix documents had, without a read to establish
+/// it.
+///
+/// The one case that shape does not cover is a resend that <em>partially</em>
+/// overlaps an upload that already landed: different fixes, different span,
+/// different id, so a fix can end up recorded in two segments. Nothing reads
+/// these yet, and de-duplicating on <c>ts</c> is cheap whenever something
+/// does, which is the trade this shape makes deliberately.
 /// </summary>
 public sealed class GpsFixStore(Container container)
 {
@@ -26,30 +42,38 @@ public sealed class GpsFixStore(Container container)
     private static readonly PartitionKey Partition = new(PartitionType);
 
     /// <summary>
-    /// Operations per transactional batch. 100 is Cosmos's own ceiling; the
-    /// other one, 2 MB of payload, is nowhere near reachable with documents
-    /// this size.
+    /// Fixes per segment document.
+    ///
+    /// At roughly 90 bytes per fix on the wire this is about 14 KB of payload,
+    /// which is nowhere near Cosmos's 2 MB item ceiling and comfortably inside
+    /// the range where the per-write floor has been amortised away — past this
+    /// point the RU curve is close to linear in size and a larger segment buys
+    /// very little. It is also small enough that one failed write costs a
+    /// bounded amount of re-sent work.
+    ///
+    /// An ordinary upload is a handful of fixes and becomes a single segment
+    /// well under a kilobyte, which is the cheapest write Cosmos offers.
     /// </summary>
-    private const int OperationsPerBatch = 100;
+    private const int FixesPerSegment = 150;
 
     /// <summary>
-    /// How many of those batches are in flight at once.
+    /// How many segment writes are in flight at once.
     ///
-    /// Kept low on purpose. The database is 1000 RU/s shared across
-    /// everything on the account, so throughput rather than round trips is
-    /// what bounds a large backlog, and pushing harder buys nothing but 429s
-    /// the SDK then has to sit out. Four is enough to hide the latency of an
-    /// ordinary batch — six fixes, one round trip — while leaving the RU
-    /// budget to the retry policy.
+    /// Kept low on purpose. The database is 1000 RU/s shared across everything
+    /// on the account, so throughput rather than round trips is what bounds a
+    /// large backlog, and pushing harder buys nothing but 429s the SDK then has
+    /// to sit out. Four is enough to hide the latency of an ordinary write
+    /// while leaving the RU budget to the retry policy.
     /// </summary>
-    private const int ConcurrentBatches = 4;
+    private const int ConcurrentWrites = 4;
 
     /// <summary>
     /// The response body is never read, so Cosmos is asked not to echo the
-    /// documents back. The client is configured this way already; saying it
-    /// again here keeps the batch from depending on that.
+    /// document back. The client is configured this way already; saying it
+    /// again here keeps the write from depending on that. Note this saves
+    /// bandwidth and latency, not RU — the charge is the same either way.
     /// </summary>
-    private static readonly TransactionalBatchItemRequestOptions WriteOptions = new()
+    private static readonly ItemRequestOptions WriteOptions = new()
     {
         EnableContentResponseOnWrite = false,
     };
@@ -59,61 +83,77 @@ public sealed class GpsFixStore(Container container)
     ///
     /// There is no partial success to report: the caller answers 2xx only when
     /// all of this landed, because a 2xx is what makes the phone delete its
-    /// copy. A batch that fails leaves its own hundred fixes unwritten —
-    /// transactional batches are atomic — and any batch that already succeeded
-    /// stays written, which costs nothing: the resend upserts over it.
+    /// copy. A segment that fails leaves its own fixes unwritten, and any
+    /// segment that already succeeded stays written, which costs nothing: the
+    /// resend upserts over it.
+    ///
+    /// The fixes are expected in ascending <c>ts</c> order and free of
+    /// duplicates — <see cref="ApiFunctionApp.GpsLocations"/> guarantees both —
+    /// because that is what makes the segmentation deterministic, and with it
+    /// the ids a resend rebuilds.
     /// </summary>
-    public async Task WriteAsync(IReadOnlyList<GpsFix> fixes, CancellationToken cancellationToken)
+    public async Task<GpsWriteReport> WriteAsync(
+        IReadOnlyList<GpsFix> fixes,
+        CancellationToken cancellationToken)
     {
-        var batches = fixes
-            .Chunk(OperationsPerBatch)
-            .ToList();
+        var segments = fixes
+            .Chunk(FixesPerSegment)
+            .ToArray();
+
+        // One slot per segment, written by exactly one worker: distinct array
+        // elements are safe to assign concurrently, so the charges add up
+        // without a lock between them.
+        var charges = new double[segments.Length];
 
         await Parallel.ForEachAsync(
-            batches,
+            Enumerable.Range(0, segments.Length),
             new ParallelOptions
             {
-                MaxDegreeOfParallelism = ConcurrentBatches,
+                MaxDegreeOfParallelism = ConcurrentWrites,
                 CancellationToken = cancellationToken,
             },
-            async (batch, token) => await WriteBatchAsync(batch, token));
+            async (index, token) =>
+            {
+                charges[index] = await WriteSegmentAsync(segments[index], token);
+            });
+
+        return new GpsWriteReport(segments.Length, charges.Sum());
     }
 
-    private async Task WriteBatchAsync(GpsFix[] fixes, CancellationToken cancellationToken)
+    /// <summary>Writes one segment and returns what Cosmos charged for it.</summary>
+    private async Task<double> WriteSegmentAsync(GpsFix[] fixes, CancellationToken cancellationToken)
     {
-        var batch = container.CreateTransactionalBatch(Partition);
+        using var payload = Serialize(fixes);
 
-        // The streams have to outlive the call — the SDK reads them while the
-        // request is being sent, not when the operation is queued — so they
-        // are held here and disposed once the response is back.
-        var payloads = new List<MemoryStream>(fixes.Length);
+        using var response = await container.UpsertItemStreamAsync(
+            payload,
+            Partition,
+            WriteOptions,
+            cancellationToken);
 
-        try
+        if (!response.IsSuccessStatusCode)
         {
-            foreach (var fix in fixes)
-            {
-                var payload = Serialize(fix);
-                payloads.Add(payload);
-                batch.UpsertItemStream(payload, WriteOptions);
-            }
-
-            using var response = await batch.ExecuteAsync(cancellationToken);
-
-            if (response.IsSuccessStatusCode)
-            {
-                return;
-            }
-
             throw Failure(response, fixes);
         }
-        finally
-        {
-            foreach (var payload in payloads)
-            {
-                payload.Dispose();
-            }
-        }
+
+        return response.Headers.RequestCharge;
     }
+
+    /// <summary>
+    /// The segment's id, and with it the dedupe key.
+    ///
+    /// The span the segment covers, first and last <c>ts</c>. The endpoint
+    /// hands over a sorted, de-duplicated list and the chunking is fixed, so
+    /// the same upload always produces the same segments with the same ids —
+    /// which is what makes a resend of a batch whose response was lost land on
+    /// the documents it landed on the first time rather than beside them.
+    ///
+    /// A second phone would break this, exactly as it broke the per-fix ids
+    /// before it: two devices could share a millisecond, and the payload
+    /// carries no device id to separate them by.
+    /// </summary>
+    private static string SegmentId(GpsFix[] fixes) =>
+        $"{fixes[0].TimestampMs}-{fixes[^1].TimestampMs}";
 
     /// <summary>
     /// The document, written with Utf8JsonWriter straight to the bytes Cosmos
@@ -123,8 +163,13 @@ public sealed class GpsFixStore(Container container)
     /// uses them: the CosmosClient still serializes with Newtonsoft by
     /// default, and a document that went through it would be shaped by that
     /// serializer's settings rather than by what is written here.
+    ///
+    /// Every field the per-fix documents carried is still carried, on the fix
+    /// it belongs to. Only the two that were the same on all of them — the
+    /// partition type, and the ingest time — have moved up to the envelope,
+    /// where they are stated once instead of a hundred and fifty times.
     /// </summary>
-    private static MemoryStream Serialize(GpsFix fix)
+    private static MemoryStream Serialize(GpsFix[] fixes)
     {
         var payload = new MemoryStream();
 
@@ -132,33 +177,52 @@ public sealed class GpsFixStore(Container container)
         {
             writer.WriteStartObject();
 
-            // ts as a string: Cosmos ids are strings, and this one is the
-            // dedupe key.
-            writer.WriteString("id", fix.Id);
+            writer.WriteString("id", SegmentId(fixes));
             writer.WriteString("type", PartitionType);
 
-            // The five measurements under the names the phone sends, so what
-            // is stored can be read against the payload contract without a
-            // mapping table in between. The nullable three are written as
-            // literal null when absent rather than left out, keeping all six
-            // keys on every document exactly as they are on the wire.
-            writer.WriteNumber("lat", fix.Latitude);
-            writer.WriteNumber("lon", fix.Longitude);
-            WriteNullable(writer, "acc", fix.Accuracy);
-            WriteNullable(writer, "alt", fix.Altitude);
-            WriteNullable(writer, "spd", fix.Speed);
+            // The span, spelled out on the envelope so a segment can be found
+            // and read without opening the array. Raw epoch milliseconds and
+            // the same two instants as timestamps, for the same reason the
+            // fixes carry both: the numbers are what the phone sent and what
+            // the id is derived from, the timestamps are so the container can
+            // be read by eye.
+            writer.WriteNumber("from", fixes[0].TimestampMs);
+            writer.WriteNumber("to", fixes[^1].TimestampMs);
+            writer.WriteString("recorded_from", fixes[0].RecordedAt);
+            writer.WriteString("recorded_to", fixes[^1].RecordedAt);
+            writer.WriteNumber("count", fixes.Length);
 
-            // The raw epoch milliseconds, and the same instant spelled out.
-            // The number is what the phone sent and what the id is derived
-            // from; the timestamp is so the container can be read by eye.
-            writer.WriteNumber("ts", fix.TimestampMs);
-            writer.WriteString("recorded_at", fix.RecordedAt);
-
-            // When this copy was taken, as distinct from when the fix was.
+            // When this copy was taken, as distinct from when the fixes were.
             // The two are a minute apart on a live upload and arbitrarily far
             // apart after an offline stretch, which is what makes a backlog
             // recognisable afterwards.
             writer.WriteString("ingested_at", DateTimeOffset.UtcNow);
+
+            writer.WriteStartArray("fixes");
+
+            foreach (var fix in fixes)
+            {
+                writer.WriteStartObject();
+
+                // The five measurements under the names the phone sends, so
+                // what is stored can be read against the payload contract
+                // without a mapping table in between. The nullable three are
+                // written as literal null when absent rather than left out,
+                // keeping all six keys on every fix exactly as they are on the
+                // wire.
+                writer.WriteNumber("lat", fix.Latitude);
+                writer.WriteNumber("lon", fix.Longitude);
+                WriteNullable(writer, "acc", fix.Accuracy);
+                WriteNullable(writer, "alt", fix.Altitude);
+                WriteNullable(writer, "spd", fix.Speed);
+
+                writer.WriteNumber("ts", fix.TimestampMs);
+                writer.WriteString("recorded_at", fix.RecordedAt);
+
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
 
             writer.WriteEndObject();
         }
@@ -180,39 +244,30 @@ public sealed class GpsFixStore(Container container)
     }
 
     /// <summary>
-    /// Turns a failed batch into the CosmosException the endpoint answers for.
+    /// Turns a failed segment write into the CosmosException the endpoint
+    /// answers for.
     ///
-    /// A transactional batch reports the operation that actually failed and
-    /// marks every other one 424 Failed Dependency, so the batch's own status
-    /// is only ever as informative as the first real failure inside it. This
-    /// digs that out, along with the fix it belongs to — which is the one
-    /// piece of information that is not in the response.
+    /// One operation per request now, so the status on the response is the
+    /// real failure rather than a batch's summary of a hundred — the span the
+    /// segment covers is the only thing worth adding, and it is the one piece
+    /// of information the response does not carry.
     /// </summary>
-    private static CosmosException Failure(TransactionalBatchResponse response, GpsFix[] fixes)
-    {
-        var status = response.StatusCode;
-        var detail = response.ErrorMessage;
-        var culprit = string.Empty;
-
-        for (var i = 0; i < response.Count && i < fixes.Length; i++)
-        {
-            var result = response[i];
-
-            if (result.IsSuccessStatusCode || result.StatusCode == System.Net.HttpStatusCode.FailedDependency)
-            {
-                continue;
-            }
-
-            status = result.StatusCode;
-            culprit = $" The first operation to fail was the fix at ts {fixes[i].TimestampMs}.";
-            break;
-        }
-
-        return new CosmosException(
-            $"Storing a batch of {fixes.Length} location fixes failed. {detail}{culprit}",
-            status,
+    private static CosmosException Failure(ResponseMessage response, GpsFix[] fixes) =>
+        new(
+            $"Storing a segment of {fixes.Length} location fixes spanning ts {fixes[0].TimestampMs} "
+            + $"to {fixes[^1].TimestampMs} failed. {response.ErrorMessage}",
+            response.StatusCode,
             subStatusCode: 0,
-            activityId: response.ActivityId,
-            requestCharge: response.RequestCharge);
-    }
+            activityId: response.Headers.ActivityId,
+            requestCharge: response.Headers.RequestCharge);
 }
+
+/// <summary>
+/// What one upload cost, for the endpoint's log.
+///
+/// The RU charge is the whole point of the segment shape, so it is reported
+/// rather than discarded: it is the only way to tell from the outside whether
+/// a change to <c>FixesPerSegment</c> did anything, and the number that says
+/// how close an upload came to the account's 1000 RU/s.
+/// </summary>
+public readonly record struct GpsWriteReport(int Segments, double RequestCharge);
