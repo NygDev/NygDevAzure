@@ -92,6 +92,20 @@ resource "azurerm_cosmosdb_sql_container" "primary" {
   }
 }
 
+resource "azurerm_cosmosdb_sql_container" "gym" {
+  name                  = "gym"
+  resource_group_name   = azurerm_resource_group.databases.name
+  account_name          = azurerm_cosmosdb_account.db.name
+  database_name         = azurerm_cosmosdb_sql_database.db.name
+  partition_key_paths   = ["/objectId"]
+  partition_key_version = 2
+
+  indexing_policy {
+    indexing_mode = "none"
+  }
+}
+
+
 resource "azurerm_cosmosdb_sql_role_assignment" "my_user" {
   resource_group_name = azurerm_resource_group.databases.name
   account_name        = azurerm_cosmosdb_account.db.name
