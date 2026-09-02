@@ -105,6 +105,21 @@ resource "azurerm_cosmosdb_sql_container" "gym" {
   }
 }
 
+# The phone's location spool, off db/primary and on its own. Partitioned on
+# /sender: a document says which device uploaded it, and that is what Cosmos
+# routes on, so a second device lands beside this one rather than interleaved
+# with it. Written by GpsFixStore in the api app, which needs the data-plane
+# role assignment in terraform/consumption.tf to reach it — the assignments are
+# per container, so this one does not inherit db/primary's.
+#
+# Indexing off. Nothing queries these yet; they are written by the upload
+# endpoint and read back, when they are, by id and partition key, which is a
+# point read and needs no index. That makes every upload the cheapest write
+# Cosmos offers. A query that needs an index is what turns this back on —
+# consistent mode with the filtered paths included, as on primary.
+#
+# partition_key_paths is ForceNew, as on primary: editing it destroys and
+# recreates the container with everything in it.
 resource "azurerm_cosmosdb_sql_container" "gps" {
   name                  = "gps"
   resource_group_name   = azurerm_resource_group.databases.name

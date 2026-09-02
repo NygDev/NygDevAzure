@@ -4,8 +4,7 @@ using Microsoft.Azure.Cosmos;
 namespace ApiFunctionApp.Gps;
 
 /// <summary>
-/// Writes location fixes into the same Cosmos container everything else in
-/// this app uses, under a partition of their own.
+/// Writes location fixes into db/gps, the container that holds nothing else.
 ///
 /// A document here is a <em>segment</em>: one upload's worth of fixes, in
 /// order, on a single document. That is a storage shape chosen for RU rather
@@ -32,14 +31,21 @@ namespace ApiFunctionApp.Gps;
 public sealed class GpsFixStore(Container container)
 {
     /// <summary>
-    /// The partition, and what the documents say they are. The container is
-    /// partitioned on /type, so a type of its own keeps these off the
-    /// partitions holding the WHOOP records — they are routed apart, and the
-    /// dashboard's queries never touch them.
+    /// The partition, and what the documents say they came from.
+    ///
+    /// db/gps is partitioned on /sender, so every segment carries one — and
+    /// the payload carries no device id, so today there is exactly one value it
+    /// can be. That is what /sender is there for: a second device would arrive
+    /// under a sender of its own and be routed apart from this one, which also
+    /// takes the collision out of the segment ids. Two phones can produce a fix
+    /// in the same millisecond, and under one sender the later segment would
+    /// upsert over the earlier one; under two they are different documents in
+    /// different partitions. Both would need the sender to come off the request
+    /// rather than out of this constant — see <see cref="SegmentId"/>.
     /// </summary>
-    public const string PartitionType = "GPS";
+    public const string Sender = "phone";
 
-    private static readonly PartitionKey Partition = new(PartitionType);
+    private static readonly PartitionKey Partition = new(Sender);
 
     /// <summary>
     /// Fixes per segment document.
@@ -59,11 +65,11 @@ public sealed class GpsFixStore(Container container)
     /// <summary>
     /// How many segment writes are in flight at once.
     ///
-    /// Kept low on purpose. The database is 1000 RU/s shared across everything
-    /// on the account, so throughput rather than round trips is what bounds a
-    /// large backlog, and pushing harder buys nothing but 429s the SDK then has
-    /// to sit out. Four is enough to hide the latency of an ordinary write
-    /// while leaving the RU budget to the retry policy.
+    /// Kept low on purpose. The database is 1000 RU/s shared across every
+    /// container on it, this one included, so throughput rather than round
+    /// trips is what bounds a large backlog, and pushing harder buys nothing
+    /// but 429s the SDK then has to sit out. Four is enough to hide the latency
+    /// of an ordinary write while leaving the RU budget to the retry policy.
     /// </summary>
     private const int ConcurrentWrites = 4;
 
@@ -150,7 +156,9 @@ public sealed class GpsFixStore(Container container)
     ///
     /// A second phone would break this, exactly as it broke the per-fix ids
     /// before it: two devices could share a millisecond, and the payload
-    /// carries no device id to separate them by.
+    /// carries no device id to separate them by. /sender is where that id
+    /// belongs once there is one — a per-sender partition makes two identical
+    /// spans two documents rather than one.
     /// </summary>
     private static string SegmentId(GpsFix[] fixes) =>
         $"{fixes[0].TimestampMs}-{fixes[^1].TimestampMs}";
@@ -166,8 +174,8 @@ public sealed class GpsFixStore(Container container)
     ///
     /// Every field the per-fix documents carried is still carried, on the fix
     /// it belongs to. Only the two that were the same on all of them — the
-    /// partition type, and the ingest time — have moved up to the envelope,
-    /// where they are stated once instead of a hundred and fifty times.
+    /// sender, and the ingest time — have moved up to the envelope, where they
+    /// are stated once instead of a hundred and fifty times.
     /// </summary>
     private static MemoryStream Serialize(GpsFix[] fixes)
     {
@@ -178,7 +186,11 @@ public sealed class GpsFixStore(Container container)
             writer.WriteStartObject();
 
             writer.WriteString("id", SegmentId(fixes));
-            writer.WriteString("type", PartitionType);
+
+            // The partition key. It has to be on the document as well as on the
+            // request — Cosmos rejects a write whose /sender is missing rather
+            // than inferring it from the PartitionKey passed alongside.
+            writer.WriteString("sender", Sender);
 
             // The span, spelled out on the envelope so a segment can be found
             // and read without opening the array. Raw epoch milliseconds and

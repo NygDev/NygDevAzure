@@ -150,8 +150,9 @@ resource "azurerm_user_assigned_identity" "api" {
 
 # The API app — .NET 10 isolated on Flex Consumption. Hosts the WHOOP
 # integration: the OAuth flow, a status check, and the sync that writes WHOOP's
-# collections into nygdev-cosmos-db / db / primary. Its Cosmos access is
-# granted by the role assignment below.
+# collections into nygdev-cosmos-db / db / primary, and the endpoint that writes
+# the phone's location spool into db / gps. Its Cosmos access is granted by the
+# role assignments below, one per container.
 resource "azurerm_function_app_flex_consumption" "api" {
   name                = "func-nygdev-api"
   resource_group_name = azurerm_resource_group.consumption.name
@@ -279,6 +280,21 @@ resource "azurerm_cosmosdb_sql_role_assignment" "api_cosmos_primary" {
   role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
   principal_id        = azurerm_user_assigned_identity.api.principal_id
   scope               = "${azurerm_cosmosdb_account.db.id}/dbs/${azurerm_cosmosdb_sql_database.db.name}/colls/${azurerm_cosmosdb_sql_container.primary.name}"
+}
+
+# The same grant again for db/gps, where the phone's location spool is written.
+# A second assignment rather than one widened to the account, because the scope
+# above is deliberately per container: an assignment at account scope would hand
+# the app every container that lands there later, including ones written by
+# something else. The cost of keeping it narrow is exactly this — a new
+# container the app writes to needs its own assignment, and without one every
+# write to it answers 403 while db/primary keeps working.
+resource "azurerm_cosmosdb_sql_role_assignment" "api_cosmos_gps" {
+  resource_group_name = azurerm_resource_group.databases.name
+  account_name        = azurerm_cosmosdb_account.db.name
+  role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
+  principal_id        = azurerm_user_assigned_identity.api.principal_id
+  scope               = "${azurerm_cosmosdb_account.db.id}/dbs/${azurerm_cosmosdb_sql_database.db.name}/colls/${azurerm_cosmosdb_sql_container.gps.name}"
 }
 
 # Write access on the data container for the api app, and on nothing else in

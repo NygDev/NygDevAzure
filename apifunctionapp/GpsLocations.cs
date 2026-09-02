@@ -62,11 +62,10 @@ public class GpsLocations(GpsFixStore store, ILogger<GpsLocations> logger)
     /// </summary>
     private static readonly TimeSpan WriteBudget = TimeSpan.FromSeconds(12);
 
-    // Function level: this writes to the shared container, and the phone holds
-    // a key. A wrong key answers 401, which the phone reads as a failure and
-    // spools through — the payload contract calls that out as the thing to
-    // watch for during setup, and it looks the same from here as a network
-    // outage does.
+    // Function level: this writes to db/gps, and the phone holds a key. A wrong
+    // key answers 401, which the phone reads as a failure and spools through —
+    // the payload contract calls that out as the thing to watch for during
+    // setup, and it looks the same from here as a network outage does.
     [Function("GpsLocations")]
     public async Task<IActionResult> Run(
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "gps/locations")] HttpRequest request,
@@ -207,10 +206,10 @@ public class GpsLocations(GpsFixStore store, ILogger<GpsLocations> logger)
 
                 Nothing is lost — the spool stays on the phone and the fixes that did land are
                 upserted over on the next attempt. A backlog this size is the likely cause:
-                db/primary is on a database provisioned at 1000 RU/s shared with everything else on
-                the account, and while the fixes are stored in segments of 150 rather than one
-                document apiece, a large enough spool still cannot be written inside the phone's
-                20 second read timeout.
+                db/gps is on a database provisioned at 1000 RU/s shared with every other container
+                on it, and while the fixes are stored in segments of 150 rather than one document
+                apiece, a large enough spool still cannot be written inside the phone's 20 second
+                read timeout.
                 """);
         }
         catch (CosmosException ex)
@@ -224,19 +223,20 @@ public class GpsLocations(GpsFixStore store, ILogger<GpsLocations> logger)
             var hint = ex.StatusCode switch
             {
                 HttpStatusCode.Forbidden =>
-                    "id-nygdev-api needs data-plane read/write on db/primary; terraform grants it in "
-                    + "terraform/consumption.tf.",
+                    "id-nygdev-api needs data-plane read/write on db/gps; the role assignments are "
+                    + "per container rather than per account, so the one covering db/primary does not "
+                    + "reach this container. Terraform grants it in terraform/consumption.tf.",
                 HttpStatusCode.NotFound =>
-                    "db/primary is missing on nygdev-cosmos-db. Terraform holds the container in "
+                    "db/gps is missing on nygdev-cosmos-db. Terraform holds the container in "
                     + "terraform/db.tf.",
                 HttpStatusCode.TooManyRequests =>
                     "The account is throttling and the SDK's retries did not outlast it. The database is "
-                    + "provisioned at 1000 RU/s shared across everything on it.",
+                    + "provisioned at 1000 RU/s shared across every container on it.",
                 HttpStatusCode.RequestEntityTooLarge =>
                     "A segment serialized larger than the 2 MB Cosmos accepts for one document, which "
                     + "150 fixes of six numbers each should come nowhere near — check what was actually "
                     + "posted, and FixesPerSegment in GpsFixStore.",
-                _ => "The container is db/primary on nygdev-cosmos-db.",
+                _ => "The container is db/gps on nygdev-cosmos-db.",
             };
 
             return Text(

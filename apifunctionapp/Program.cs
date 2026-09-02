@@ -95,10 +95,16 @@ builder.Services.AddSingleton(provider =>
     return new CosmosClient(endpoint, provider.GetRequiredService<TokenCredential>(), options);
 });
 
-// The one container the app uses, resolved once. GetContainer builds a fresh
-// proxy on every call and a backfill would ask for one per record written, so
-// the names live here — the single place that knows them — rather than in each
-// store that needs one. Both are fixed by terraform, in terraform/db.tf.
+// The container everything but the GPS spool uses, resolved once. GetContainer
+// builds a fresh proxy on every call and a backfill would ask for one per
+// record written, so the names live here — the single place that knows them —
+// rather than in each store that needs one. Both are fixed by terraform, in
+// terraform/db.tf.
+//
+// Registered unkeyed because it is what every store but GpsFixStore takes.
+// db/gps is handed to that one by hand further down instead of being
+// registered as a second Container, which would leave two registrations of one
+// type to be told apart by resolution order.
 builder.Services.AddSingleton(provider =>
     provider.GetRequiredService<CosmosClient>().GetContainer("db", "primary"));
 
@@ -126,12 +132,20 @@ builder.Services.AddSingleton<WhoopSyncRunner>();
 // ---------------------------------------------------------------------------
 // GPS
 //
-// The phone's location spool, written into a partition of its own on the same
-// container. Nothing but the Cosmos container behind it, so there is no
-// configuration to be missing and nothing to defer — see the endpoint,
-// GpsLocations, for the upload contract it is holding up.
+// The phone's location spool, written into db/gps — a container of its own,
+// partitioned on /sender, rather than a partition of db/primary. Nothing but
+// the Cosmos container behind it, so there is no configuration to be missing
+// and nothing to defer — see the endpoint, GpsLocations, for the upload
+// contract it is holding up.
+//
+// Constructed with the container named here rather than injected, because this
+// is the one store in the app that does not write to db/primary. Both
+// containers are terraform's, in terraform/db.tf, and the app's data-plane
+// role assignment on each is in terraform/consumption.tf — a container without
+// one answers 403 no matter what is registered here.
 // ---------------------------------------------------------------------------
-builder.Services.AddSingleton<GpsFixStore>();
+builder.Services.AddSingleton(provider => new GpsFixStore(
+    provider.GetRequiredService<CosmosClient>().GetContainer("db", "gps")));
 
 // ---------------------------------------------------------------------------
 // Running analytics
