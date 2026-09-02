@@ -62,3 +62,13 @@ output "running_dashboard_url" {
   description = "Where the running dashboard JSON is published. This is the URL the run.nygard.dev page fetches; it is anonymous-read, so no key or function call is involved. Rewritten by the API on its own timer, a quarter of an hour behind each six-hourly WHOOP sync."
   value       = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${azurerm_storage_container.data.name}/marathonprep.json"
 }
+
+output "gymlog_client_id" {
+  description = "Application (client) ID of the GymLog registration. A front end signs in against this and the api function app validates the resulting token for it; it travels in the browser on every sign-in, so it is configuration rather than a secret."
+  value       = azuread_application.gymlog.client_id
+}
+
+output "gymlog_scope" {
+  description = "The scope a GymLog client requests to get a token func-nygdev-api will accept. Asking for anything else — or for a bare client id — yields a token with the wrong audience, which Easy Auth rejects once authentication is made required."
+  value       = "${azuread_application_identifier_uri.gymlog.identifier_uri}/access_as_user"
+}

@@ -254,6 +254,64 @@ resource "azurerm_function_app_flex_consumption" "api" {
     }
   }
 
+  # Easy Auth against the GymLog registration (terraform/entra.tf). The
+  # platform validates the bearer token before the request reaches any function
+  # and hands the code the resulting claims through the X-MS-CLIENT-PRINCIPAL
+  # headers — which is where the /objectId partition key on the `gym` container
+  # is meant to come from.
+  #
+  # Deliberately not enforced yet. require_authentication = false with
+  # AllowAnonymous means every existing caller keeps working exactly as it does
+  # today: the WHOOP callback, the GPS upload from the phone, the dashboard
+  # timer, all of them anonymous. A request that does carry a token gets it
+  # validated and the claims populated; a request that carries none is passed
+  # through untouched rather than bounced to a login. So this turns on the
+  # machinery without turning on the gate, which is what makes it safe to apply
+  # before a single client knows how to sign in.
+  #
+  # Flipping require_authentication to true and unauthenticated_action to
+  # "Return401" is what closes it later — and doing that shuts the door on the
+  # anonymous callers above at the same instant, so those need their own answer
+  # (a separate app, or an exclusion path) before it happens.
+  auth_settings_v2 {
+    auth_enabled           = true
+    require_authentication = false
+    unauthenticated_action = "AllowAnonymous"
+    require_https          = true
+
+    active_directory_v2 {
+      client_id = azuread_application.gymlog.client_id
+
+      # The v2.0 issuer, matching requested_access_token_version = 2 on the
+      # registration. The two have to agree: a v1 token against a v2.0
+      # validator is a 401 with nothing in it to say why.
+      tenant_auth_endpoint = "https://login.microsoftonline.com/${var.tenant_id}/v2.0"
+
+      # Both spellings of the audience. A token minted for
+      # api://<client id>/access_as_user can carry either the App ID URI or the
+      # bare client id in `aud` depending on how the client asked for it, and
+      # accepting only one of them turns a working sign-in into a 401 that
+      # looks like a broken token.
+      allowed_audiences = [
+        azuread_application.gymlog.client_id,
+        "api://${azuread_application.gymlog.client_id}",
+      ]
+
+      # No client_secret_setting_name, and none is missing. A secret is what the
+      # interactive /.auth/login/aad code exchange needs; this app validates
+      # bearer tokens a front end already obtained, which needs no credential of
+      # its own. Adding the interactive flow later means a secret in the vault
+      # and an app setting naming it — not a value typed in here, which would
+      # put it in state.
+    }
+
+    login {
+      # No session cookie to keep. Every call carries its own token, so a token
+      # store would be state the platform maintains for nobody.
+      token_store_enabled = false
+    }
+  }
+
   tags = local.common_tags
 
   lifecycle {
