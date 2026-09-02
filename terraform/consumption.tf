@@ -150,8 +150,10 @@ resource "azurerm_user_assigned_identity" "api" {
 
 # The API app — .NET 10 isolated on Flex Consumption. Hosts the WHOOP
 # integration: the OAuth flow, a status check, and the sync that writes WHOOP's
-# collections into nygdev-cosmos-db / db / primary. Its Cosmos access is
-# granted by the role assignment below.
+# collections into nygdev-cosmos-db / db / primary, and the endpoint that writes
+# the phone's location spool into db / gps. Its Cosmos access is granted by the
+# account-scoped role assignment below, which covers both and whatever comes
+# next.
 resource "azurerm_function_app_flex_consumption" "api" {
   name                = "func-nygdev-api"
   resource_group_name = azurerm_resource_group.consumption.name
@@ -267,26 +269,42 @@ resource "azurerm_function_app_flex_consumption" "api" {
   }
 }
 
-# Data-plane read/write on the Cosmos container for the api app. The account
-# has local_authentication_enabled = false, so this Entra role assignment is
-# the only way in — there are no keys to fall back on. Cosmos DB Built-in Data
-# Contributor (…0002) is the read/write built-in role; scoped to the primary
-# container rather than the account, so the app can't reach anything else that
-# lands in the account later.
-resource "azurerm_cosmosdb_sql_role_assignment" "api_cosmos_primary" {
+# Data-plane read/write on Cosmos for the api app. The account has
+# local_authentication_enabled = false, so this Entra role assignment is the
+# only way in — there are no keys to fall back on. Cosmos DB Built-in Data
+# Contributor (…0002) is the read/write built-in role.
+#
+# Scoped to the account rather than to a container. This was two per-container
+# assignments, one for primary and one for gps, and the narrow scope bought
+# little for what it cost: the app is the only writer on nygdev-cosmos-db and
+# will reach the containers that land there as they arrive, while a
+# per-container grant has to be applied before the code that needs it or every
+# write answers 403 — an ordering trap paid again on each new container.
+#
+# What the narrow scope did buy was a boundary against something that is not
+# this app landing in the account. If that happens, this goes back to one
+# assignment per container the app actually writes to.
+#
+# Replacing the two with this one is a destroy and a create, and terraform does
+# not order them: an apply can briefly leave the app with no Cosmos access at
+# all. Nothing is lost to that — the WHOOP sync runs again on its timer and the
+# phone keeps its spool and resends — but a GPS upload or a sync landing inside
+# the window will fail once.
+resource "azurerm_cosmosdb_sql_role_assignment" "api_cosmos" {
   resource_group_name = azurerm_resource_group.databases.name
   account_name        = azurerm_cosmosdb_account.db.name
   role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
   principal_id        = azurerm_user_assigned_identity.api.principal_id
-  scope               = "${azurerm_cosmosdb_account.db.id}/dbs/${azurerm_cosmosdb_sql_database.db.name}/colls/${azurerm_cosmosdb_sql_container.primary.name}"
+  scope               = azurerm_cosmosdb_account.db.id
 }
 
 # Write access on the data container for the api app, and on nothing else in
-# that account. Scoped to the container rather than the account — the same
-# reasoning as the Cosmos assignment above, and it matters more here: nygdevcdn
-# also holds Foundry's media and the published LikeC4 site, neither of which is
-# this app's business. Contributor rather than a reader role because the
-# dashboard blob is rewritten in place on every build.
+# that account. Scoped to the container rather than the account — the opposite
+# of the Cosmos assignment above, and what makes the difference is what the two
+# accounts hold: nygdev-cosmos-db holds this app's data and nothing else, while
+# nygdevcdn also holds Foundry's media and the published LikeC4 site, neither of
+# which is this app's business. Contributor rather than a reader role because
+# the dashboard blob is rewritten in place on every build.
 #
 # Granted by hand and adopted by the Terraform Import workflow, like the
 # container it is scoped to. azurerm_role_assignment fails on an assignment
