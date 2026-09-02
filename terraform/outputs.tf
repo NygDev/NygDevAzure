@@ -62,3 +62,8 @@ output "running_dashboard_url" {
   description = "Where the running dashboard JSON is published. This is the URL the run.nygard.dev page fetches; it is anonymous-read, so no key or function call is involved. Rewritten by the API on its own timer, a quarter of an hour behind each six-hourly WHOOP sync."
   value       = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${azurerm_storage_container.data.name}/marathonprep.json"
 }
+
+output "gymlog_easy_auth_redirect_uri" {
+  description = "Register this as a Web redirect URI on the GymLog app registration if the built-in sign-in flow at /.auth/login/aad is ever used. It is not needed for the path in use today — a front end that signs in itself and presents a bearer token — and that flow needs a client secret besides. Listed here for the same reason as whoop_redirect_uri: the registration is managed by hand, so anything terraform knows and the portal needs has to be printed rather than applied."
+  value       = "https://${azurerm_function_app_flex_consumption.api.default_hostname}/.auth/login/aad/callback"
+}

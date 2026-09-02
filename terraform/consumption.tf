@@ -254,6 +254,76 @@ resource "azurerm_function_app_flex_consumption" "api" {
     }
   }
 
+  # Easy Auth against the GymLog registration. The platform validates the bearer
+  # token before the request reaches any function and hands the code the
+  # resulting claims through the X-MS-CLIENT-PRINCIPAL headers — which is where
+  # the /objectId partition key on the `gym` container is meant to come from.
+  #
+  # The registration itself is not managed here. It was created by hand in the
+  # portal, and terraform only points at it, by client id, through
+  # var.gymlog_client_id. Declaring it would mean the azuread provider and a
+  # Microsoft Graph application grant on the apply workflow's identity — a much
+  # wider permission than one registration justifies. The cost of the trade is
+  # that everything on the Entra side is a manual change: the App ID URI, the
+  # exposed scope, the redirect URIs. The gymlog_easy_auth_redirect_uri output
+  # exists because of that, the same way whoop_redirect_uri does.
+  #
+  # Deliberately not enforced yet. require_authentication = false with
+  # AllowAnonymous means every existing caller keeps working exactly as it does
+  # today: the WHOOP callback, the GPS upload from the phone, the dashboard
+  # timer, all of them anonymous. A request that does carry a token gets it
+  # validated and the claims populated; a request that carries none is passed
+  # through untouched rather than bounced to a login. So this turns on the
+  # machinery without turning on the gate, which is what makes it safe to apply
+  # before a single client knows how to sign in.
+  #
+  # Flipping require_authentication to true and unauthenticated_action to
+  # "Return401" is what closes it later — and doing that shuts the door on the
+  # anonymous callers above at the same instant, so those need their own answer
+  # (a separate app, or an exclusion path) before it happens.
+  auth_settings_v2 {
+    auth_enabled           = true
+    require_authentication = false
+    unauthenticated_action = "AllowAnonymous"
+    require_https          = true
+
+    active_directory_v2 {
+      client_id = var.gymlog_client_id
+
+      # The v2.0 issuer. The registration has to agree with it — its manifest
+      # needs requestedAccessTokenVersion 2, which is what the portal sets when
+      # an app is created as single-tenant and left alone. At 1 the endpoint
+      # mints v1 tokens that this validator rejects, and the failure surfaces
+      # as a 401 with nothing in it to say why.
+      tenant_auth_endpoint = "https://login.microsoftonline.com/${var.tenant_id}/v2.0"
+
+      # Both spellings of the audience. A token minted for this app can carry
+      # either the App ID URI or the bare client id in `aud` depending on how
+      # the client asked for it, and accepting only one of them turns a working
+      # sign-in into a 401 that looks like a broken token. The api:// form
+      # assumes the registration's App ID URI was left at the default the
+      # portal offers; if it was set to something else, that string belongs
+      # here instead.
+      allowed_audiences = [
+        var.gymlog_client_id,
+        "api://${var.gymlog_client_id}",
+      ]
+
+      # No client_secret_setting_name, and none is missing. A secret is what the
+      # interactive /.auth/login/aad code exchange needs; this app validates
+      # bearer tokens a front end already obtained, which needs no credential of
+      # its own. Adding the interactive flow later means a secret in the vault
+      # and an app setting naming it — not a value typed in here, which would
+      # put it in state.
+    }
+
+    login {
+      # No session cookie to keep. Every call carries its own token, so a token
+      # store would be state the platform maintains for nobody.
+      token_store_enabled = false
+    }
+  }
+
   tags = local.common_tags
 
   lifecycle {
