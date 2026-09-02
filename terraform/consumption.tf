@@ -213,6 +213,23 @@ resource "azurerm_function_app_flex_consumption" "api" {
     # asked for one scope the client does not hold, rather than dropping it.
     WHOOP_SCOPES = var.whoop_scopes
 
+    # Tenant requirement on Easy Auth: allow requests only from the issuer
+    # tenant. The platform checks the `tid` claim against this list and answers
+    # 403 to a token from anywhere else.
+    #
+    # An app setting rather than part of the auth_settings_v2 block below, and
+    # not by preference — this is the only place Azure exposes the check. It is
+    # absent from the auth v2 API object entirely, which is why the azurerm
+    # provider has no argument for it and why a setting that reads like
+    # configuration is carrying a security control. The value is a
+    # comma-separated list of up to ten tenant ids.
+    #
+    # Derived from var.tenant_id rather than typed out so it cannot drift from
+    # tenant_auth_endpoint below: "the issuer tenant" is a promise that the two
+    # are the same tenant, and one literal copied to two places is how that
+    # stops being true.
+    WEBSITE_AUTH_AAD_ALLOWED_TENANTS = var.tenant_id
+
     # WHOOP_REDIRECT_URI is deliberately not set. It would have to contain this
     # app's own default_hostname, and an app setting on the app that reads that
     # attribute is a dependency cycle. The app builds the URL from the
@@ -308,6 +325,24 @@ resource "azurerm_function_app_flex_consumption" "api" {
         var.gymlog_client_id,
         "api://${var.gymlog_client_id}",
       ]
+
+      # Client application requirement: allow requests only from this
+      # application itself. The platform reads the `appid`/`azp` claim — which
+      # names the client that obtained the token, not the resource it is for —
+      # and rejects anything that is not GymLog with a 403.
+      #
+      # It is the same client id as above and means something different there.
+      # allowed_audiences is who the token was minted *for*; this is who minted
+      # it. A token for GymLog obtained by some other registration in the
+      # directory satisfies the first check and fails this one, which is the
+      # whole point of setting it.
+      #
+      # The consequence to know about: a front end has to sign in *as* this
+      # registration, using this client id as its own. Giving the front end its
+      # own registration later — a separate SPA app, say — puts that app's id in
+      # `appid` and this check turns it away, so that day this list grows a
+      # second entry rather than the front end quietly breaking.
+      allowed_applications = [var.gymlog_client_id]
 
       # No client_secret_setting_name, and none is missing. A secret is what the
       # interactive /.auth/login/aad code exchange needs; this app validates
