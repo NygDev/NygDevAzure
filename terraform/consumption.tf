@@ -254,11 +254,19 @@ resource "azurerm_function_app_flex_consumption" "api" {
     }
   }
 
-  # Easy Auth against the GymLog registration (terraform/entra.tf). The
-  # platform validates the bearer token before the request reaches any function
-  # and hands the code the resulting claims through the X-MS-CLIENT-PRINCIPAL
-  # headers — which is where the /objectId partition key on the `gym` container
-  # is meant to come from.
+  # Easy Auth against the GymLog registration. The platform validates the bearer
+  # token before the request reaches any function and hands the code the
+  # resulting claims through the X-MS-CLIENT-PRINCIPAL headers — which is where
+  # the /objectId partition key on the `gym` container is meant to come from.
+  #
+  # The registration itself is not managed here. It was created by hand in the
+  # portal, and terraform only points at it, by client id, through
+  # var.gymlog_client_id. Declaring it would mean the azuread provider and a
+  # Microsoft Graph application grant on the apply workflow's identity — a much
+  # wider permission than one registration justifies. The cost of the trade is
+  # that everything on the Entra side is a manual change: the App ID URI, the
+  # exposed scope, the redirect URIs. The gymlog_easy_auth_redirect_uri output
+  # exists because of that, the same way whoop_redirect_uri does.
   #
   # Deliberately not enforced yet. require_authentication = false with
   # AllowAnonymous means every existing caller keeps working exactly as it does
@@ -280,21 +288,25 @@ resource "azurerm_function_app_flex_consumption" "api" {
     require_https          = true
 
     active_directory_v2 {
-      client_id = azuread_application.gymlog.client_id
+      client_id = var.gymlog_client_id
 
-      # The v2.0 issuer, matching requested_access_token_version = 2 on the
-      # registration. The two have to agree: a v1 token against a v2.0
-      # validator is a 401 with nothing in it to say why.
+      # The v2.0 issuer. The registration has to agree with it — its manifest
+      # needs requestedAccessTokenVersion 2, which is what the portal sets when
+      # an app is created as single-tenant and left alone. At 1 the endpoint
+      # mints v1 tokens that this validator rejects, and the failure surfaces
+      # as a 401 with nothing in it to say why.
       tenant_auth_endpoint = "https://login.microsoftonline.com/${var.tenant_id}/v2.0"
 
-      # Both spellings of the audience. A token minted for
-      # api://<client id>/access_as_user can carry either the App ID URI or the
-      # bare client id in `aud` depending on how the client asked for it, and
-      # accepting only one of them turns a working sign-in into a 401 that
-      # looks like a broken token.
+      # Both spellings of the audience. A token minted for this app can carry
+      # either the App ID URI or the bare client id in `aud` depending on how
+      # the client asked for it, and accepting only one of them turns a working
+      # sign-in into a 401 that looks like a broken token. The api:// form
+      # assumes the registration's App ID URI was left at the default the
+      # portal offers; if it was set to something else, that string belongs
+      # here instead.
       allowed_audiences = [
-        azuread_application.gymlog.client_id,
-        "api://${azuread_application.gymlog.client_id}",
+        var.gymlog_client_id,
+        "api://${var.gymlog_client_id}",
       ]
 
       # No client_secret_setting_name, and none is missing. A secret is what the

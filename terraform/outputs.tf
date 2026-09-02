@@ -63,12 +63,7 @@ output "running_dashboard_url" {
   value       = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${azurerm_storage_container.data.name}/marathonprep.json"
 }
 
-output "gymlog_client_id" {
-  description = "Application (client) ID of the GymLog registration. A front end signs in against this and the api function app validates the resulting token for it; it travels in the browser on every sign-in, so it is configuration rather than a secret."
-  value       = azuread_application.gymlog.client_id
-}
-
-output "gymlog_scope" {
-  description = "The scope a GymLog client requests to get a token func-nygdev-api will accept. Asking for anything else — or for a bare client id — yields a token with the wrong audience, which Easy Auth rejects once authentication is made required."
-  value       = "${azuread_application_identifier_uri.gymlog.identifier_uri}/access_as_user"
+output "gymlog_easy_auth_redirect_uri" {
+  description = "Register this as a Web redirect URI on the GymLog app registration if the built-in sign-in flow at /.auth/login/aad is ever used. It is not needed for the path in use today — a front end that signs in itself and presents a bearer token — and that flow needs a client secret besides. Listed here for the same reason as whoop_redirect_uri: the registration is managed by hand, so anything terraform knows and the portal needs has to be printed rather than applied."
+  value       = "https://${azurerm_function_app_flex_consumption.api.default_hostname}/.auth/login/aad/callback"
 }

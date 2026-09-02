@@ -111,3 +111,9 @@ variable "whoop_scopes" {
   type        = string
   default     = "offline read:profile read:body_measurement read:cycles read:recovery read:sleep read:workout"
 }
+
+variable "gymlog_client_id" {
+  description = "Application (client) ID of the GymLog registration in Entra ID. The registration is created and owned by hand in the portal, not by this configuration: managing it here would mean granting the apply workflow's identity Microsoft Graph application permissions, which is a far wider grant than one app registration is worth. Not a secret — it travels in the browser on every sign-in. What terraform does with it is point Easy Auth on func-nygdev-api at it, so the app validates tokens minted for this registration and nothing else."
+  type        = string
+  default     = "f6922f08-71f3-492d-953d-a294fb5acf16"
+}
