@@ -108,15 +108,8 @@ resource "azurerm_cosmosdb_sql_container" "gym" {
 # The phone's location spool, off db/primary and on its own. Partitioned on
 # /sender: a document says which device uploaded it, and that is what Cosmos
 # routes on, so a second device lands beside this one rather than interleaved
-# with it. Written by GpsFixStore in the api app, which needs the data-plane
-# role assignment in terraform/consumption.tf to reach it — the assignments are
-# per container, so this one does not inherit db/primary's.
-#
-# Indexing off. Nothing queries these yet; they are written by the upload
-# endpoint and read back, when they are, by id and partition key, which is a
-# point read and needs no index. That makes every upload the cheapest write
-# Cosmos offers. A query that needs an index is what turns this back on —
-# consistent mode with the filtered paths included, as on primary.
+# with it. Written by GpsFixStore in the api app, which reaches it under the
+# account-scoped role assignment in terraform/consumption.tf.
 #
 # partition_key_paths is ForceNew, as on primary: editing it destroys and
 # recreates the container with everything in it.
@@ -128,8 +121,45 @@ resource "azurerm_cosmosdb_sql_container" "gps" {
   partition_key_paths   = ["/sender"]
   partition_key_version = 2
 
+  # Three days, in seconds, and then Cosmos drops the document itself.
+  #
+  # It counts from each document's _ts — when the segment was last written,
+  # not when the fixes inside it were recorded — so an upload that upserts
+  # over an existing segment starts its three days again, and a segment full
+  # of a week-old backlog still gets three days from the day it arrived. The
+  # expiry costs no RU from the provisioned throughput.
+  #
+  # A rolling window rather than an archive, which is what the container is
+  # for: nothing reads these yet, the phone keeps its own spool, and anything
+  # worth keeping past three days should be read out and stored somewhere that
+  # is not a hot container on a 1000 RU/s account.
+  default_ttl = 259200
+
+  # Consistent with every path excluded, which reads as a contradiction and is
+  # not: TTL requires indexing, and Cosmos refuses default_ttl outright on a
+  # container whose indexing mode is none (and refuses mode none on a container
+  # with TTL set). This is the shape the TTL documentation gives for exactly
+  # this case — consistent, no included paths, /* excluded — and what it costs
+  # over the mode none this container had is the id and _ts indexes, which
+  # Cosmos maintains under consistent mode whatever the policy says.
+  #
+  # So nothing here is indexed for the sake of a query. There are none: the
+  # writes are upserts by id and partition key, and a read of a segment is a
+  # point read. A query that needs an index is what adds an included path, as
+  # on primary.
   indexing_policy {
-    indexing_mode = "none"
+    indexing_mode = "consistent"
+
+    excluded_path {
+      path = "/*"
+    }
+
+    # Cosmos writes this into the policy whether or not it is asked to, the
+    # same as on primary. Declaring it is what keeps `terraform plan` from
+    # reporting the same drift on every run.
+    excluded_path {
+      path = "/\"_etag\"/?"
+    }
   }
 }
 

@@ -27,6 +27,12 @@ namespace ApiFunctionApp.Gps;
 /// different id, so a fix can end up recorded in two segments. Nothing reads
 /// these yet, and de-duplicating on <c>ts</c> is cheap whenever something
 /// does, which is the trade this shape makes deliberately.
+///
+/// Nothing written here is kept: the container carries a three day TTL, set in
+/// terraform/db.tf, and Cosmos drops each segment three days after it was last
+/// written. This is a window on the recent past, not an archive — whatever ends
+/// up reading these has to read them inside it, and a resend of a batch older
+/// than that writes a new document rather than upserting over the expired one.
 /// </summary>
 public sealed class GpsFixStore(Container container)
 {
