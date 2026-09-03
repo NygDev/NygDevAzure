@@ -150,10 +150,19 @@ resource "azurerm_user_assigned_identity" "api" {
 
 # The API app — .NET 10 isolated on Flex Consumption. Hosts the WHOOP
 # integration: the OAuth flow, a status check, and the sync that writes WHOOP's
-# collections into nygdev-cosmos-db / db / primary, and the endpoint that writes
-# the phone's location spool into db / gps. Its Cosmos access is granted by the
-# account-scoped role assignment below, which covers both and whatever comes
-# next.
+# collections into nygdev-cosmos-db / db / primary; the endpoint that writes the
+# phone's location spool into db / gps; and the gym logger's API, which reads
+# and writes one user's training block in db / gym. Its Cosmos access is granted
+# by the account-scoped role assignment below, which covers all three and
+# whatever comes next.
+#
+# The gym endpoints are the first ones that are not anonymous or key-protected.
+# They are at Anonymous auth level on purpose — a browser front end cannot hold
+# a function key — and are gated instead by the Easy Auth block further down
+# plus an explicit check in the code: every gym function refuses a request that
+# arrives without a validated principal, because the object id off that
+# principal is the Cosmos partition key and therefore the whole tenancy
+# boundary. See GymPrincipal in apifunctionapp/Gym.
 resource "azurerm_function_app_flex_consumption" "api" {
   name                = "func-nygdev-api"
   resource_group_name = azurerm_resource_group.consumption.name
@@ -250,11 +259,11 @@ resource "azurerm_function_app_flex_consumption" "api" {
   }
 
   site_config {
-    # Browser calls come from the run.nygard.dev static site, a different
-    # origin, so the platform has to stamp Access-Control-Allow-Origin onto the
-    # function's responses — without it the browser discards the response and
-    # reports a bare network failure. Listing the origins here is the only way
-    # to get that header; the function code never sees the preflight.
+    # Browser calls come from the static sites, each a different origin, so the
+    # platform has to stamp Access-Control-Allow-Origin onto the function's
+    # responses — without it the browser discards the response and reports a
+    # bare network failure. Listing the origins here is the only way to get that
+    # header; the function code never sees the preflight.
     cors {
       allowed_origins = [
         "https://run.nygard.dev",
@@ -263,10 +272,20 @@ resource "azurerm_function_app_flex_consumption" "api" {
         # opened there instead of through the custom domain (the deploy
         # pipeline publishes to the app, and DNS is a separate step).
         "https://${azurerm_static_web_app.nygdevrun.default_host_name}",
+
+        # The gym logger, both ways round for the same reason. Its calls do
+        # carry an Authorization header, which the running dashboard's do not —
+        # that costs nothing here, because a bearer header is a request header
+        # the platform reflects in Access-Control-Allow-Headers on the preflight
+        # rather than a credential in the CORS sense. Cookies are what
+        # support_credentials is about, and there are none: every call carries
+        # its own token and the Easy Auth token store is off.
+        "https://gym.nygard.dev",
+        "https://${azurerm_static_web_app.nygdevgym.default_host_name}",
       ]
 
-      # No cookies or Authorization header on the call, and support_credentials
-      # would force an exact-origin echo we don't need.
+      # No cookies on the call, and support_credentials would force an
+      # exact-origin echo we don't need.
       support_credentials = false
     }
   }

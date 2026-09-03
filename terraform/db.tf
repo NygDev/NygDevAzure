@@ -18,8 +18,25 @@ resource "azurerm_cosmosdb_account" "db" {
     total_throughput_limit = 1000
   }
 
+  # Session rather than Eventual, and the gym logger is what asked for it.
+  #
+  # Per-request consistency can only be relaxed below the account default,
+  # never strengthened above it, so an account on Eventual has no
+  # read-your-own-writes guarantee available to any caller: log a set, re-read
+  # the session, and the replica that answers may not have it yet. On a
+  # single-region account Session costs nothing to buy — same RU as Eventual on
+  # a read, unlike Bounded Staleness or Strong which are roughly double, and no
+  # change to latency or availability with one region to be consistent across.
+  #
+  # It applies to `primary` and `gps` too, harmlessly: the WHOOP sync reads its
+  # own cursors back, which is exactly the read this strengthens, and nothing
+  # reads the GPS spool at all.
+  #
+  # The app is still written not to need it — the client holds the state it
+  # just wrote and the UI works off local state and deltas. This is what keeps
+  # a *second* device, or a cold reload, from being shown a stale block.
   consistency_policy {
-    consistency_level = "Eventual"
+    consistency_level = "Session"
   }
 
   geo_location {
@@ -92,6 +109,18 @@ resource "azurerm_cosmosdb_sql_container" "primary" {
   }
 }
 
+# The gym logger's container: one user's training block, sessions and sets.
+# Three document types told apart by /type — user, mesocycle, session — with
+# entries and sets embedded in the session rather than stored as documents of
+# their own. GymStore in the api app is the only writer; the account-scoped
+# role assignment in terraform/consumption.tf covers it without a grant here.
+#
+# Partitioned on /objectId, the caller's Entra object id off the validated
+# token. That is the whole tenancy boundary — a caller who could name their own
+# partition key could read anyone's training log — which is why the app takes
+# it from the X-MS-CLIENT-PRINCIPAL headers Easy Auth populates and never from
+# a request body. It is also ForceNew, as on primary and gps: editing it
+# destroys and recreates the container with everything in it.
 resource "azurerm_cosmosdb_sql_container" "gym" {
   name                  = "gym"
   resource_group_name   = azurerm_resource_group.databases.name
@@ -100,8 +129,58 @@ resource "azurerm_cosmosdb_sql_container" "gym" {
   partition_key_paths   = ["/objectId"]
   partition_key_version = 2
 
+  # Was indexing_mode = "none", which is right for a container only ever point
+  # read and wrong for this one: History and the block map both filter, and
+  # under mode none Cosmos refuses a query outright rather than scanning.
+  #
+  # Opt-in, the same shape as primary — /* excluded, only what is filtered or
+  # sorted on included:
+  #
+  #   SELECT c.id, c.week, c.dayIndex, c.status, c.entries FROM c
+  #   WHERE c.type = 'session' AND c.mesoId = @mesoId
+  #   ORDER BY c.id DESC
+  #
+  # The exclusion is doing more work here than the inclusions. /entries is the
+  # bulk of a session document and is never filtered on, and an indexed path is
+  # re-indexed on every patch — so excluding it is what keeps the per-tap set
+  # write flat in the number of sets already logged. Under this policy a
+  # set-tap indexes nothing at all.
+  #
+  # /id is included explicitly rather than assumed: excluding /* leaves only
+  # the system paths indexed, and History's sort depends on id carrying a range
+  # index. There is deliberately no composite index — session ids are ISO dates,
+  # so newest-first is ORDER BY c.id DESC, a single-property sort a range index
+  # already serves. Composite indexes are only required for multi-property
+  # ORDER BY, which this shape avoids. Grouping into weeks happens off the
+  # week field, client-side.
+  #
+  # This is an in-place update rather than a replacement: Cosmos reindexes in
+  # the background on spare throughput and keeps serving reads throughout.
   indexing_policy {
-    indexing_mode = "none"
+    indexing_mode = "consistent"
+
+    included_path {
+      path = "/type/?"
+    }
+
+    included_path {
+      path = "/mesoId/?"
+    }
+
+    included_path {
+      path = "/id/?"
+    }
+
+    excluded_path {
+      path = "/*"
+    }
+
+    # Cosmos writes this into the policy whether or not it is asked to, the
+    # same as on primary and gps. Declaring it is what keeps `terraform plan`
+    # from reporting the same drift on every run.
+    excluded_path {
+      path = "/\"_etag\"/?"
+    }
   }
 }
 

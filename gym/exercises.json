@@ -1,0 +1,92 @@
+{
+  "version": "2026-09-03",
+  "equipment": [
+    "Bar",
+    "Dumbbell",
+    "Cable",
+    "Machine",
+    "Bodyweight"
+  ],
+  "exercises": [
+    {
+      "name": "Bench Press",
+      "equipment": "Bar"
+    },
+    {
+      "name": "Bench Press",
+      "equipment": "Dumbbell"
+    },
+    {
+      "name": "Incline Bench Press",
+      "equipment": "Bar"
+    },
+    {
+      "name": "Overhead Press",
+      "equipment": "Bar"
+    },
+    {
+      "name": "Squat",
+      "equipment": "Bar"
+    },
+    {
+      "name": "Front Squat",
+      "equipment": "Bar"
+    },
+    {
+      "name": "Deadlift",
+      "equipment": "Bar"
+    },
+    {
+      "name": "Romanian Deadlift",
+      "equipment": "Bar"
+    },
+    {
+      "name": "Barbell Row",
+      "equipment": "Bar"
+    },
+    {
+      "name": "Pull-up",
+      "equipment": "Bodyweight"
+    },
+    {
+      "name": "Dip",
+      "equipment": "Bodyweight"
+    },
+    {
+      "name": "Lat Pulldown",
+      "equipment": "Cable"
+    },
+    {
+      "name": "Seated Row",
+      "equipment": "Cable"
+    },
+    {
+      "name": "Cable Fly",
+      "equipment": "Cable"
+    },
+    {
+      "name": "Triceps Pushdown",
+      "equipment": "Cable"
+    },
+    {
+      "name": "Leg Press",
+      "equipment": "Machine"
+    },
+    {
+      "name": "Leg Curl",
+      "equipment": "Machine"
+    },
+    {
+      "name": "Calf Raise",
+      "equipment": "Machine"
+    },
+    {
+      "name": "Lateral Raise",
+      "equipment": "Dumbbell"
+    },
+    {
+      "name": "Bicep Curl",
+      "equipment": "Dumbbell"
+    }
+  ]
+}

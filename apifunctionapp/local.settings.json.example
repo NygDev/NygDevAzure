@@ -12,6 +12,9 @@
     "_comment_whoop_redirect_uri": "On Azure this is derived from WEBSITE_HOSTNAME and left unset. Locally there is no such hostname, so set it by hand — and whatever is set here also has to be a registered redirect URL on the WHOOP app, which means a public tunnel rather than localhost if the flow is to be run end to end.",
     "WHOOP_REDIRECT_URI": "http://localhost:7071/api/whoop/callback",
 
-    "_comment_credentials": "There is no client secret or refresh token here on purpose. Both live in the nygdev Key Vault; locally DefaultAzureCredential falls through to your az login, which needs Key Vault Secrets Officer on the vault to read whoop-clientsecret and write whoop-token."
+    "_comment_credentials": "There is no client secret or refresh token here on purpose. Both live in the nygdev Key Vault; locally DefaultAzureCredential falls through to your az login, which needs Key Vault Secrets Officer on the vault to read whoop-clientsecret and write whoop-token.",
+
+    "_comment_gym": "The gym endpoints identify the caller from the principal Easy Auth builds, and there is no Easy Auth in front of `func start` — so without this every one of them answers 401 locally. Set it to your own Entra object id: it is the Cosmos partition key, so this is which training log you are reading and writing. It is consulted only when the platform sent no principal, and terraform never sets it on the function app; setting it there by hand would hand one user's log to every anonymous caller.",
+    "GYM_LOCAL_OBJECT_ID": "00000000-0000-0000-0000-000000000000"
   }
 }

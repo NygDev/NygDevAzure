@@ -28,3 +28,29 @@ resource "azurerm_static_web_app" "nygdevrun" {
     ignore_changes = [repository_branch, repository_token, repository_url, app_settings]
   }
 }
+
+# The gym session logger's front end. Same pattern again: provisioned empty
+# here, content deployed by its own pipeline.
+#
+# It exists in this configuration before the front end does because the API
+# needs it: an app that calls func-nygdev-api from a browser has to have its
+# origin in that app's CORS list, and the origin is this resource's hostname.
+# Creating it here is what lets both halves be applied once, rather than the
+# front end landing and then waiting on a second terraform change before it can
+# make a single call.
+#
+# Unlike the two above it also has an identity on the Entra side: the front end
+# signs in as the GymLog registration (var.gymlog_client_id), which is the only
+# client Easy Auth on the API accepts. That registration is managed by hand, so
+# the SPA redirect URI it needs is printed as the gymlog_spa_redirect_uri
+# output rather than applied.
+resource "azurerm_static_web_app" "nygdevgym" {
+  name                = "nygdevgym"
+  resource_group_name = var.web_resource_group
+  location            = "westeurope"
+  tags                = local.common_tags
+
+  lifecycle {
+    ignore_changes = [repository_branch, repository_token, repository_url, app_settings]
+  }
+}

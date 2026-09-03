@@ -1,4 +1,5 @@
 using ApiFunctionApp.Gps;
+using ApiFunctionApp.Gym;
 using ApiFunctionApp.Running;
 using ApiFunctionApp.Whoop;
 using Azure.Core;
@@ -146,6 +147,23 @@ builder.Services.AddSingleton<WhoopSyncRunner>();
 // ---------------------------------------------------------------------------
 builder.Services.AddSingleton(provider => new GpsFixStore(
     provider.GetRequiredService<CosmosClient>().GetContainer("db", "gps")));
+
+// ---------------------------------------------------------------------------
+// Gym logger
+//
+// The third container, db/gym, holding one user's training block, sessions and
+// sets — partitioned on /objectId, which is the caller's Entra object id off
+// the token Easy Auth validated. Handed its container by hand for the same
+// reason GpsFixStore is: registering a second Container would leave two
+// registrations of one type to be told apart by resolution order, and the
+// unkeyed one is db/primary, which every other store takes.
+//
+// Nothing to configure and nothing to defer. Both the container and the
+// account-scoped data-plane role assignment that reaches it are terraform's,
+// in terraform/db.tf and terraform/consumption.tf.
+// ---------------------------------------------------------------------------
+builder.Services.AddSingleton(provider => new GymStore(
+    provider.GetRequiredService<CosmosClient>().GetContainer("db", "gym")));
 
 // ---------------------------------------------------------------------------
 // Running analytics

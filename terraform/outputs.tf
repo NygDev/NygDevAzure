@@ -67,3 +67,21 @@ output "gymlog_easy_auth_redirect_uri" {
   description = "Register this as a Web redirect URI on the GymLog app registration if the built-in sign-in flow at /.auth/login/aad is ever used. It is not needed for the path in use today — a front end that signs in itself and presents a bearer token — and that flow needs a client secret besides. Listed here for the same reason as whoop_redirect_uri: the registration is managed by hand, so anything terraform knows and the portal needs has to be printed rather than applied."
   value       = "https://${azurerm_function_app_flex_consumption.api.default_hostname}/.auth/login/aad/callback"
 }
+
+output "gym_static_site_hostname" {
+  description = "Default hostname of the gym logger's Static Web App. The front end's own origin, and one of the entries in the api function app's CORS list — a browser call from anywhere not on that list is discarded before the response is read. gym.nygard.dev is allowed alongside it, but the DNS for it is a separate manual step."
+  value       = azurerm_static_web_app.nygdevgym.default_host_name
+}
+
+output "gym_exercise_library_url" {
+  description = "Where the gym logger's built-in exercise library is published. Anonymous-read and cached for a day, so the front end fetches it once with no token and no function call. The file is gym/exercises.json in this repository; editing it and applying is what republishes it."
+  value       = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${azurerm_storage_container.data.name}/${azurerm_storage_blob.gym_exercises.name}"
+}
+
+output "gymlog_spa_redirect_uri" {
+  description = "Register these as Single-page application redirect URIs on the GymLog app registration. The front end signs in as that registration — Easy Auth on the api app checks the appid claim and turns away a token minted by any other client — so this is what has to be there before the first sign-in works. Manual, like everything else on the Entra side; the registration is not managed by this configuration."
+  value = [
+    "https://gym.nygard.dev",
+    "https://${azurerm_static_web_app.nygdevgym.default_host_name}",
+  ]
+}
