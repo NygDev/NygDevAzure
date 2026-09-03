@@ -160,21 +160,13 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
                     return GymEndpoint.Invalid(error);
                 }
 
-                if (!await store.PatchMesocycleAsync(objectId, mesoId, name, weeks, days, token))
-                {
-                    return GymEndpoint.Failure(
-                        HttpStatusCode.NotFound,
-                        "no_such_mesocycle",
-                        $"There is no mesocycle {mesoId} in this user's training log.");
-                }
-
-                var updated = await store.ReadMesocycleAsync(objectId, mesoId, token);
+                var updated = await store.PatchMesocycleAsync(objectId, mesoId, name, weeks, days, token);
 
                 return updated is null
                     ? GymEndpoint.Failure(
                         HttpStatusCode.NotFound,
                         "no_such_mesocycle",
-                        $"Mesocycle {mesoId} was edited and then could not be read back.")
+                        $"There is no mesocycle {mesoId} in this user's training log.")
                     : new OkObjectResult(new { ok = true, mesocycle = updated.ToResponse() });
             }
         });
@@ -239,22 +231,14 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
                     return GymEndpoint.Invalid(error);
                 }
 
-                if (!await store.SwitchCurrentMesocycleAsync(objectId, mesoId, token))
-                {
-                    return GymEndpoint.Failure(
-                        HttpStatusCode.NotFound,
-                        "no_such_mesocycle",
-                        $"There is no mesocycle {mesoId} in this user's training log, so it cannot "
-                        + "be made the current one. GET /api/gym/mesocycles lists the ids that exist.");
-                }
-
-                var mesocycle = await store.ReadMesocycleAsync(objectId, mesoId, token);
+                var mesocycle = await store.SwitchCurrentMesocycleAsync(objectId, mesoId, token);
 
                 return mesocycle is null
                     ? GymEndpoint.Failure(
                         HttpStatusCode.NotFound,
                         "no_such_mesocycle",
-                        $"Mesocycle {mesoId} was made current and then could not be read back.")
+                        $"There is no mesocycle {mesoId} in this user's training log, so it cannot "
+                        + "be made the current one. GET /api/gym/mesocycles lists the ids that exist.")
                     : new OkObjectResult(new { ok = true, mesocycle = mesocycle.ToResponse() });
             }
         });

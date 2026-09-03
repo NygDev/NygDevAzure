@@ -83,11 +83,29 @@ public sealed class GymStore(Container container)
     /// Unfiltered by mesoId on purpose. One query counts every block at once,
     /// where a per-block query would be one round trip per row on a screen that
     /// exists to show all of them.
+    ///
+    /// Grouped server-side, so what comes back is at most two rows per block
+    /// rather than one per session: a user's session count only grows, and
+    /// without the GROUP BY the Plan tab would page through every workout ever
+    /// logged to count them.
     /// </summary>
     private const string SessionOwnersQuery = """
-        SELECT c.mesoId, c.status
+        SELECT c.mesoId, c.status, COUNT(1) AS sessions
         FROM c
         WHERE c.type = @type
+        GROUP BY c.mesoId, c.status
+        """;
+
+    /// <summary>
+    /// The newest block other than one, for repointing the user after a
+    /// delete. TOP 1 on the same id-ordered index the block list uses, so it
+    /// costs one small read rather than the whole list plus a session scan.
+    /// </summary>
+    private const string NewestOtherMesocycleQuery = """
+        SELECT TOP 1 c.id
+        FROM c
+        WHERE c.type = @type AND c.id != @exceptId
+        ORDER BY c.id DESC
         """;
 
     /// <summary>
@@ -227,9 +245,12 @@ public sealed class GymStore(Container container)
     /// design's rule, and it is nearly free rather than something this has to
     /// enforce.
     ///
-    /// False means there is no such mesocycle in this user's partition.
+    /// Null means there is no such mesocycle in this user's partition.
+    /// Otherwise the block as it now stands — Cosmos echoes the patched
+    /// document back when asked, so the endpoint's answer costs no second
+    /// read.
     /// </summary>
-    public async Task<bool> PatchMesocycleAsync(
+    public async Task<Mesocycle?> PatchMesocycleAsync(
         string objectId,
         string mesoId,
         string? name,
@@ -256,21 +277,21 @@ public sealed class GymStore(Container container)
 
         if (operations.Count == 0)
         {
-            // Nothing to change is not a failure, and it is also not worth an
-            // RU. The caller has already been told which fields it may send.
-            return await ReadMesocycleAsync(objectId, mesoId, cancellationToken) is not null;
+            // Nothing to change is not a failure, and it is also not worth a
+            // write. The caller has already been told which fields it may send.
+            return await ReadMesocycleAsync(objectId, mesoId, cancellationToken);
         }
 
         using var response = await container.PatchItemStreamAsync(
             GymIds.Mesocycle(mesoId),
             new PartitionKey(objectId),
             operations,
-            new PatchItemRequestOptions { EnableContentResponseOnWrite = false },
+            new PatchItemRequestOptions { EnableContentResponseOnWrite = true },
             cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            return false;
+            return null;
         }
 
         if (!response.IsSuccessStatusCode)
@@ -278,7 +299,9 @@ public sealed class GymStore(Container container)
             throw Failure(response, $"Editing mesocycle {mesoId} failed.");
         }
 
-        return true;
+        using var document = await JsonDocument.ParseAsync(response.Content, cancellationToken: cancellationToken);
+
+        return Mesocycle.Read(document.RootElement);
     }
 
     /// <summary>
@@ -318,12 +341,13 @@ public sealed class GymStore(Container container)
             document =>
             {
                 var mesoId = GymDocument.String(document, "mesoId");
+                var count = GymDocument.Int32(document, "sessions");
 
-                total[mesoId] = total.GetValueOrDefault(mesoId) + 1;
+                total[mesoId] = total.GetValueOrDefault(mesoId) + count;
 
                 if (GymDocument.String(document, "status") == GymSession.Submitted)
                 {
-                    submitted[mesoId] = submitted.GetValueOrDefault(mesoId) + 1;
+                    submitted[mesoId] = submitted.GetValueOrDefault(mesoId) + count;
                 }
             },
             cancellationToken);
@@ -347,16 +371,20 @@ public sealed class GymStore(Container container)
     /// this API is supposed to be able to produce it. Checking here is what
     /// keeps that true.
     ///
-    /// False means there is no such block in this user's partition.
+    /// Null means there is no such block in this user's partition. Otherwise
+    /// the block just switched to — the read that guarded the write is the one
+    /// the endpoint answers with, so it is not read a second time.
     /// </summary>
-    public async Task<bool> SwitchCurrentMesocycleAsync(
+    public async Task<Mesocycle?> SwitchCurrentMesocycleAsync(
         string objectId,
         string mesoId,
         CancellationToken cancellationToken)
     {
-        if (await ReadMesocycleAsync(objectId, mesoId, cancellationToken) is null)
+        var mesocycle = await ReadMesocycleAsync(objectId, mesoId, cancellationToken);
+
+        if (mesocycle is null)
         {
-            return false;
+            return null;
         }
 
         using var user = SerializeUser(objectId, mesoId);
@@ -372,7 +400,7 @@ public sealed class GymStore(Container container)
             throw Failure(response, $"Pointing this user at mesocycle {mesoId} failed.");
         }
 
-        return true;
+        return mesocycle;
     }
 
     /// <summary>
@@ -459,11 +487,14 @@ public sealed class GymStore(Container container)
 
         if (repointing)
         {
-            var remaining = await ListMesocyclesAsync(objectId, cancellationToken);
-
-            newCurrent = remaining
-                .Select(summary => summary.Block.Id)
-                .FirstOrDefault(id => id != mesoId);
+            await RunQueryAsync(
+                objectId,
+                new QueryDefinition(NewestOtherMesocycleQuery)
+                    .WithParameter("@type", GymIds.MesocycleType)
+                    .WithParameter("@exceptId", GymIds.Mesocycle(mesoId)),
+                "Finding the block to repoint the user at failed.",
+                document => newCurrent = GymIds.StripMesocyclePrefix(GymDocument.String(document, "id")),
+                cancellationToken);
         }
 
         var final = container.CreateTransactionalBatch(partition);

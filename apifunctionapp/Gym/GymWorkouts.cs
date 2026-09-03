@@ -165,7 +165,7 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
         CancellationToken cancellationToken) =>
         GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
         {
-            if (!GymIds.IsWellFormed(sessionId))
+            if (!GymIds.IsSessionId(sessionId))
             {
                 return GymEndpoint.Invalid(SessionIdHelp(sessionId));
             }
@@ -237,7 +237,7 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
         CancellationToken cancellationToken) =>
         GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
         {
-            if (!GymIds.IsWellFormed(sessionId))
+            if (!GymIds.IsSessionId(sessionId))
             {
                 return GymEndpoint.Invalid(SessionIdHelp(sessionId));
             }
@@ -269,7 +269,7 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
         CancellationToken cancellationToken) =>
         GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
         {
-            if (!GymIds.IsWellFormed(sessionId))
+            if (!GymIds.IsSessionId(sessionId))
             {
                 return GymEndpoint.Invalid(SessionIdHelp(sessionId));
             }

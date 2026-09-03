@@ -228,4 +228,20 @@ internal static class GymIds
         !string.IsNullOrWhiteSpace(id)
         && id.Length <= 255
         && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or '.' or ':');
+
+    /// <summary>
+    /// Whether a route segment names a session document and nothing else.
+    ///
+    /// A session id is the document id as-is — unlike a mesocycle id, which is
+    /// prefixed before it reaches Cosmos — so the workout routes point-read,
+    /// patch and delete whatever id they are handed. Without this check,
+    /// <c>DELETE /gym/workouts/user_{oid}</c> would remove the caller's own
+    /// pointer document, <c>DELETE /gym/workouts/meso_…</c> would remove a
+    /// block out from under its sessions, and a submit would write a
+    /// <c>status</c> onto a document that has none. All within the caller's
+    /// own partition, but every one of them is a state this API otherwise
+    /// promises it cannot produce.
+    /// </summary>
+    public static bool IsSessionId(string? id) =>
+        IsWellFormed(id) && id!.StartsWith(SessionPrefix, StringComparison.Ordinal);
 }

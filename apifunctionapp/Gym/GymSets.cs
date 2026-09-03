@@ -53,7 +53,7 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
         CancellationToken cancellationToken) =>
         GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
         {
-            if (!GymIds.IsWellFormed(sessionId))
+            if (!GymIds.IsSessionId(sessionId))
             {
                 return GymEndpoint.Invalid($"'{sessionId}' is not a workout id.");
             }
@@ -134,7 +134,7 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
         CancellationToken cancellationToken) =>
         GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
         {
-            if (!GymIds.IsWellFormed(sessionId))
+            if (!GymIds.IsSessionId(sessionId))
             {
                 return GymEndpoint.Invalid($"'{sessionId}' is not a workout id.");
             }
@@ -229,7 +229,7 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
         CancellationToken cancellationToken) =>
         GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
         {
-            if (!GymIds.IsWellFormed(sessionId))
+            if (!GymIds.IsSessionId(sessionId))
             {
                 return GymEndpoint.Invalid($"'{sessionId}' is not a workout id.");
             }
@@ -330,7 +330,7 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
         CancellationToken cancellationToken) =>
         GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
         {
-            if (!GymIds.IsWellFormed(sessionId))
+            if (!GymIds.IsSessionId(sessionId))
             {
                 return GymEndpoint.Invalid($"'{sessionId}' is not a workout id.");
             }
