@@ -189,14 +189,10 @@ public sealed class GymStore(Container container)
         string objectId,
         string name,
         int weeks,
-        IReadOnlyList<string> dayLabels,
+        IReadOnlyList<MesoDay> days,
         CancellationToken cancellationToken)
     {
         var mesoId = GymIds.NewMesocycleId();
-
-        var days = dayLabels
-            .Select((label, index) => new MesoDay(index, label))
-            .ToArray();
 
         using var meso = SerializeMesocycle(objectId, mesoId, name, weeks, days);
         using var user = SerializeUser(objectId, mesoId);
@@ -238,7 +234,7 @@ public sealed class GymStore(Container container)
         string mesoId,
         string? name,
         int? weeks,
-        IReadOnlyList<string>? dayLabels,
+        IReadOnlyList<MesoDay>? days,
         CancellationToken cancellationToken)
     {
         var operations = new List<PatchOperation>(3);
@@ -253,9 +249,9 @@ public sealed class GymStore(Container container)
             operations.Add(PatchOperation.Set("/weeks", count));
         }
 
-        if (dayLabels is not null)
+        if (days is not null)
         {
-            operations.Add(PatchOperation.Set("/days", DayValues(dayLabels)));
+            operations.Add(PatchOperation.Set("/days", DayValues(days)));
         }
 
         if (operations.Count == 0)
@@ -541,6 +537,7 @@ public sealed class GymStore(Container container)
         string mesoId,
         int week,
         int dayIndex,
+        IReadOnlyList<SessionEntry> seed,
         CancellationToken cancellationToken)
     {
         var ordinal = 1;
@@ -553,7 +550,7 @@ public sealed class GymStore(Container container)
         for (var attempt = 0; attempt < MaxSessionsPerDate * 2 && ordinal <= MaxSessionsPerDate; attempt++)
         {
             var sessionId = GymIds.SessionOnDate(date, ordinal);
-            var session = new GymSession(sessionId, mesoId, week, dayIndex, GymSession.Draft, []);
+            var session = new GymSession(sessionId, mesoId, week, dayIndex, GymSession.Draft, seed);
 
             using var payload = SerializeSession(objectId, session);
             using var response = await container.CreateItemStreamAsync(
@@ -586,6 +583,10 @@ public sealed class GymStore(Container container)
                 && existing.Week == week
                 && existing.DayIndex == dayIndex)
             {
+                // Returned as it stands, seed ignored. A draft already open has
+                // whatever the day's plan gave it when it was created, plus
+                // whatever has been logged since — re-seeding it would duplicate
+                // the planned exercises every time Start was tapped twice.
                 return new SessionCreation(existing, Resumed: true);
             }
 
@@ -1034,6 +1035,19 @@ public sealed class GymStore(Container container)
                 writer.WriteStartObject();
                 writer.WriteNumber("dayIndex", day.DayIndex);
                 writer.WriteString("label", day.Label);
+
+                writer.WriteStartArray("plan");
+
+                foreach (var exercise in day.Plan)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("exerciseName", exercise.ExerciseName);
+                    writer.WriteNumber("sets", exercise.Sets);
+                    writer.WriteNumber("reps", exercise.Reps);
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
                 writer.WriteEndObject();
             }
 
@@ -1109,12 +1123,28 @@ public sealed class GymStore(Container container)
     /// and stop matching everything that reads it. A dictionary's keys are
     /// written literally, so what is spelled here is what is stored.
     /// </summary>
-    private static List<Dictionary<string, object?>> DayValues(IReadOnlyList<string> labels) =>
-        labels
-            .Select((label, index) => new Dictionary<string, object?>
+    /// <summary>
+    /// The days of a block as a patch value.
+    ///
+    /// <c>dayIndex</c> is written from the array position rather than copied
+    /// off the MesoDay, so the stored index cannot disagree with where the day
+    /// actually sits — the same reason the request reader refuses to accept one
+    /// from the client.
+    /// </summary>
+    private static List<Dictionary<string, object?>> DayValues(IReadOnlyList<MesoDay> days) =>
+        days
+            .Select((day, index) => new Dictionary<string, object?>
             {
                 ["dayIndex"] = index,
-                ["label"] = label,
+                ["label"] = day.Label,
+                ["plan"] = day.Plan
+                    .Select(exercise => new Dictionary<string, object?>
+                    {
+                        ["exerciseName"] = exercise.ExerciseName,
+                        ["sets"] = exercise.Sets,
+                        ["reps"] = exercise.Reps,
+                    })
+                    .ToList(),
             })
             .ToList();
 

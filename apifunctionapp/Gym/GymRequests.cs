@@ -27,7 +27,7 @@ internal static class GymRequests
         JsonElement body,
         out string name,
         out int weeks,
-        out IReadOnlyList<string> days,
+        out IReadOnlyList<MesoDay> days,
         out string error)
     {
         name = string.Empty;
@@ -52,7 +52,7 @@ internal static class GymRequests
         JsonElement body,
         out string? name,
         out int? weeks,
-        out IReadOnlyList<string>? days,
+        out IReadOnlyList<MesoDay>? days,
         out string error)
     {
         name = null;
@@ -282,32 +282,45 @@ internal static class GymRequests
     }
 
     /// <summary>
-    /// The day labels of a block, as an array of strings — <c>["Upper A",
-    /// "Lower A"]</c>.
+    /// The days of a block, in order.
     ///
-    /// Labels rather than objects, and position rather than an explicit
-    /// <c>dayIndex</c>, because the array's order <em>is</em> the order of the
-    /// days. Letting the client send an index as well would be a second way to
-    /// say the same thing, and the two disagreeing is a bug with nowhere to
-    /// surface.
+    /// Two shapes are accepted, and both are ordinary rather than one being a
+    /// legacy path. A string is a day with nothing planned against it —
+    /// <c>["Upper A", "Lower A"]</c> — and an object is one that carries a
+    /// plan:
+    ///
+    /// <code>
+    /// { "label": "Upper A", "plan": [{ "exerciseName": "Bench Press", "sets": 3, "reps": 8 }] }
+    /// </code>
+    ///
+    /// Position rather than an explicit <c>dayIndex</c> in either shape,
+    /// because the array's order <em>is</em> the order of the days. Letting the
+    /// client send an index as well would be a second way to say the same
+    /// thing, and the two disagreeing is a bug with nowhere to surface.
+    ///
+    /// A plan is optional on the object form and an absent one is empty, not an
+    /// error: renaming a day should not require restating what it prescribes.
+    /// Note what that means for a PATCH — <c>days</c> is replaced wholesale, so
+    /// sending bare labels for a block that had plans clears them. The Plan tab
+    /// sends back what it is holding, which is why that is safe there.
     /// </summary>
     private static bool TryReadDays(
         JsonElement body,
-        out IReadOnlyList<string> days,
+        out IReadOnlyList<MesoDay> days,
         out string error)
     {
         days = [];
 
         if (!body.TryGetProperty("days", out var property) || property.ValueKind == JsonValueKind.Null)
         {
-            error = "'days' is missing. Send the day labels in order, as an array of strings — "
-                + "the position in the array is the dayIndex.";
+            error = "'days' is missing. Send the days in order, as an array of labels or of "
+                + "{label, plan} objects — the position in the array is the dayIndex.";
             return false;
         }
 
         if (property.ValueKind != JsonValueKind.Array)
         {
-            error = $"'days' is {property.ValueKind}, expected an array of strings.";
+            error = $"'days' is {property.ValueKind}, expected an array.";
             return false;
         }
 
@@ -315,36 +328,129 @@ internal static class GymRequests
 
         if (length < GymLimits.MinDays || length > GymLimits.MaxDays)
         {
-            error = $"'days' holds {length} labels, outside {GymLimits.MinDays} to {GymLimits.MaxDays}.";
+            error = $"'days' holds {length} entries, outside {GymLimits.MinDays} to {GymLimits.MaxDays}.";
             return false;
         }
 
-        var labels = new List<string>(length);
+        var parsed = new List<MesoDay>(length);
         var index = 0;
 
-        foreach (var label in property.EnumerateArray())
+        foreach (var day in property.EnumerateArray())
         {
-            if (label.ValueKind != JsonValueKind.String)
+            string label;
+            IReadOnlyList<PlannedExercise> plan = [];
+
+            if (day.ValueKind == JsonValueKind.String)
             {
-                error = $"Day {index} of 'days' is {label.ValueKind}, expected a string.";
+                label = day.GetString()!.Trim();
+            }
+            else if (day.ValueKind == JsonValueKind.Object)
+            {
+                if (!GymJson.TryReadString(day, "label", GymLimits.MaxLabelLength, out label, out error))
+                {
+                    error = $"Day {index} of 'days': {error}";
+                    return false;
+                }
+
+                if (!TryReadPlan(day, index, out plan, out error))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                error = $"Day {index} of 'days' is {day.ValueKind}, expected a string label or a "
+                    + "{label, plan} object.";
                 return false;
             }
 
-            var text = label.GetString()!.Trim();
-
-            if (text.Length == 0 || text.Length > GymLimits.MaxLabelLength)
+            if (label.Length == 0 || label.Length > GymLimits.MaxLabelLength)
             {
-                error = $"Day {index} of 'days' is {text.Length} characters, outside 1 to "
-                    + $"{GymLimits.MaxLabelLength}.";
+                error = $"Day {index} of 'days' has a label of {label.Length} characters, outside 1 "
+                    + $"to {GymLimits.MaxLabelLength}.";
                 return false;
             }
 
-            labels.Add(text);
+            parsed.Add(new MesoDay(index, label, plan));
             index++;
         }
 
-        days = labels;
+        days = parsed;
         error = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// The <c>plan</c> array on one day.
+    ///
+    /// Targets are sets and reps and nothing else — no weight, by the same
+    /// reasoning <see cref="PlannedExercise"/> records: the weight is what the
+    /// session discovers, and a prescribed one is stale the moment it is beaten.
+    /// The bounds are the session's own, so a plan cannot prescribe something
+    /// the logging screen would refuse to record.
+    /// </summary>
+    private static bool TryReadPlan(
+        JsonElement day,
+        int dayIndex,
+        out IReadOnlyList<PlannedExercise> plan,
+        out string error)
+    {
+        plan = [];
+        error = string.Empty;
+
+        if (!day.TryGetProperty("plan", out var property) || property.ValueKind == JsonValueKind.Null)
+        {
+            // Absent is empty. A day with nothing planned is the ordinary case,
+            // and every day of every block written before planning existed.
+            return true;
+        }
+
+        if (property.ValueKind != JsonValueKind.Array)
+        {
+            error = $"Day {dayIndex} of 'days' has a 'plan' that is {property.ValueKind}, expected "
+                + "an array of {exerciseName, sets, reps} objects.";
+            return false;
+        }
+
+        var length = property.GetArrayLength();
+
+        if (length > GymLimits.MaxPlannedPerDay)
+        {
+            error = $"Day {dayIndex} of 'days' plans {length} exercises, over the "
+                + $"{GymLimits.MaxPlannedPerDay} allowed.";
+            return false;
+        }
+
+        var exercises = new List<PlannedExercise>(length);
+        var position = 0;
+
+        foreach (var exercise in property.EnumerateArray())
+        {
+            if (exercise.ValueKind != JsonValueKind.Object)
+            {
+                error = $"Entry {position} of day {dayIndex}'s plan is {exercise.ValueKind}, "
+                    + "expected an {exerciseName, sets, reps} object.";
+                return false;
+            }
+
+            if (!GymJson.TryReadString(
+                    exercise,
+                    "exerciseName",
+                    GymLimits.MaxExerciseNameLength,
+                    out var exerciseName,
+                    out error)
+                || !GymJson.TryReadInt(exercise, "sets", 1, GymLimits.MaxSetsPerEntry, out var sets, out error)
+                || !GymJson.TryReadInt(exercise, "reps", 1, GymLimits.MaxReps, out var reps, out error))
+            {
+                error = $"Entry {position} of day {dayIndex}'s plan: {error}";
+                return false;
+            }
+
+            exercises.Add(new PlannedExercise(exerciseName, sets, reps));
+            position++;
+        }
+
+        plan = exercises;
         return true;
     }
 }

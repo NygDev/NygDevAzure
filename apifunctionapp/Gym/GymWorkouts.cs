@@ -95,7 +95,28 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
                         $"'dayIndex' is {dayIndex}, and '{meso.Name}' has {meso.Days.Count} days a week.");
                 }
 
-                var creation = await store.CreateSessionAsync(objectId, date, mesoId, week, dayIndex, token);
+                // The day's plan becomes the session's opening entries, with
+                // no sets against them. Seeding here rather than making the
+                // client post an entry per planned exercise keeps Start one
+                // round trip, and keeps the entry indexes the client logs
+                // against consistent with what it was just handed.
+                //
+                // The targets themselves are not copied onto the session. They
+                // live on the block, which the client already holds, so copying
+                // them would be a second place for a number to be wrong after
+                // the plan is edited.
+                var seed = meso.Days[dayIndex].Plan
+                    .Select(planned => new SessionEntry(planned.ExerciseName, []))
+                    .ToArray();
+
+                var creation = await store.CreateSessionAsync(
+                    objectId,
+                    date,
+                    mesoId,
+                    week,
+                    dayIndex,
+                    seed,
+                    token);
 
                 if (creation.Session is not { } session)
                 {

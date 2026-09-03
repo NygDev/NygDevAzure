@@ -50,6 +50,16 @@ internal static class GymLimits
     public const int MaxSetsPerEntry = 60;
 
     /// <summary>
+    /// How many exercises a day may have planned against it.
+    ///
+    /// Lower than a session's cap on purpose. A plan is written by hand and
+    /// read before every workout, so twenty is already past useful; the
+    /// session's forty is a bound on a document a client could fill by
+    /// accident, and this is a bound on something a person types.
+    /// </summary>
+    public const int MaxPlannedPerDay = 20;
+
+    /// <summary>
     /// Kilograms. The upper bound is past any lift a human has recorded and is
     /// there to catch a unit mistake — pounds sent where kilograms were meant
     /// stays inside it, but a stray multiplication does not.
@@ -70,7 +80,73 @@ internal static class GymLimits
 
 /// <summary>One labelled day of the block. Position in the block is
 /// <c>dayIndex</c>; the label is what the user called it.</summary>
-public readonly record struct MesoDay(int DayIndex, string Label);
+/// <summary>
+/// One exercise a day prescribes, and how much of it.
+///
+/// Names plus target sets and reps, and deliberately not a target weight. Sets
+/// and reps are what a programme prescribes; the weight is what you discover on
+/// the day, and a prescribed one is wrong the moment you progress — it would
+/// need rewriting every block or it becomes noise on the screen.
+///
+/// The plan is not a promise. Nothing enforces it at logging time: a session
+/// seeded from a plan is an ordinary session whose entries happen to be there
+/// already, and the sets logged against it are whatever was actually lifted.
+/// </summary>
+public readonly record struct PlannedExercise(string ExerciseName, int Sets, int Reps)
+{
+    public static PlannedExercise Read(JsonElement element) => new(
+        GymDocument.String(element, "exerciseName"),
+        GymDocument.Int32(element, "sets"),
+        GymDocument.Int32(element, "reps"));
+
+    public object ToResponse() => new { exerciseName = ExerciseName, sets = Sets, reps = Reps };
+}
+
+/// <summary>
+/// One labelled day of the block. Position in the block is <c>dayIndex</c>; the
+/// label is what the user called it; <c>Plan</c> is what they intend to do.
+///
+/// The plan hangs off the day rather than off a cell of the block, so every
+/// week's "Upper A" shares it. That follows the app's own premise — days are
+/// labelled, not scheduled — and it keeps a block one small document instead of
+/// up to 48 planned ones. What it gives up is planning a single week
+/// differently, a deload week most of all; that would be a plan per cell, and
+/// it is the change to make if per-week progression is ever wanted.
+/// </summary>
+public readonly record struct MesoDay(int DayIndex, string Label, IReadOnlyList<PlannedExercise> Plan)
+{
+    /// <summary>A day with nothing planned against it, which is every day of a
+    /// block written before this field existed.</summary>
+    public static MesoDay Unplanned(int dayIndex, string label) => new(dayIndex, label, []);
+
+    public static MesoDay Read(JsonElement element)
+    {
+        var plan = new List<PlannedExercise>();
+
+        // Absent rather than empty on any block created before planning
+        // existed, and this is the whole migration: an unplanned day reads as a
+        // day with an empty plan, which is what it is.
+        if (element.TryGetProperty("plan", out var stored) && stored.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var exercise in stored.EnumerateArray())
+            {
+                plan.Add(PlannedExercise.Read(exercise));
+            }
+        }
+
+        return new MesoDay(
+            GymDocument.Int32(element, "dayIndex"),
+            GymDocument.String(element, "label"),
+            plan);
+    }
+
+    public object ToResponse() => new
+    {
+        dayIndex = DayIndex,
+        label = Label,
+        plan = Plan.Select(exercise => exercise.ToResponse()).ToArray(),
+    };
+}
 
 /// <summary>
 /// The plan, and nothing else.
@@ -90,9 +166,7 @@ public sealed record Mesocycle(string Id, string Name, int Weeks, IReadOnlyList<
         {
             foreach (var day in stored.EnumerateArray())
             {
-                days.Add(new MesoDay(
-                    GymDocument.Int32(day, "dayIndex"),
-                    GymDocument.String(day, "label")));
+                days.Add(MesoDay.Read(day));
             }
         }
 
@@ -110,7 +184,7 @@ public sealed record Mesocycle(string Id, string Name, int Weeks, IReadOnlyList<
         id = Id,
         name = Name,
         weeks = Weeks,
-        days = Days.Select(day => new { dayIndex = day.DayIndex, label = day.Label }).ToArray(),
+        days = Days.Select(day => day.ToResponse()).ToArray(),
     };
 }
 
@@ -142,7 +216,7 @@ public readonly record struct MesocycleSummary(
         id = Block.Id,
         name = Block.Name,
         weeks = Block.Weeks,
-        days = Block.Days.Select(day => new { dayIndex = day.DayIndex, label = day.Label }).ToArray(),
+        days = Block.Days.Select(day => day.ToResponse()).ToArray(),
         isCurrent = IsCurrent,
         sessionCount = SessionCount,
         submittedCount = SubmittedCount,

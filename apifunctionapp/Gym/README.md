@@ -113,7 +113,13 @@ Everything Today and the block map need, in one call.
     "id": "01k4…",                       // bare id — this is what routes take
     "name": "Meso 3 — Upper/Lower",
     "weeks": 5,
-    "days": [{ "dayIndex": 0, "label": "Upper A" }]
+    "days": [
+      {
+        "dayIndex": 0,
+        "label": "Upper A",
+        "plan": [{ "exerciseName": "Bench Press", "sets": 3, "reps": 8 }]
+      }
+    ]
   },
   "sessions": [
     {
@@ -134,15 +140,49 @@ nobody has planned a block yet. Sessions come back newest first.
 { "name": "Autumn block", "weeks": 5, "days": ["Upper A", "Lower A"] }
 ```
 
-`weeks` 3–8, `days` 2–6 labels; the position in the array is the `dayIndex`.
+`weeks` 3–8, `days` 2–6 entries; the position in the array is the `dayIndex`.
 Creating is also switching — the new block becomes current in the same
 transaction, so there is no separate activate call. **201** with
 `{ok, mesocycle}`.
+
+A day may be a bare label, as above, or an object carrying what it prescribes:
+
+```jsonc
+{
+  "name": "Autumn block",
+  "weeks": 5,
+  "days": [
+    { "label": "Upper A", "plan": [
+      { "exerciseName": "Bench Press", "sets": 3, "reps": 8 },
+      { "exerciseName": "Barbell Row", "sets": 4, "reps": 10 }
+    ]},
+    "Lower A"
+  ]
+}
+```
+
+Both shapes are ordinary; neither is a legacy path. `plan` is optional and an
+absent one is empty, so renaming a day never requires restating what it does.
+
+**The plan hangs off the day, not off a cell**, so every week's "Upper A"
+shares it. That follows from days being labelled rather than scheduled, and it
+keeps a block one small document instead of up to 48 planned ones. Planning a
+single week differently — a deload week most of all — is what this gives up.
+
+Targets are **sets and reps only**. No target weight: the weight is what a
+session discovers, and a prescribed one is stale the moment it is beaten. Sets
+are bounded by the session's own cap and reps by its rep cap, so a plan cannot
+prescribe something the logging screen would refuse to record. At most
+20 exercises to a day.
 
 ### `PATCH /gym/mesocycles/{mesoId}`
 
 Same three fields, all optional; an absent one is left alone. Sending none is a
 no-op rather than an error. **200** with the updated mesocycle.
+
+`days` is replaced **wholesale** when it is sent, plans included — so sending
+bare labels for a block that had plans clears them. That is why the Plan tab
+sends back the whole array it is holding rather than a diff.
 
 Editing weeks or days never deletes a workout — sessions are keyed on their date
 rather than their position, so cells outside the new bounds are simply hidden.
@@ -241,9 +281,18 @@ above is what makes acceptable.
 No `mesoId`: the server reads the user's current block and checks `week` and
 `dayIndex` against its actual shape.
 
-- **201** `{ok, resumed: false, workout}` — a new draft.
+- **201** `{ok, resumed: false, workout}` — a new draft, opened with one entry
+  per exercise the day plans and no sets against them. Seeding it here is what
+  keeps Start one round trip instead of an entry POST per planned exercise, and
+  it means the entry indexes a client logs against are the ones it was just
+  handed. The **targets are not copied onto the session** — they stay on the
+  block, which the client already holds, so there is no second place for them
+  to be wrong after the plan is edited.
 - **200** `{ok, resumed: true, workout}` — today's draft on this same cell was
   already open and comes back as it stands, everything already logged in it.
+  **Not re-seeded**: it already has whatever the plan gave it when it was
+  created, and seeding again would duplicate the planned exercises every time
+  Start was tapped twice.
   This is Start tapped twice, or an app returning from the background.
 - **409 `no_current_mesocycle`** — plan a block first.
 - **409 `date_full`** — ten sessions on one date; a client that lost its id.
@@ -338,9 +387,14 @@ Removes a workout — the answer to the duplicate a cell can now collect.
   guarded shape as the set delete: `DELETE …/entries/{i}?expectedEntryCount=`.
 - **Editing a logged set in place.** Delete it and log it again; both calls are
   guarded, so the pair is safe to retry.
-- **Anything from the design's open questions** — deload flags, day templates,
-  warm-up marking, a rest timer. Each is free to add to the stored shape when it
-  is decided; none is assumed here.
+- **The rest of the design's open questions** — deload flags, warm-up marking,
+  a rest timer. Day templates were one of these and are now the `plan` on a
+  day; the others are still free to add to the stored shape when they are
+  decided, and none is assumed here.
+- **Enforcing a plan.** Nothing checks a logged set against what the day
+  prescribed. A seeded session is an ordinary session whose entries happen to be
+  there already; what is logged is what was lifted, and an exercise can be added
+  or left empty regardless of the plan.
 
 ---
 
