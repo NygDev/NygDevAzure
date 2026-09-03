@@ -96,6 +96,11 @@ internal static class GymLimits
 /// the last training week and to a full tank through the deload — and that is
 /// derived from <c>weeks</c>, so there is nothing here to store.
 ///
+/// <c>Sets</c> is what a training week asks for. The last week of a block is a
+/// rest week and runs the same exercises at half of it, which is likewise
+/// derived rather than planned: the plan hangs off the day, so there is nowhere
+/// to write a lighter week even if it were worth storing.
+///
 /// The plan is not a promise. Nothing enforces it at logging time: a session
 /// seeded from a plan is an ordinary session whose entries happen to be there
 /// already, and the sets logged against it are whatever was actually lifted.

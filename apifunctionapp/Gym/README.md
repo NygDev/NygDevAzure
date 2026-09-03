@@ -179,9 +179,10 @@ written while reps were planned still carry one — the field is dead rather tha
 wrong, so nothing needs backfilling. How hard a set should be is not planned
 either: the front end reads a target of reps left in the tank off the week's
 position in the block, ramping to none in the last training week and to a full
-tank through the final week, which it treats as a deload. That is a function of
+tank through the final week, which it treats as a rest week. That rest week runs
+the same exercises at **half** these sets, rounded up. Both are functions of
 `weeks` and the session's `week`, both already on the wire, so the API neither
-stores nor sends it.
+stores nor sends either one — `sets` here is what a training week asks for.
 
 ### `PATCH /gym/mesocycles/{mesoId}`
 
