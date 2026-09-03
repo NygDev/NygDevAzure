@@ -262,6 +262,14 @@ public readonly record struct WorkSet(double WeightKg, int Reps, double? Rpe)
 /// today, and a field nothing sets is a field that is wrong later. No
 /// <c>order</c>, no id, and no <c>workoutId</c> — the entry is inside the
 /// session, so all three are already known from where it sits.
+///
+/// Position is not incidental, though: it is what the drag handle on the
+/// logging screen moves, <see cref="GymStore.ReorderEntryAsync"/> is the write
+/// that changes it, and a separate backend reads it downstream to compute
+/// against. That is also why there is still no id to reorder by instead —
+/// adding one would be for this feature's benefit alone, and the position a
+/// client already addresses sets by does the job without a second identity to
+/// keep in step with the first.
 /// </summary>
 public sealed record SessionEntry(string ExerciseName, IReadOnlyList<WorkSet> Sets)
 {

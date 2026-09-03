@@ -349,6 +349,49 @@ History. Without `mesoId`, the current block. Same session summaries as
 **200** `{ok, alreadyRecorded, entryIndex, entryCount, exerciseName}` —
 `entryIndex` is what sets are logged against.
 
+### `POST /gym/workouts/{id}/entries/move` — the drag handle
+
+```jsonc
+{ "from": 2, "to": 0, "exerciseName": "Barbell Row", "expectedEntryCount": 4 }
+```
+
+Moves one entry. **Array position is the order** — there is no separate
+`order` field on an entry, on the plan, or anywhere else in this API. `entries`
+comes back in the order it is meant to be read in, on every response that
+carries it, and a client that wants to show or act on that order reads the
+array as it stands rather than sorting by anything else. This is deliberate:
+a second field asserting the same fact as the array's own position is a field
+that can disagree with it, and the whole point of ordering entries is that
+nothing downstream has to guess which one is authoritative.
+
+`to` is where the entry ends up, not an entry it trades places with — the
+entry at `from` is removed and then reinserted at `to`, the same convention
+`Array.prototype.splice` and a standard `arrayMove` helper both use. A drag
+handle's own before/after indices can be sent through unchanged.
+
+`exerciseName` is what the caller believes is at `from`. It is never written —
+only checked — and it is how a retry after a lost response is told apart from
+a fresh drag, in place of an id the entry does not have:
+
+- If `from` still holds that exercise, the move has not happened yet, and it
+  is applied.
+- If `from` does not but `to` already does, this exact move already landed —
+  the lost-response case — and **200** `{ok, alreadyApplied: true, from, to,
+  entryCount}` comes back with nothing written a second time.
+- Otherwise the session changed some other way since the client's snapshot,
+  and the call answers **409 `reorder_conflict`** rather than move the wrong
+  entry. Re-read the workout and drag again from what it holds.
+
+**200** `{ok, alreadyApplied: false, from, to, entryCount}` on a fresh move.
+
+Unlike the hot-path writes below, this one reads the session before it writes
+— a drag happens once a session, not thirty times, and the entry being moved
+carries its sets with it. A guard that only checked a count, the way the hot
+path does, could not tell a fresh move from a stale retry once the array has
+already been rearranged once; reading first and replacing the document under
+an ETag is what makes it safe to retry regardless, at the cost of an RU this
+call can afford and the hot path cannot.
+
 ### `POST /gym/workouts/{id}/sets` — the tap
 
 ```jsonc

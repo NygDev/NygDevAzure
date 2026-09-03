@@ -8,11 +8,12 @@ using Microsoft.Extensions.Logging;
 namespace ApiFunctionApp.Gym;
 
 /// <summary>
-/// The logging itself: adding an exercise, logging a set, taking one back.
+/// The logging itself: adding an exercise, logging a set, taking one back —
+/// and, since it operates on the same entry list, dragging one to reorder it.
 ///
-/// This is the hot path — a set-tap fires thirty or forty times a session,
-/// far more often than everything else in the app put together — and all three
-/// endpoints are one Cosmos patch each, with no read in front and no
+/// The first three are the hot path — a set-tap fires thirty or forty times a
+/// session, far more often than everything else in the app put together — and
+/// those endpoints are one Cosmos patch each, with no read in front and no
 /// read-modify-write anywhere.
 ///
 /// They are also the three that have to survive a bad connection, because that
@@ -27,6 +28,12 @@ namespace ApiFunctionApp.Gym;
 /// again" button safe to hammer, and it is also the whole answer to offline
 /// drafts: a queue of taps replayed on reconnect is safe by construction, with
 /// no reconciliation pass to write.
+///
+/// The move is not on that hot path — a drag happens once, not thirty times —
+/// so it is allowed to read the session first rather than patch blind. See
+/// <see cref="GymStore.ReorderEntryAsync"/> for why that is the safer trade
+/// for an operation that has to carry a whole entry, sets included, rather
+/// than append one value.
 /// </summary>
 public class GymSets(GymStore store, ILogger<GymSets> logger)
 {
@@ -301,6 +308,116 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
                     + $"{outcome.Actual} sets, not the {expected} this request expected."),
             };
         });
+
+    /// <summary>
+    /// The drag handle: moves one exercise from one position to another.
+    ///
+    /// <c>{from, to, exerciseName, expectedEntryCount}</c>. <c>to</c> is where
+    /// the exercise lands, not a swap partner — the entry at <c>from</c> is
+    /// removed and reinserted at <c>to</c>, matching the front end's own
+    /// array-move convention, so the pair a drag produces is sent unchanged.
+    ///
+    /// The order this endpoint writes is not just a display preference: a
+    /// separate backend reads it downstream to compute against, which is the
+    /// whole reason this exists as a server write rather than a client-only
+    /// re-sort. If it only lived in the browser, the order the next sync saw
+    /// would be whatever the server still had, not what the drag produced.
+    /// </summary>
+    [Function("GymEntryMove")]
+    public Task<IActionResult> MoveEntry(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "gym/workouts/{sessionId}/entries/move")] HttpRequest request,
+        string sessionId,
+        CancellationToken cancellationToken) =>
+        GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
+        {
+            if (!GymIds.IsWellFormed(sessionId))
+            {
+                return GymEndpoint.Invalid($"'{sessionId}' is not a workout id.");
+            }
+
+            var (body, rejection) = await GymEndpoint.ReadBodyAsync(request, token);
+
+            if (body is null)
+            {
+                return rejection!;
+            }
+
+            using (body)
+            {
+                if (!GymRequests.TryReadEntryMove(
+                        body.RootElement,
+                        out var from,
+                        out var to,
+                        out var exerciseName,
+                        out var expectedEntryCount,
+                        out var error))
+                {
+                    return GymEndpoint.Invalid(error);
+                }
+
+                var outcome = await store.ReorderEntryAsync(
+                    objectId,
+                    sessionId,
+                    from,
+                    to,
+                    exerciseName,
+                    expectedEntryCount,
+                    token);
+
+                return outcome.Result switch
+                {
+                    ReorderResult.Applied => new OkObjectResult(new
+                    {
+                        ok = true,
+                        alreadyApplied = false,
+                        from,
+                        to,
+                        entryCount = outcome.Session!.Entries.Count,
+                    }),
+
+                    ReorderResult.AlreadyApplied => new OkObjectResult(new
+                    {
+                        ok = true,
+                        alreadyApplied = true,
+                        from,
+                        to,
+                        entryCount = outcome.Session!.Entries.Count,
+                    }),
+
+                    ReorderResult.SessionNotFound => GymWorkouts.NoSuchSession(sessionId),
+
+                    _ => ReorderConflict(sessionId, from, to, exerciseName, expectedEntryCount),
+                };
+            }
+        });
+
+    /// <summary>
+    /// A reorder's guard did not hold: the session no longer matches what the
+    /// client described. Unlike <see cref="Mismatch"/> there is no single
+    /// count to hand back — the mismatch could be the entry count, either
+    /// index, or the exercise having moved some other way — so the answer
+    /// points at a read instead of a number.
+    /// </summary>
+    private static IActionResult ReorderConflict(
+        string sessionId,
+        int from,
+        int to,
+        string exerciseName,
+        int expectedEntryCount) =>
+        new ObjectResult(new
+        {
+            ok = false,
+            error = "reorder_conflict",
+            message = $"Session {sessionId} no longer matches this request: expected "
+                + $"{expectedEntryCount} exercises with '{exerciseName}' at position {from} to "
+                + $"move to {to}. Nothing was written. Re-read the workout with "
+                + "GET /api/gym/workouts/{id} and drag again from what it holds.",
+            from,
+            to,
+        })
+        {
+            StatusCode = (int)HttpStatusCode.Conflict,
+        };
 
     /// <summary>
     /// The guard refused and the operation had not already landed: the client's

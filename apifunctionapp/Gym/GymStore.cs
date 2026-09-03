@@ -685,6 +685,152 @@ public sealed class GymStore(Container container)
         return true;
     }
 
+    /// <summary>
+    /// Drags one exercise from one position to another.
+    ///
+    /// Unlike the hot-path appends below, this reads the session first. That
+    /// is deliberate: a drag happens once, not thirty times a session, and the
+    /// entry being moved carries its sets with it — replaying a client's own
+    /// copy of the array back at Cosmos would silently drop a set logged
+    /// against it moments earlier by another device. Reading first and writing
+    /// the whole document back under an ETag is the same trade
+    /// <see cref="DeleteMesocycleAsync"/> makes for a rarer, heavier operation:
+    /// an RU or two, for an answer that cannot be wrong.
+    ///
+    /// <paramref name="exerciseName"/> is what the caller believes sits at
+    /// <paramref name="from"/>, and it is how a retry after a lost response is
+    /// told apart from a fresh drag without needing an id on the entry itself:
+    ///
+    /// <list type="bullet">
+    /// <item>If the entry at <c>from</c> is still that exercise, the move has
+    /// not happened yet — apply it.</item>
+    /// <item>Otherwise, if the entry at <c>to</c> is already that exercise,
+    /// this exact move already landed — the lost response case — and nothing
+    /// is written a second time.</item>
+    /// <item>Otherwise the session changed in some other way since the
+    /// client's snapshot — an exercise added or removed — and the client is
+    /// told to resync rather than have the wrong entry moved.</item>
+    /// </list>
+    /// </summary>
+    public async Task<ReorderOutcome> ReorderEntryAsync(
+        string objectId,
+        string sessionId,
+        int from,
+        int to,
+        string exerciseName,
+        int expectedEntryCount,
+        CancellationToken cancellationToken)
+    {
+        var (session, etag) = await ReadSessionWithETagAsync(objectId, sessionId, cancellationToken);
+
+        if (session is null)
+        {
+            return new ReorderOutcome(ReorderResult.SessionNotFound, null);
+        }
+
+        var entries = session.Entries;
+
+        if (entries.Count != expectedEntryCount || from >= entries.Count || to >= entries.Count)
+        {
+            return new ReorderOutcome(ReorderResult.Conflict, session);
+        }
+
+        if (entries[from].ExerciseName != exerciseName)
+        {
+            // Not sitting where the caller expects. Either this is the retry
+            // of a move that already landed — in which case the exercise is
+            // now at `to` — or the session changed underneath it some other
+            // way, which is a real conflict either way the check below falls.
+            return entries[to].ExerciseName == exerciseName
+                ? new ReorderOutcome(ReorderResult.AlreadyApplied, session)
+                : new ReorderOutcome(ReorderResult.Conflict, session);
+        }
+
+        if (from == to)
+        {
+            return new ReorderOutcome(ReorderResult.Applied, session);
+        }
+
+        var reordered = Reordered(entries, from, to);
+        var updated = session with { Entries = reordered };
+
+        using var payload = SerializeSession(objectId, updated);
+        using var response = await container.ReplaceItemStreamAsync(
+            payload,
+            sessionId,
+            new PartitionKey(objectId),
+            new ItemRequestOptions { IfMatchEtag = etag, EnableContentResponseOnWrite = false },
+            cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.PreconditionFailed)
+        {
+            // Something else wrote the session between the read above and this
+            // write — a set logged mid-drag, most likely. The client's own
+            // retry-on-409 path (already needed for the hot-path writes) is
+            // what resolves this: re-read, and either the drag still applies
+            // or it does not.
+            return new ReorderOutcome(ReorderResult.Conflict, null);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw Failure(response, $"Moving entry {from} to {to} in session {sessionId} failed.");
+        }
+
+        return new ReorderOutcome(ReorderResult.Applied, updated);
+    }
+
+    /// <summary>
+    /// Standard array-move semantics: the entry at <paramref name="from"/> is
+    /// removed and reinserted at <paramref name="to"/>, so <paramref
+    /// name="to"/> is where it lands rather than an entry it swaps with. The
+    /// front end's own reorder hook uses the identical convention, so the pair
+    /// a drag produces is the pair this expects.
+    /// </summary>
+    private static IReadOnlyList<SessionEntry> Reordered(
+        IReadOnlyList<SessionEntry> entries,
+        int from,
+        int to)
+    {
+        var next = entries.ToList();
+        var moved = next[from];
+
+        next.RemoveAt(from);
+        next.Insert(to, moved);
+
+        return next;
+    }
+
+    /// <summary>
+    /// A point read that also hands back the ETag, for the one write in this
+    /// file that goes through optimistic concurrency instead of a guarded
+    /// patch.
+    /// </summary>
+    private async Task<(GymSession? Session, string? ETag)> ReadSessionWithETagAsync(
+        string objectId,
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        using var response = await container.ReadItemStreamAsync(
+            sessionId,
+            new PartitionKey(objectId),
+            cancellationToken: cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return (null, null);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw Failure(response, $"Reading session {sessionId} failed.");
+        }
+
+        using var document = await JsonDocument.ParseAsync(response.Content, cancellationToken: cancellationToken);
+
+        return (GymSession.Read(document.RootElement), response.Headers.ETag);
+    }
+
     // -----------------------------------------------------------------------
     // The hot path
     // -----------------------------------------------------------------------
@@ -1232,3 +1378,35 @@ public readonly record struct PatchOutcome(PatchResult Result, int Actual)
     public static PatchOutcome EntryNotFound(int entryCount) =>
         new(PatchResult.EntryNotFound, entryCount);
 }
+
+/// <summary>How a drag on the entry list ended.</summary>
+public enum ReorderResult
+{
+    /// <summary>The move was written. The ordinary answer.</summary>
+    Applied,
+
+    /// <summary>
+    /// A retry of a move that already landed — the entry named in the request
+    /// is already sitting at <c>to</c>. Success, the same as a hot-path
+    /// <see cref="PatchResult.AlreadyApplied"/>.
+    /// </summary>
+    AlreadyApplied,
+
+    /// <summary>
+    /// The session does not match what the caller described — a different
+    /// entry count, an index out of range, or the named exercise sitting
+    /// somewhere the request did not expect. Nothing was written; re-read and
+    /// try again.
+    /// </summary>
+    Conflict,
+
+    /// <summary>No session with that id in this user's partition.</summary>
+    SessionNotFound,
+}
+
+/// <summary>
+/// A reorder's result, with the session as it now stands. <c>Session</c> is
+/// null only for <see cref="ReorderResult.SessionNotFound"/> and for a
+/// concurrent write the caller must re-read to see past.
+/// </summary>
+public readonly record struct ReorderOutcome(ReorderResult Result, GymSession? Session);

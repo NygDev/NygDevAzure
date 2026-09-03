@@ -245,6 +245,50 @@ internal static class GymRequests
     }
 
     /// <summary>
+    /// <c>POST /api/gym/workouts/{id}/entries/move</c> — the drag handle.
+    ///
+    /// <c>from</c> and <c>to</c> are splice indices, not a swap: the entry at
+    /// <c>from</c> is removed and reinserted at <c>to</c>, so <c>to</c> is
+    /// where it ends up rather than an entry it trades places with. That is
+    /// the same convention the front end's own array-move helper uses, so the
+    /// index pair a drag produces is the one sent here unchanged.
+    ///
+    /// <c>exerciseName</c> is what the client believes is at <c>from</c> — not
+    /// written anywhere, only checked, and it is how the store tells a fresh
+    /// move from a retry of one that already landed: see
+    /// <see cref="GymStore.ReorderEntryAsync"/>.
+    /// </summary>
+    public static bool TryReadEntryMove(
+        JsonElement body,
+        out int from,
+        out int to,
+        out string exerciseName,
+        out int expectedEntryCount,
+        out string error)
+    {
+        from = 0;
+        to = 0;
+        exerciseName = string.Empty;
+        expectedEntryCount = 0;
+
+        return GymJson.TryReadInt(body, "from", 0, GymLimits.MaxEntriesPerSession - 1, out from, out error)
+            && GymJson.TryReadInt(body, "to", 0, GymLimits.MaxEntriesPerSession - 1, out to, out error)
+            && GymJson.TryReadString(
+                body,
+                "exerciseName",
+                GymLimits.MaxExerciseNameLength,
+                out exerciseName,
+                out error)
+            && GymJson.TryReadInt(
+                body,
+                "expectedEntryCount",
+                1,
+                GymLimits.MaxEntriesPerSession,
+                out expectedEntryCount,
+                out error);
+    }
+
+    /// <summary>
     /// RPE: absent, a literal null, or a number from 5 to 10 on a half step.
     ///
     /// Optional because a set without a rating is still a set, and refusing it
