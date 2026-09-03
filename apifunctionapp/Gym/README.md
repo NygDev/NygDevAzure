@@ -164,6 +164,12 @@ A day may be a bare label, as above, or an object carrying what it prescribes:
 Both shapes are ordinary; neither is a legacy path. `plan` is optional and an
 absent one is empty, so renaming a day never requires restating what it does.
 
+A day left unplanned does not stay that way for long: the first workout
+submitted against it becomes its plan, exercises and set counts as they were
+logged. See `POST /gym/workouts/{id}/submit`. Planning by training is a first
+class way to fill a block in — write the labels, log week one, and week two is
+seeded from it.
+
 **The plan hangs off the day, not off a cell**, so every week's "Upper A"
 shares it. That follows from days being labelled rather than scheduled, and it
 keeps a block one small document instead of up to 48 planned ones. Planning a
@@ -410,10 +416,57 @@ exercise first.
 is the one operation here that a retry could turn into deleting a set the user
 did do. **200** `{ok, alreadyRemoved, entryIndex, setCount}`.
 
+### `DELETE /gym/workouts/{id}/entries/{i}?expectedEntryCount=&exerciseName=`
+
+Takes an exercise back out of the session — the picker's undo. **200**
+`{ok, alreadyRemoved, entryIndex, entryCount}`, and `alreadyRemoved` is success
+in the same way `alreadyRecorded` is.
+
+Both query values are required and together they are the guard. The count says
+the client's copy is current; the name says which exercise it means, which an
+index alone stops being able to say the moment anything is added or dragged. A
+retry after a lost response finds one fewer entry with that exercise no longer
+at that index, and comes back `alreadyRemoved` rather than removing a second
+one.
+
+**Only an entry with no sets can be removed.** An exercise that was lifted is a
+logged workout, and nothing in this API destroys one as a side effect — the sets
+come off one at a time through the guarded delete above, and what is left is the
+thing that was added by mistake. An entry that still holds sets is a **409
+`entry_not_empty`** with nothing written. That is also what the front end's own
+rule follows from: the × on an exercise appears once its last set is gone.
+
+**409 `entry_conflict`** is the other refusal — the session no longer matches
+what the request described, and what disagrees may be the count or may be which
+exercise sits at the index, so the answer points at a re-read rather than at a
+number. Nothing was written.
+
+Unlike the hot-path writes this reads the session first, for the same reason the
+move does: the guard has to check a name rather than a count, and a filter
+predicate carrying a name would be the user's own text inside a SQL literal.
+
 ### `POST /gym/workouts/{id}/submit`
 
 Flips `draft` → `submitted`. One patch, idempotent, safe to retry.
-**200** `{ok, id, status: "submitted"}`.
+**200** `{ok, id, status: "submitted", planned}`.
+
+`planned` is the one thing this call does besides the flip: **a day that plans
+nothing is planned from the first workout logged against it.** The exercises
+that were actually lifted, in the order they were logged, each with the number
+of sets they got — written onto `meso.days[dayIndex].plan`, so week two of that
+day opens seeded with week one's session and the logging screen has a target set
+count to show.
+
+It is deliberately narrow. Only a day whose plan is *empty* is written, only
+from entries that hold at least one set, and never on top of a plan someone
+typed — the write carries a filter that applies solely while the day still
+plans nothing, so a plan saved in the Plan tab while a session was open wins.
+The submit itself has already landed before any of this runs and cannot be
+undone by it; `planned` is false on essentially every submit after the first on
+a given day.
+
+A client that reloads the block after submitting does not need to read the field
+at all — the day's new plan is on `/mesocycles/current` like any other.
 
 ### `DELETE /gym/workouts/{id}`
 
@@ -432,11 +485,10 @@ Removes a workout — the answer to the duplicate a cell can now collect.
 - **Undoing a block delete.** Nothing here is soft-deleted, so there is nothing
   to undo with. The count on the list is what makes the confirmation
   answerable, and the confirmation is the whole safety mechanism.
-- **Removing an exercise from a session.** Sets can be taken back one at a time;
-  an entry cannot. The prototype has no such control either, so rather than
-  invent the semantics it is left out — an entry with no sets contributes
-  nothing to any total. If the picker turns out to need it, it is the same
-  guarded shape as the set delete: `DELETE …/entries/{i}?expectedEntryCount=`.
+- **Removing an exercise that was lifted.** An entry with sets against it
+  cannot be deleted, and no call takes its sets with it. Removing the exercise
+  is the undo for picking the wrong one, not a way to discard a workout; the
+  sets come off one at a time first, each through its own guarded delete.
 - **Editing a logged set in place.** Delete it and log it again; both calls are
   guarded, so the pair is safe to retry.
 - **The rest of the design's open questions** — deload flags, warm-up marking,
@@ -459,6 +511,8 @@ Removes a workout — the answer to the duplicate a cell can now collect.
 | 404 | `no_such_workout`, `no_such_mesocycle` | Not in this user's log. |
 | 409 | `count_mismatch` | Stale client state. Carries `expected` and `actual`; re-read and retry. Nothing was written. |
 | 409 | `no_such_entry` | The entry index is not in the session. |
+| 409 | `entry_not_empty` | The exercise still holds logged sets. Delete those first. |
+| 409 | `entry_conflict` | The session does not match the removal's guard. Re-read and try again. |
 | 409 | `no_current_mesocycle`, `date_full` | See Start, above. |
 | 500 | `unreadable_document`, `dangling_mesocycle` | A stored document does not match what the code writes. Not retryable. |
 | 502 | `storage_error` | Cosmos refused. `message` carries the hint for which cause. |

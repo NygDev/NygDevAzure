@@ -305,6 +305,72 @@ public sealed class GymStore(Container container)
     }
 
     /// <summary>
+    /// Writes what a day was first trained as onto the day itself — but only
+    /// while it plans nothing.
+    ///
+    /// A block can be created without planning a single exercise: the Plan tab
+    /// asks for a name, a length and some day labels, and a day with an empty
+    /// plan is ordinary rather than unfinished. What that costs is every later
+    /// week of the same day — the logging screen has no target set count to
+    /// show, the session opens empty, and the exercises have to be picked
+    /// again from scratch. So the first workout logged against an unplanned day
+    /// becomes its plan, and every following week is seeded from it.
+    ///
+    /// The filter predicate is the whole guard, and it is why this needs no
+    /// read of its own to be safe: it applies only while the day still plans
+    /// nothing, so a plan typed in the Plan tab while a session was open is
+    /// never overwritten by the session finishing. A block written before
+    /// planning existed has no <c>plan</c> property at all rather than an empty
+    /// one, which is why the predicate tests both.
+    ///
+    /// False means the day was already planned — by hand or by an earlier
+    /// session — or the block is gone. Neither is a failure of the submit this
+    /// hangs off, which is why it is a bool rather than an exception.
+    /// </summary>
+    public async Task<bool> CaptureDayPlanAsync(
+        string objectId,
+        string mesoId,
+        int dayIndex,
+        IReadOnlyList<PlannedExercise> plan,
+        CancellationToken cancellationToken)
+    {
+        var value = plan
+            .Select(exercise => new Dictionary<string, object?>
+            {
+                ["exerciseName"] = exercise.ExerciseName,
+                ["sets"] = exercise.Sets,
+            })
+            .ToList();
+
+        var options = new PatchItemRequestOptions
+        {
+            FilterPredicate =
+                $"FROM c WHERE (NOT IS_DEFINED(c.days[{dayIndex}].plan)) "
+                + $"OR ARRAY_LENGTH(c.days[{dayIndex}].plan) = 0",
+            EnableContentResponseOnWrite = false,
+        };
+
+        using var response = await container.PatchItemStreamAsync(
+            GymIds.Mesocycle(mesoId),
+            new PartitionKey(objectId),
+            [PatchOperation.Set($"/days/{dayIndex}/plan", value)],
+            options,
+            cancellationToken);
+
+        if (response.IsSuccessStatusCode)
+        {
+            return true;
+        }
+
+        if (response.StatusCode is HttpStatusCode.PreconditionFailed or HttpStatusCode.NotFound)
+        {
+            return false;
+        }
+
+        throw Failure(response, $"Planning day {dayIndex} of mesocycle {mesoId} from a session failed.");
+    }
+
+    /// <summary>
     /// Every block this user has planned, with what is in each.
     ///
     /// Three reads for the whole screen: the pointer, one query for the blocks
@@ -830,6 +896,97 @@ public sealed class GymStore(Container container)
         next.Insert(to, moved);
 
         return next;
+    }
+
+    /// <summary>
+    /// Takes an exercise back out of a session, and only while it holds no
+    /// sets.
+    ///
+    /// The emptiness is the point rather than a convenience for the client.
+    /// Everywhere else this API refuses to destroy a logged workout — a
+    /// re-logged day files a second session rather than overwriting the first —
+    /// and an entry with sets against it is a logged workout. So this removes
+    /// the thing that was added by mistake and nothing else: an exercise that
+    /// was picked, or seeded from the plan, and never lifted.
+    ///
+    /// Read-then-replace under an ETag, like <see cref="ReorderEntryAsync"/>
+    /// and for the same reasons. It happens once or twice a session rather
+    /// than thirty times, so it can afford the read; and a guarded blind patch
+    /// could not check <em>which</em> exercise is being removed, because a
+    /// filter predicate would have to carry the name as a SQL literal with the
+    /// user's own text inside it.
+    ///
+    /// <paramref name="exerciseName"/> is what the caller believes sits at
+    /// <paramref name="entryIndex"/>, and it is what tells a retry after a lost
+    /// response apart from a request built on a stale copy: one fewer entry
+    /// than the caller counted, with that exercise no longer at that index, is
+    /// this delete having already landed.
+    /// </summary>
+    public async Task<RemoveEntryOutcome> RemoveEntryAsync(
+        string objectId,
+        string sessionId,
+        int entryIndex,
+        string exerciseName,
+        int expectedEntryCount,
+        CancellationToken cancellationToken)
+    {
+        var (session, etag) = await ReadSessionWithETagAsync(objectId, sessionId, cancellationToken);
+
+        if (session is null)
+        {
+            return new RemoveEntryOutcome(RemoveEntryResult.SessionNotFound, null);
+        }
+
+        var entries = session.Entries;
+        var stillThere = entryIndex < entries.Count
+            && entries[entryIndex].ExerciseName == exerciseName;
+
+        if (!stillThere && entries.Count == expectedEntryCount - 1)
+        {
+            // One short of what the caller counted, and the exercise it named
+            // is not where it was: this delete landed and only the answer was
+            // lost. Success, the same as an alreadyRecorded set.
+            return new RemoveEntryOutcome(RemoveEntryResult.AlreadyRemoved, session);
+        }
+
+        if (!stillThere || entries.Count != expectedEntryCount)
+        {
+            return new RemoveEntryOutcome(RemoveEntryResult.Conflict, session);
+        }
+
+        if (entries[entryIndex].Sets.Count > 0)
+        {
+            return new RemoveEntryOutcome(RemoveEntryResult.NotEmpty, session);
+        }
+
+        var updated = session with
+        {
+            Entries = entries.Where((_, index) => index != entryIndex).ToArray(),
+        };
+
+        using var payload = SerializeSession(objectId, updated);
+        using var response = await container.ReplaceItemStreamAsync(
+            payload,
+            sessionId,
+            new PartitionKey(objectId),
+            new ItemRequestOptions { IfMatchEtag = etag, EnableContentResponseOnWrite = false },
+            cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.PreconditionFailed)
+        {
+            // A set was logged against this session between the read and the
+            // write — conceivably against this very entry, which is exactly
+            // what the emptiness check is there to protect. The client re-reads
+            // and decides again.
+            return new RemoveEntryOutcome(RemoveEntryResult.Conflict, null);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw Failure(response, $"Removing entry {entryIndex} from session {sessionId} failed.");
+        }
+
+        return new RemoveEntryOutcome(RemoveEntryResult.Applied, updated);
     }
 
     /// <summary>
@@ -1441,3 +1598,40 @@ public enum ReorderResult
 /// concurrent write the caller must re-read to see past.
 /// </summary>
 public readonly record struct ReorderOutcome(ReorderResult Result, GymSession? Session);
+
+/// <summary>How taking an exercise out of a session ended.</summary>
+public enum RemoveEntryResult
+{
+    /// <summary>The exercise was removed. The ordinary answer.</summary>
+    Applied,
+
+    /// <summary>
+    /// A retry of a removal that already landed. Success, the same as a
+    /// hot-path <see cref="PatchResult.AlreadyApplied"/>.
+    /// </summary>
+    AlreadyRemoved,
+
+    /// <summary>
+    /// The exercise still has sets logged against it. Not a stale client and
+    /// not something a re-read fixes: this API does not delete a logged set as
+    /// a side effect of anything, so the sets come off one at a time first.
+    /// </summary>
+    NotEmpty,
+
+    /// <summary>
+    /// The session does not match what the caller described — a different
+    /// entry count, or another exercise sitting at that index. Nothing was
+    /// written; re-read and decide again.
+    /// </summary>
+    Conflict,
+
+    /// <summary>No session with that id in this user's partition.</summary>
+    SessionNotFound,
+}
+
+/// <summary>
+/// A removal's result, with the session as it now stands. <c>Session</c> is
+/// null for <see cref="RemoveEntryResult.SessionNotFound"/> and for a
+/// concurrent write the caller must re-read to see past.
+/// </summary>
+public readonly record struct RemoveEntryOutcome(RemoveEntryResult Result, GymSession? Session);

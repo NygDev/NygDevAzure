@@ -1,5 +1,6 @@
 using System.Net;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Azure.Cosmos;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
@@ -223,12 +224,20 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
         });
 
     /// <summary>
-    /// Finish and submit: one patch setting the status, and nothing else.
+    /// Finish and submit: one patch setting the status — and, for a day that
+    /// plans nothing, the workout that was just finished becoming its plan.
     ///
-    /// That it is this small is the payoff for keeping the block map a query
-    /// rather than a denormalised field on the mesocycle. There is no second
-    /// document to keep in step, and a retried submit lands on a value that is
-    /// already there rather than counting anything twice.
+    /// The submit itself stays one idempotent patch on one document, which is
+    /// the payoff for keeping the block map a query rather than a denormalised
+    /// field on the mesocycle. What follows it is a separate decision about a
+    /// separate document, and it is deliberately downstream of the write that
+    /// matters: the session is submitted before any of it runs, and nothing it
+    /// finds can un-submit it.
+    ///
+    /// <c>planned</c> in the response says whether the day was written. It is
+    /// false on almost every submit — the day was already planned, by hand or
+    /// by the first session logged against it — and a client that reloads the
+    /// block after submitting does not need to read it at all.
     /// </summary>
     [Function("GymWorkoutSubmit")]
     public Task<IActionResult> Submit(
@@ -249,8 +258,112 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
 
             logger.LogInformation("Submitted session {SessionId}.", sessionId);
 
-            return new OkObjectResult(new { ok = true, id = sessionId, status = GymSession.Submitted });
+            bool planned;
+
+            try
+            {
+                planned = await PlanFromFirstWorkoutAsync(objectId, sessionId, token);
+            }
+            catch (CosmosException ex)
+            {
+                // The workout is submitted; this is the part nobody asked for.
+                // Answering 502 here would tell a client its session failed to
+                // submit when it did not, and the day is still plannable by
+                // hand or by the next workout logged against it.
+                logger.LogWarning(
+                    ex,
+                    "Planning the day from session {SessionId} failed after it was submitted.",
+                    sessionId);
+
+                planned = false;
+            }
+
+            return new OkObjectResult(new
+            {
+                ok = true,
+                id = sessionId,
+                status = GymSession.Submitted,
+                planned,
+            });
         });
+
+    /// <summary>
+    /// Plans an unplanned day from the workout just logged against it.
+    ///
+    /// A block can be created without planning a thing — the Plan tab asks for
+    /// a name, a length and some day labels, and days are free to be filled in
+    /// by training them. But every later week of an unplanned day pays for it:
+    /// Start seeds nothing, the logging screen has no target set count to show
+    /// against anything, and the same exercises are picked from the library
+    /// again from scratch. So the first workout on such a day becomes what it
+    /// prescribes, and week two opens with week one's exercises already in it.
+    ///
+    /// Only an <em>empty</em> day is written, and only from what was actually
+    /// lifted. That is the whole rule: this never edits a plan, never touches a
+    /// day someone typed, and has nothing to say about a block that was planned
+    /// properly in the first place.
+    ///
+    /// Three reads and at most one write, all of them after the submit has
+    /// already landed. The plan is read from the block rather than trusted from
+    /// the patch's filter alone so the ordinary case — a planned day, every
+    /// submit after the first — costs a point read and no write at all.
+    /// </summary>
+    private async Task<bool> PlanFromFirstWorkoutAsync(
+        string objectId,
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await store.ReadSessionAsync(objectId, sessionId, cancellationToken);
+
+        if (session is null)
+        {
+            return false;
+        }
+
+        var plan = session.AsPlan();
+
+        if (plan.Count == 0)
+        {
+            // Submitted with nothing logged in it. There is no workout here to
+            // plan a day from, and an empty plan is what the day already has.
+            return false;
+        }
+
+        var meso = await store.ReadMesocycleAsync(objectId, session.MesoId, cancellationToken);
+
+        // A block deleted under a session that was still open, or a day the
+        // block no longer has — editing a block does not move the sessions
+        // logged in it, so a session can outlive its own cell. Neither is worth
+        // an error on a submit that has already succeeded.
+        if (meso is null || session.DayIndex >= meso.Days.Count)
+        {
+            return false;
+        }
+
+        if (meso.Days[session.DayIndex].Plan.Count > 0)
+        {
+            return false;
+        }
+
+        var planned = await store.CaptureDayPlanAsync(
+            objectId,
+            session.MesoId,
+            session.DayIndex,
+            plan,
+            cancellationToken);
+
+        if (planned)
+        {
+            logger.LogInformation(
+                "Planned day {DayIndex} of {MesoId} from session {SessionId}: {Count} exercises.",
+                session.DayIndex,
+                session.MesoId,
+                sessionId,
+                plan.Count);
+        }
+
+        return planned;
+    }
 
     /// <summary>
     /// Removes a workout.

@@ -310,6 +310,117 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
         });
 
     /// <summary>
+    /// Takes an exercise back out of the session — the picker's undo.
+    ///
+    /// <c>?expectedEntryCount=</c> and <c>?exerciseName=</c> are both required,
+    /// and together they are the guard: the count says the caller's copy of the
+    /// session is current, and the name says which exercise it means, which an
+    /// index alone cannot once anything has been added or dragged.
+    ///
+    /// <strong>Only an entry with no sets can be removed.</strong> An exercise
+    /// that was lifted is a logged workout, and nothing in this API destroys
+    /// one as a side effect — the sets come off one at a time first, each
+    /// through its own guarded delete, and what is left is the thing that was
+    /// added by mistake. A request against an entry that still holds sets is a
+    /// <strong>409 <c>entry_not_empty</c></strong> and writes nothing.
+    /// </summary>
+    [Function("GymEntryRemove")]
+    public Task<IActionResult> RemoveEntry(
+        [HttpTrigger(
+            AuthorizationLevel.Anonymous,
+            "delete",
+            Route = "gym/workouts/{sessionId}/entries/{entryIndex:int}")] HttpRequest request,
+        string sessionId,
+        int entryIndex,
+        CancellationToken cancellationToken) =>
+        GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
+        {
+            if (!GymIds.IsSessionId(sessionId))
+            {
+                return GymEndpoint.Invalid($"'{sessionId}' is not a workout id.");
+            }
+
+            if (entryIndex < 0 || entryIndex >= GymLimits.MaxEntriesPerSession)
+            {
+                return GymEndpoint.Invalid($"'entryIndex' is {entryIndex}, outside 0 to "
+                    + $"{GymLimits.MaxEntriesPerSession - 1}.");
+            }
+
+            var raw = request.Query["expectedEntryCount"].FirstOrDefault();
+
+            if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var expected)
+                || expected < 1
+                || expected > GymLimits.MaxEntriesPerSession)
+            {
+                return GymEndpoint.Invalid(
+                    "'expectedEntryCount' is missing from the query string, or is not a whole "
+                    + $"number from 1 to {GymLimits.MaxEntriesPerSession}. It is how many exercises "
+                    + "the session held before this delete, and it is half of what keeps a retried "
+                    + "delete from removing an exercise added in between.");
+            }
+
+            if (entryIndex >= expected)
+            {
+                return GymEndpoint.Invalid(
+                    $"'entryIndex' is {entryIndex} and 'expectedEntryCount' is {expected}, so the "
+                    + "exercise being removed is not one the session is said to hold.");
+            }
+
+            var exerciseName = request.Query["exerciseName"].FirstOrDefault()?.Trim();
+
+            if (string.IsNullOrEmpty(exerciseName)
+                || exerciseName.Length > GymLimits.MaxExerciseNameLength)
+            {
+                return GymEndpoint.Invalid(
+                    "'exerciseName' is missing from the query string, or is longer than "
+                    + $"{GymLimits.MaxExerciseNameLength} characters. It is the exercise the caller "
+                    + "believes sits at 'entryIndex', and it is the other half of the guard: an "
+                    + "index alone cannot say which exercise a delete meant once the list has been "
+                    + "added to or dragged.");
+            }
+
+            var outcome = await store.RemoveEntryAsync(
+                objectId,
+                sessionId,
+                entryIndex,
+                exerciseName,
+                expected,
+                token);
+
+            return outcome.Result switch
+            {
+                RemoveEntryResult.Applied => new OkObjectResult(new
+                {
+                    ok = true,
+                    alreadyRemoved = false,
+                    entryIndex,
+                    entryCount = outcome.Session!.Entries.Count,
+                }),
+
+                RemoveEntryResult.AlreadyRemoved => new OkObjectResult(new
+                {
+                    ok = true,
+                    alreadyRemoved = true,
+                    entryIndex,
+                    entryCount = outcome.Session!.Entries.Count,
+                }),
+
+                RemoveEntryResult.SessionNotFound => GymWorkouts.NoSuchSession(sessionId),
+
+                RemoveEntryResult.NotEmpty => GymEndpoint.Failure(
+                    HttpStatusCode.Conflict,
+                    "entry_not_empty",
+                    $"'{exerciseName}' holds "
+                    + $"{outcome.Session!.Entries[entryIndex].Sets.Count.ToString(CultureInfo.InvariantCulture)} "
+                    + "logged sets, and removing an exercise does not delete them. Take the sets "
+                    + "back one at a time with DELETE /api/gym/workouts/{id}/entries/{i}/sets/{j} "
+                    + "first — an exercise with nothing logged against it is what this call is for."),
+
+                _ => EntryConflict(sessionId, entryIndex, exerciseName, expected),
+            };
+        });
+
+    /// <summary>
     /// The drag handle: moves one exercise from one position to another.
     ///
     /// <c>{from, to, exerciseName, expectedEntryCount}</c>. <c>to</c> is where
@@ -390,6 +501,31 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
                 };
             }
         });
+
+    /// <summary>
+    /// A removal's guard did not hold. Same shape as
+    /// <see cref="ReorderConflict"/> and for the same reason: what disagrees
+    /// may be the count or may be which exercise sits at the index, so the
+    /// answer points at a read rather than at a number.
+    /// </summary>
+    private static IActionResult EntryConflict(
+        string sessionId,
+        int entryIndex,
+        string exerciseName,
+        int expectedEntryCount) =>
+        new ObjectResult(new
+        {
+            ok = false,
+            error = "entry_conflict",
+            message = $"Session {sessionId} no longer matches this request: expected "
+                + $"{expectedEntryCount} exercises with '{exerciseName}' at position {entryIndex}. "
+                + "Nothing was written. Re-read the workout with GET /api/gym/workouts/{id} and "
+                + "remove it again from what it holds.",
+            entryIndex,
+        })
+        {
+            StatusCode = (int)HttpStatusCode.Conflict,
+        };
 
     /// <summary>
     /// A reorder's guard did not hold: the session no longer matches what the

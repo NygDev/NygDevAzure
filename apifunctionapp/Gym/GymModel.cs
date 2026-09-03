@@ -345,6 +345,56 @@ public sealed record GymSession(
 
     public SessionTotals Totals() => SessionTotals.Of(Entries);
 
+    /// <summary>
+    /// This session read as a plan: what was trained, and how many sets of it.
+    ///
+    /// It is what an unplanned day is planned from the first time it is
+    /// logged. Only exercises that were actually lifted count — an entry with
+    /// no sets was picked and abandoned, and prescribing it for the rest of the
+    /// block on that basis is the opposite of what happened.
+    ///
+    /// The same exercise logged under two entries is one planned exercise of
+    /// their sets combined, because that is the work that was done; the plan
+    /// has no way to say "twice" and no reason to want one. Both bounds are the
+    /// ones a hand-typed plan is held to, so a captured plan is nothing the
+    /// Plan tab could not have saved itself.
+    /// </summary>
+    public IReadOnlyList<PlannedExercise> AsPlan()
+    {
+        var plan = new List<PlannedExercise>();
+        var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in Entries)
+        {
+            if (entry.Sets.Count == 0)
+            {
+                continue;
+            }
+
+            if (seen.TryGetValue(entry.ExerciseName, out var at))
+            {
+                plan[at] = plan[at] with
+                {
+                    Sets = Math.Min(GymLimits.MaxSetsPerEntry, plan[at].Sets + entry.Sets.Count),
+                };
+
+                continue;
+            }
+
+            if (plan.Count == GymLimits.MaxPlannedPerDay)
+            {
+                break;
+            }
+
+            seen[entry.ExerciseName] = plan.Count;
+            plan.Add(new PlannedExercise(
+                entry.ExerciseName,
+                Math.Min(GymLimits.MaxSetsPerEntry, entry.Sets.Count)));
+        }
+
+        return plan;
+    }
+
     public object ToResponse() => new
     {
         id = Id,
