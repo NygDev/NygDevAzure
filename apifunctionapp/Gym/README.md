@@ -117,7 +117,7 @@ Everything Today and the block map need, in one call.
       {
         "dayIndex": 0,
         "label": "Upper A",
-        "plan": [{ "exerciseName": "Bench Press", "sets": 3, "reps": 8 }]
+        "plan": [{ "exerciseName": "Bench Press", "sets": 3 }]
       }
     ]
   },
@@ -153,8 +153,8 @@ A day may be a bare label, as above, or an object carrying what it prescribes:
   "weeks": 5,
   "days": [
     { "label": "Upper A", "plan": [
-      { "exerciseName": "Bench Press", "sets": 3, "reps": 8 },
-      { "exerciseName": "Barbell Row", "sets": 4, "reps": 10 }
+      { "exerciseName": "Bench Press", "sets": 3 },
+      { "exerciseName": "Barbell Row", "sets": 4 }
     ]},
     "Lower A"
   ]
@@ -169,11 +169,19 @@ shares it. That follows from days being labelled rather than scheduled, and it
 keeps a block one small document instead of up to 48 planned ones. Planning a
 single week differently — a deload week most of all — is what this gives up.
 
-Targets are **sets and reps only**. No target weight: the weight is what a
-session discovers, and a prescribed one is stale the moment it is beaten. Sets
-are bounded by the session's own cap and reps by its rep cap, so a plan cannot
-prescribe something the logging screen would refuse to record. At most
-20 exercises to a day.
+Targets are **a set count only**. No target weight and no target reps: both are
+what a session discovers, and a prescribed one is stale the moment it is beaten.
+Sets are bounded by the session's own cap, so a plan cannot prescribe something
+the logging screen would refuse to record. At most 20 exercises to a day.
+
+A `reps` sent on a planned exercise is **ignored**, not refused, and blocks
+written while reps were planned still carry one — the field is dead rather than
+wrong, so nothing needs backfilling. How hard a set should be is not planned
+either: the front end reads a target of reps left in the tank off the week's
+position in the block, ramping to none in the last training week and to a full
+tank through the final week, which it treats as a deload. That is a function of
+`weeks` and the session's `week`, both already on the wire, so the API neither
+stores nor sends it.
 
 ### `PATCH /gym/mesocycles/{mesoId}`
 

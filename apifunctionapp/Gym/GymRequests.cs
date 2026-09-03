@@ -290,7 +290,7 @@ internal static class GymRequests
     /// plan:
     ///
     /// <code>
-    /// { "label": "Upper A", "plan": [{ "exerciseName": "Bench Press", "sets": 3, "reps": 8 }] }
+    /// { "label": "Upper A", "plan": [{ "exerciseName": "Bench Press", "sets": 3 }] }
     /// </code>
     ///
     /// Position rather than an explicit <c>dayIndex</c> in either shape,
@@ -383,11 +383,15 @@ internal static class GymRequests
     /// <summary>
     /// The <c>plan</c> array on one day.
     ///
-    /// Targets are sets and reps and nothing else — no weight, by the same
-    /// reasoning <see cref="PlannedExercise"/> records: the weight is what the
-    /// session discovers, and a prescribed one is stale the moment it is beaten.
-    /// The bounds are the session's own, so a plan cannot prescribe something
-    /// the logging screen would refuse to record.
+    /// Targets are a number of sets and nothing else — no weight and no reps,
+    /// by the same reasoning <see cref="PlannedExercise"/> records: both are
+    /// what the session discovers, and a prescribed one is stale the moment it
+    /// is beaten. The bound is the session's own, so a plan cannot prescribe
+    /// something the logging screen would refuse to record.
+    ///
+    /// A <c>reps</c> sent alongside is ignored rather than refused. It is what
+    /// an older front end sends, and there is nothing to tell it: the plan it
+    /// saves is right in every respect that is still read.
     /// </summary>
     private static bool TryReadPlan(
         JsonElement day,
@@ -408,7 +412,7 @@ internal static class GymRequests
         if (property.ValueKind != JsonValueKind.Array)
         {
             error = $"Day {dayIndex} of 'days' has a 'plan' that is {property.ValueKind}, expected "
-                + "an array of {exerciseName, sets, reps} objects.";
+                + "an array of {exerciseName, sets} objects.";
             return false;
         }
 
@@ -429,7 +433,7 @@ internal static class GymRequests
             if (exercise.ValueKind != JsonValueKind.Object)
             {
                 error = $"Entry {position} of day {dayIndex}'s plan is {exercise.ValueKind}, "
-                    + "expected an {exerciseName, sets, reps} object.";
+                    + "expected an {exerciseName, sets} object.";
                 return false;
             }
 
@@ -439,14 +443,13 @@ internal static class GymRequests
                     GymLimits.MaxExerciseNameLength,
                     out var exerciseName,
                     out error)
-                || !GymJson.TryReadInt(exercise, "sets", 1, GymLimits.MaxSetsPerEntry, out var sets, out error)
-                || !GymJson.TryReadInt(exercise, "reps", 1, GymLimits.MaxReps, out var reps, out error))
+                || !GymJson.TryReadInt(exercise, "sets", 1, GymLimits.MaxSetsPerEntry, out var sets, out error))
             {
                 error = $"Entry {position} of day {dayIndex}'s plan: {error}";
                 return false;
             }
 
-            exercises.Add(new PlannedExercise(exerciseName, sets, reps));
+            exercises.Add(new PlannedExercise(exerciseName, sets));
             position++;
         }
 

@@ -1043,7 +1043,6 @@ public sealed class GymStore(Container container)
                     writer.WriteStartObject();
                     writer.WriteString("exerciseName", exercise.ExerciseName);
                     writer.WriteNumber("sets", exercise.Sets);
-                    writer.WriteNumber("reps", exercise.Reps);
                     writer.WriteEndObject();
                 }
 
@@ -1142,7 +1141,6 @@ public sealed class GymStore(Container container)
                     {
                         ["exerciseName"] = exercise.ExerciseName,
                         ["sets"] = exercise.Sets,
-                        ["reps"] = exercise.Reps,
                     })
                     .ToList(),
             })

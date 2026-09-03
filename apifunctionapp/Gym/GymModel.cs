@@ -83,23 +83,36 @@ internal static class GymLimits
 /// <summary>
 /// One exercise a day prescribes, and how much of it.
 ///
-/// Names plus target sets and reps, and deliberately not a target weight. Sets
-/// and reps are what a programme prescribes; the weight is what you discover on
-/// the day, and a prescribed one is wrong the moment you progress — it would
-/// need rewriting every block or it becomes noise on the screen.
+/// A name and a number of sets. Not a weight, and — since reps stopped being
+/// planned — not a rep count either. Both are the same mistake: they are what
+/// a session discovers, not what a programme decides. A prescribed weight is
+/// wrong the moment you progress past it, and a prescribed rep count is a
+/// number you either hit or quietly fudge, because the same bar is a different
+/// set on a different day.
+///
+/// What is left is the one thing a block really does decide: how much work.
+/// How hard each set is comes from the week — the front end reads a target of
+/// reps left in the tank off the position in the block, ramping to nothing in
+/// the last training week and to a full tank through the deload — and that is
+/// derived from <c>weeks</c>, so there is nothing here to store.
 ///
 /// The plan is not a promise. Nothing enforces it at logging time: a session
 /// seeded from a plan is an ordinary session whose entries happen to be there
 /// already, and the sets logged against it are whatever was actually lifted.
 /// </summary>
-public readonly record struct PlannedExercise(string ExerciseName, int Sets, int Reps)
+public readonly record struct PlannedExercise(string ExerciseName, int Sets)
 {
+    /// <summary>
+    /// Reads what is still planned. A block written while reps were planned
+    /// has a <c>reps</c> on every entry and it is simply not read — the field
+    /// is dead rather than wrong, so those blocks need no backfill and lose
+    /// nothing but a number that was never binding.
+    /// </summary>
     public static PlannedExercise Read(JsonElement element) => new(
         GymDocument.String(element, "exerciseName"),
-        GymDocument.Int32(element, "sets"),
-        GymDocument.Int32(element, "reps"));
+        GymDocument.Int32(element, "sets"));
 
-    public object ToResponse() => new { exerciseName = ExerciseName, sets = Sets, reps = Reps };
+    public object ToResponse() => new { exerciseName = ExerciseName, sets = Sets };
 }
 
 /// <summary>
