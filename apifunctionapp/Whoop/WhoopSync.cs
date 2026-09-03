@@ -1,12 +1,11 @@
 using System.Globalization;
 using System.Net;
-using ApiFunctionApp.Whoop;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 
-namespace ApiFunctionApp;
+namespace ApiFunctionApp.Whoop;
 
 /// <summary>
 /// Syncs WHOOP's collections — cycles, sleep, workouts, recovery — into Cosmos,

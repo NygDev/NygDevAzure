@@ -1,15 +1,14 @@
-using ApiFunctionApp.Running;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 
-namespace ApiFunctionApp;
+namespace ApiFunctionApp.Running;
 
 /// <summary>
 /// The rebuild of the marathon dashboard, four times a day: the whole
 /// document, from whatever is in Cosmos by the time it runs.
 ///
 /// It is the second half of the morning, deliberately on its own schedule
-/// rather than hanging off the end of <see cref="WhoopSyncTimer"/>. The two
+/// rather than hanging off the end of <see cref="Whoop.WhoopSyncTimer"/>. The two
 /// jobs fail for unrelated reasons — one talks to WHOOP, the other to Cosmos
 /// and blob storage — and separating them means a sync that fell over does not
 /// take the rebuild with it, a rebuild that fell over is a failed invocation of
@@ -35,7 +34,7 @@ public class RunningDashboardTimer(
     /// <summary>
     /// 00:15, 06:15, 12:15 and 18:15 UTC — fifteen minutes behind each WHOOP
     /// sync, in the same platform clock and with the same standing
-    /// indifference to daylight saving that <see cref="WhoopSyncTimer"/>
+    /// indifference to daylight saving that <see cref="Whoop.WhoopSyncTimer"/>
     /// explains.
     ///
     /// Fifteen rather than five: the sync runs on a ten-minute budget, so by

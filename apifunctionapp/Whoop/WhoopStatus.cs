@@ -1,11 +1,10 @@
 using System.Net;
-using ApiFunctionApp.Whoop;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 
-namespace ApiFunctionApp;
+namespace ApiFunctionApp.Whoop;
 
 /// <summary>
 /// The confirmation endpoint: proves the whole chain works end to end —

@@ -1,8 +1,7 @@
-using ApiFunctionApp.Whoop;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 
-namespace ApiFunctionApp;
+namespace ApiFunctionApp.Whoop;
 
 /// <summary>
 /// The unattended WHOOP sync: every collection into Cosmos, four times a day.
@@ -21,7 +20,7 @@ namespace ApiFunctionApp;
 /// Cosmos in hours rather than waiting for tomorrow.
 ///
 /// Storing is all it does. The marathon dashboard built from these workouts is
-/// rebuilt by <see cref="RunningDashboardTimer"/> a quarter of an hour later,
+/// rebuilt by <see cref="Running.RunningDashboardTimer"/> a quarter of an hour later,
 /// on a timer of its own, so that neither job's failure is reported as the
 /// other's.
 /// </summary>

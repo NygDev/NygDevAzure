@@ -1,10 +1,9 @@
-using ApiFunctionApp.Whoop;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 
-namespace ApiFunctionApp;
+namespace ApiFunctionApp.Whoop;
 
 /// <summary>
 /// Step one of the one-time WHOOP bootstrap: send a browser to WHOOP's consent

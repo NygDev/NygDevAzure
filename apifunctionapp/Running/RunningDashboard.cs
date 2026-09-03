@@ -1,5 +1,4 @@
 using System.Net;
-using ApiFunctionApp.Running;
 using Azure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -7,7 +6,7 @@ using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 
-namespace ApiFunctionApp;
+namespace ApiFunctionApp.Running;
 
 /// <summary>
 /// Rebuilds the running dashboard on demand, and answers with what it published.

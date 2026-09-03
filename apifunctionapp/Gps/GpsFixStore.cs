@@ -100,7 +100,7 @@ public sealed class GpsFixStore(Container container)
     /// resend upserts over it.
     ///
     /// The fixes are expected in ascending <c>ts</c> order and free of
-    /// duplicates — <see cref="ApiFunctionApp.GpsLocations"/> guarantees both —
+    /// duplicates — <see cref="GpsLocations"/> guarantees both —
     /// because that is what makes the segmentation deterministic, and with it
     /// the ids a resend rebuilds.
     /// </summary>

@@ -1,14 +1,13 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
-using ApiFunctionApp.Gps;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 
-namespace ApiFunctionApp;
+namespace ApiFunctionApp.Gps;
 
 /// <summary>
 /// Receives batches of location fixes from the phone and stores them in
