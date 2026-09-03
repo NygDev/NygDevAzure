@@ -56,6 +56,62 @@ public sealed class GymStore(Container container)
         """;
 
     /// <summary>
+    /// Every block this user has planned, newest first.
+    ///
+    /// The sort is on <c>c.id</c> and that is not incidental: a mesocycle id is
+    /// a ULID behind a constant prefix, so lexical order is creation order, and
+    /// newest-first costs the range index the system already keeps on id. It is
+    /// the same trick the session query plays with ISO dates, and the same
+    /// reason the data model leaves <c>createdAt</c> off the document.
+    /// </summary>
+    private const string MesocyclesQuery = """
+        SELECT c.id, c.name, c.weeks, c.days
+        FROM c
+        WHERE c.type = @type
+        ORDER BY c.id DESC
+        """;
+
+    /// <summary>
+    /// Which block every session belongs to, and whether it is finished.
+    ///
+    /// Two small fields per session and deliberately not a third: the block
+    /// list needs counts, and <c>c.entries</c> — the sets, the bulk of the
+    /// document — is what makes reading a block expensive. Projecting it here
+    /// would make opening the Plan tab cost more than opening a whole block's
+    /// History.
+    ///
+    /// Unfiltered by mesoId on purpose. One query counts every block at once,
+    /// where a per-block query would be one round trip per row on a screen that
+    /// exists to show all of them.
+    /// </summary>
+    private const string SessionOwnersQuery = """
+        SELECT c.mesoId, c.status
+        FROM c
+        WHERE c.type = @type
+        """;
+
+    /// <summary>
+    /// The ids of one block's sessions, for the cascade behind a block delete.
+    ///
+    /// Ids alone: this feeds a list of delete operations, so anything else on
+    /// the document would be read and thrown away.
+    /// </summary>
+    private const string SessionIdsQuery = """
+        SELECT c.id
+        FROM c
+        WHERE c.type = @type AND c.mesoId = @mesoId
+        """;
+
+    /// <summary>
+    /// How many operations go in one transactional batch.
+    ///
+    /// Cosmos caps a batch at 100, and the cascade below can exceed that — a
+    /// block is 48 cells but a cell holds up to ten sessions, so the ceiling is
+    /// 480 documents rather than 48.
+    /// </summary>
+    private const int MaxBatchOperations = 100;
+
+    /// <summary>
     /// How many sessions one calendar date may hold before the API stops
     /// suffixing and says so.
     ///
@@ -229,6 +285,218 @@ public sealed class GymStore(Container container)
         return true;
     }
 
+    /// <summary>
+    /// Every block this user has planned, with what is in each.
+    ///
+    /// Three reads for the whole screen: the pointer, one query for the blocks
+    /// and one for the sessions that belong to them. The second is unfiltered
+    /// and counts every block in a pass, because the alternative — a count
+    /// query per block — is a round trip per row on the one screen guaranteed
+    /// to have several.
+    ///
+    /// A user with no blocks gets an empty list rather than a failure. That is
+    /// the same first run <c>ReadCurrentMesoIdAsync</c> answers null for.
+    /// </summary>
+    public async Task<IReadOnlyList<MesocycleSummary>> ListMesocyclesAsync(
+        string objectId,
+        CancellationToken cancellationToken)
+    {
+        var currentMesoId = await ReadCurrentMesoIdAsync(objectId, cancellationToken);
+
+        var blocks = new List<Mesocycle>();
+
+        await RunQueryAsync(
+            objectId,
+            new QueryDefinition(MesocyclesQuery).WithParameter("@type", GymIds.MesocycleType),
+            "Reading this user's mesocycles failed.",
+            document => blocks.Add(Mesocycle.Read(document)),
+            cancellationToken);
+
+        var total = new Dictionary<string, int>(blocks.Count, StringComparer.Ordinal);
+        var submitted = new Dictionary<string, int>(blocks.Count, StringComparer.Ordinal);
+
+        await RunQueryAsync(
+            objectId,
+            new QueryDefinition(SessionOwnersQuery).WithParameter("@type", GymIds.SessionType),
+            "Counting this user's sessions failed.",
+            document =>
+            {
+                var mesoId = GymDocument.String(document, "mesoId");
+
+                total[mesoId] = total.GetValueOrDefault(mesoId) + 1;
+
+                if (GymDocument.String(document, "status") == GymSession.Submitted)
+                {
+                    submitted[mesoId] = submitted.GetValueOrDefault(mesoId) + 1;
+                }
+            },
+            cancellationToken);
+
+        return blocks
+            .Select(block => new MesocycleSummary(
+                block,
+                block.Id == currentMesoId,
+                total.GetValueOrDefault(block.Id),
+                submitted.GetValueOrDefault(block.Id)))
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Points the user at an existing block.
+    ///
+    /// The read in front of the write is the whole point of this method rather
+    /// than a bare upsert: a pointer naming a block that is not there is the
+    /// one state <c>GET /gym/mesocycles/current</c> cannot answer, and it
+    /// reports it as <c>dangling_mesocycle</c> — a 500 — because nothing in
+    /// this API is supposed to be able to produce it. Checking here is what
+    /// keeps that true.
+    ///
+    /// False means there is no such block in this user's partition.
+    /// </summary>
+    public async Task<bool> SwitchCurrentMesocycleAsync(
+        string objectId,
+        string mesoId,
+        CancellationToken cancellationToken)
+    {
+        if (await ReadMesocycleAsync(objectId, mesoId, cancellationToken) is null)
+        {
+            return false;
+        }
+
+        using var user = SerializeUser(objectId, mesoId);
+
+        using var response = await container.UpsertItemStreamAsync(
+            user,
+            new PartitionKey(objectId),
+            WriteOptions,
+            cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw Failure(response, $"Pointing this user at mesocycle {mesoId} failed.");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Deletes a block and every session logged in it.
+    ///
+    /// A cascade rather than a refusal, and that is a choice with a cost: there
+    /// is no undo and no soft delete anywhere in this API, so this is the one
+    /// call that can destroy training history. It exists because the
+    /// alternative — refusing while the block holds anything — makes clearing a
+    /// mis-created block a session-by-session chore. The confirmation that
+    /// names the count belongs in the front end, and the count comes back from
+    /// here so it can be checked against what was actually removed.
+    ///
+    /// <b>The order is load-bearing.</b> Sessions go first and the block
+    /// document last, so an interrupted cascade leaves a block that still lists
+    /// and still opens, holding fewer sessions than it did. Removing the block
+    /// first would leave its sessions in the partition with nothing pointing at
+    /// them — <c>ListSessionsAsync</c> filters on <c>mesoId</c>, so they would
+    /// be unreachable and still paid for. Re-running finishes the job either
+    /// way, which is what makes this safe to retry.
+    ///
+    /// It is not one transaction. Cosmos caps a batch at 100 operations and a
+    /// block can hold up to 480 sessions — 48 cells, ten sessions to a date —
+    /// so this is batches of 100 applied in order. Each batch is atomic; the
+    /// sequence is resumable rather than atomic, which the ordering above is
+    /// what makes acceptable.
+    /// </summary>
+    public async Task<MesocycleDeletion> DeleteMesocycleAsync(
+        string objectId,
+        string mesoId,
+        CancellationToken cancellationToken)
+    {
+        if (await ReadMesocycleAsync(objectId, mesoId, cancellationToken) is null)
+        {
+            return MesocycleDeletion.NotFound;
+        }
+
+        var sessionIds = new List<string>();
+
+        await RunQueryAsync(
+            objectId,
+            new QueryDefinition(SessionIdsQuery)
+                .WithParameter("@type", GymIds.SessionType)
+                .WithParameter("@mesoId", mesoId),
+            $"Reading the sessions of mesocycle {mesoId} failed.",
+            document => sessionIds.Add(GymDocument.String(document, "id")),
+            cancellationToken);
+
+        var partition = new PartitionKey(objectId);
+
+        for (var offset = 0; offset < sessionIds.Count; offset += MaxBatchOperations)
+        {
+            var chunk = sessionIds.Skip(offset).Take(MaxBatchOperations).ToArray();
+            var batch = container.CreateTransactionalBatch(partition);
+
+            foreach (var sessionId in chunk)
+            {
+                batch.DeleteItem(sessionId);
+            }
+
+            using var response = await batch.ExecuteAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new CosmosException(
+                    $"Deleting {chunk.Length} sessions of mesocycle {mesoId} failed. The block "
+                    + "itself is untouched, so nothing is orphaned and the delete can be retried. "
+                    + response.ErrorMessage,
+                    response.StatusCode,
+                    subStatusCode: 0,
+                    activityId: response.ActivityId,
+                    requestCharge: response.RequestCharge);
+            }
+        }
+
+        // Deleting the block you are standing in has to leave the pointer
+        // somewhere real. The newest remaining block is the least surprising
+        // answer — it is the one the list shows first — and when there is none
+        // the property comes off entirely, which is the first-run state every
+        // screen already handles.
+        var currentMesoId = await ReadCurrentMesoIdAsync(objectId, cancellationToken);
+        var repointing = currentMesoId == mesoId;
+        string? newCurrent = null;
+
+        if (repointing)
+        {
+            var remaining = await ListMesocyclesAsync(objectId, cancellationToken);
+
+            newCurrent = remaining
+                .Select(summary => summary.Block.Id)
+                .FirstOrDefault(id => id != mesoId);
+        }
+
+        var final = container.CreateTransactionalBatch(partition);
+        final.DeleteItem(GymIds.Mesocycle(mesoId));
+
+        using var pointer = repointing ? SerializeUser(objectId, newCurrent) : null;
+
+        if (pointer is not null)
+        {
+            final.UpsertItemStream(pointer);
+        }
+
+        using var finalResponse = await final.ExecuteAsync(cancellationToken);
+
+        if (!finalResponse.IsSuccessStatusCode)
+        {
+            throw new CosmosException(
+                $"Removing mesocycle {mesoId} failed after its {sessionIds.Count} sessions were "
+                + "deleted. The block is still there and still current; retrying the delete "
+                + "finishes it. " + finalResponse.ErrorMessage,
+                finalResponse.StatusCode,
+                subStatusCode: 0,
+                activityId: finalResponse.ActivityId,
+                requestCharge: finalResponse.RequestCharge);
+        }
+
+        return new MesocycleDeletion(true, sessionIds.Count, newCurrent);
+    }
+
     // -----------------------------------------------------------------------
     // Sessions
     // -----------------------------------------------------------------------
@@ -336,52 +604,16 @@ public sealed class GymStore(Container container)
         string mesoId,
         CancellationToken cancellationToken)
     {
-        var query = new QueryDefinition(SessionsQuery)
-            .WithParameter("@type", GymIds.SessionType)
-            .WithParameter("@mesoId", mesoId);
-
-        var options = new QueryRequestOptions
-        {
-            PartitionKey = new PartitionKey(objectId),
-
-            // A block is 48 documents at the outside — eight weeks of six days
-            // — so one page is the whole answer and the iterator below runs
-            // once.
-            MaxItemCount = 100,
-        };
-
         var sessions = new List<SessionSummary>();
 
-        // The stream iterator rather than the typed one, for the reason the
-        // rest of this app uses streams: the CosmosClient still serializes with
-        // Newtonsoft by default, and a document read through it would be
-        // reshaped by that serializer's settings on the way past.
-        using var iterator = container.GetItemQueryStreamIterator(query, requestOptions: options);
-
-        while (iterator.HasMoreResults)
-        {
-            using var response = await iterator.ReadNextAsync(cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                throw Failure(response, $"Reading the sessions of mesocycle {mesoId} failed.");
-            }
-
-            using var page = await JsonDocument.ParseAsync(
-                response.Content,
-                cancellationToken: cancellationToken);
-
-            if (!page.RootElement.TryGetProperty("Documents", out var documents)
-                || documents.ValueKind != JsonValueKind.Array)
-            {
-                continue;
-            }
-
-            foreach (var document in documents.EnumerateArray())
-            {
-                sessions.Add(SessionSummary.Read(document));
-            }
-        }
+        await RunQueryAsync(
+            objectId,
+            new QueryDefinition(SessionsQuery)
+                .WithParameter("@type", GymIds.SessionType)
+                .WithParameter("@mesoId", mesoId),
+            $"Reading the sessions of mesocycle {mesoId} failed.",
+            document => sessions.Add(SessionSummary.Read(document)),
+            cancellationToken);
 
         return sessions;
     }
@@ -657,6 +889,66 @@ public sealed class GymStore(Container container)
     /// <summary>
     /// A point read, or null when there is nothing there. The caller disposes.
     /// </summary>
+    /// <summary>
+    /// Runs a single-partition query and hands each document to the caller.
+    ///
+    /// The stream iterator rather than the typed one, for the reason the rest
+    /// of this app uses streams: the CosmosClient still serializes with
+    /// Newtonsoft by default, and a document read through it would be reshaped
+    /// by that serializer's settings on the way past.
+    ///
+    /// The callback runs inside the page's <c>using</c>, and that is not a
+    /// style choice. A JsonElement is a view onto its JsonDocument, so handing
+    /// one back out of here — by collecting them into a list, or by yielding —
+    /// would hand back a pointer into a buffer that has already gone back to
+    /// the pool. Reading what is wanted while the page is alive is what keeps
+    /// that from being possible to get wrong.
+    /// </summary>
+    private async Task RunQueryAsync(
+        string objectId,
+        QueryDefinition query,
+        string failureMessage,
+        Action<JsonElement> onDocument,
+        CancellationToken cancellationToken)
+    {
+        var options = new QueryRequestOptions
+        {
+            PartitionKey = new PartitionKey(objectId),
+
+            // A block is 48 documents at the outside — eight weeks of six days
+            // — so one page is usually the whole answer and the iterator below
+            // runs once.
+            MaxItemCount = 100,
+        };
+
+        using var iterator = container.GetItemQueryStreamIterator(query, requestOptions: options);
+
+        while (iterator.HasMoreResults)
+        {
+            using var response = await iterator.ReadNextAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw Failure(response, failureMessage);
+            }
+
+            using var page = await JsonDocument.ParseAsync(
+                response.Content,
+                cancellationToken: cancellationToken);
+
+            if (!page.RootElement.TryGetProperty("Documents", out var documents)
+                || documents.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            foreach (var document in documents.EnumerateArray())
+            {
+                onDocument(document);
+            }
+        }
+    }
+
     private async Task<JsonDocument?> ReadDocumentAsync(
         string objectId,
         string documentId,
@@ -683,8 +975,14 @@ public sealed class GymStore(Container container)
     /// <summary>
     /// The pointer document. One point read answers "which block am I in",
     /// which is the first thing every screen needs, and that is its whole job.
+    ///
+    /// A null <paramref name="mesoId"/> writes the document without the
+    /// property rather than with a null in it, because that is the shape
+    /// <see cref="ReadCurrentMesoIdAsync"/> already reads as a first run. It
+    /// happens when the last block is deleted, and it puts the user back on the
+    /// same empty state they started from instead of a third case.
     /// </summary>
-    private static MemoryStream SerializeUser(string objectId, string mesoId)
+    private static MemoryStream SerializeUser(string objectId, string? mesoId)
     {
         var payload = new MemoryStream();
 
@@ -694,7 +992,12 @@ public sealed class GymStore(Container container)
             writer.WriteString("id", GymIds.User(objectId));
             writer.WriteString("objectId", objectId);
             writer.WriteString("type", GymIds.UserType);
-            writer.WriteString("currentMesoId", mesoId);
+
+            if (mesoId is not null)
+            {
+                writer.WriteString("currentMesoId", mesoId);
+            }
+
             writer.WriteEndObject();
         }
 
@@ -832,6 +1135,22 @@ public sealed class GymStore(Container container)
 /// What Start did: the session to log into, and whether it was already open.
 /// A null session means the date has as many sessions as it is allowed.
 /// </summary>
+/// <summary>
+/// What a block delete removed, and where it left the user.
+///
+/// <c>NewCurrentMesoId</c> is null both when nothing was repointed — the
+/// deleted block was not the current one — and when there is no block left to
+/// point at. The endpoint tells those apart from <c>Found</c> and the request
+/// itself; nothing downstream needs to.
+/// </summary>
+public readonly record struct MesocycleDeletion(
+    bool Found,
+    int SessionsDeleted,
+    string? NewCurrentMesoId)
+{
+    public static MesocycleDeletion NotFound => new(false, 0, null);
+}
+
 public readonly record struct SessionCreation(GymSession? Session, bool Resumed);
 
 /// <summary>How a guarded patch ended.</summary>

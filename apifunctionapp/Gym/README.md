@@ -147,6 +147,91 @@ no-op rather than an error. **200** with the updated mesocycle.
 Editing weeks or days never deletes a workout — sessions are keyed on their date
 rather than their position, so cells outside the new bounds are simply hidden.
 
+### `GET /gym/mesocycles`
+
+Every block this user has planned, newest first — the Plan tab's block list.
+
+```jsonc
+{
+  "ok": true,
+  "mesocycles": [
+    {
+      "id": "01k4…",
+      "name": "Meso 3 — Upper/Lower",
+      "weeks": 5,
+      "days": [{ "dayIndex": 0, "label": "Upper A" }],
+      "isCurrent": true,
+      "sessionCount": 14,
+      "submittedCount": 13
+    }
+  ]
+}
+```
+
+An empty array is a **first run**, the same as `"mesocycle": null` on
+`/current`. Sorted by id, which is a ULID, so newest-first costs nothing.
+
+The two counts are there so the delete below can say what it is about to take.
+Volume is deliberately not — it needs the sets, and the sets are the expensive
+half of a session document. A confirmation that wants to say "8.4t of recorded
+volume" reads `GET /gym/workouts?mesoId=` for the one block it is asking about,
+rather than every block paying for it on every list.
+
+### `PUT /gym/mesocycles/current`
+
+```jsonc
+{ "mesoId": "01k4…" }
+```
+
+Points the user at an existing block. **200** with `{ok, mesocycle}`.
+
+Creating a block already switches to it in the same transaction, so this exists
+for the case that had no answer before there was a list: opening one of the
+others. Idempotent — switching to the block you are on writes what is already
+there.
+
+**404 `no_such_mesocycle`** if the id is not in this user's log. The read in
+front of the write is the point: a pointer naming a block that is not there is
+the one state `/current` cannot answer, and it reports that as a 500
+`dangling_mesocycle` precisely because nothing here is supposed to produce it.
+
+### `DELETE /gym/mesocycles/{mesoId}`
+
+Deletes a block **and every session logged in it**.
+
+```jsonc
+{ "ok": true, "id": "01k4…", "deleted": true, "sessionsDeleted": 14, "currentMesoId": "01k3…" }
+```
+
+Read that cascade before calling it. Everywhere else this API goes out of its
+way not to destroy a logged workout — re-logging a day files a second session
+rather than overwriting the first, because losing one to a mistyped tap is the
+worse failure. This call is the deliberate exception, and it is deliberate
+because refusing while the block holds anything would make clearing a
+mis-created block a session-by-session chore.
+
+**So the confirmation is the client's, and it is not optional.** There is no
+undo here and no soft delete anywhere in this API. `sessionCount` on the list
+above is what a confirmation names; `GET /gym/workouts?mesoId=` is where the
+volume behind it comes from.
+
+`currentMesoId` says where the pointer landed. Deleting the block you are
+standing in repoints it at the newest block left, or clears it when there is
+none — which is the first-run state rather than a broken one, so the field is
+`null` both when nothing moved and when nothing is left. Either way it is there
+so the client does not have to guess whether to reload.
+
+**Safe to retry.** Sessions are deleted first and the block document last, so
+an interrupted cascade leaves a block that still lists and still opens holding
+fewer sessions; a second call finishes it. A call for a block already gone is a
+**404 `no_such_mesocycle`**, which after a lost response is the retry finding
+the first one finished.
+
+It is batched rather than atomic — Cosmos caps a transactional batch at 100
+operations and a block can hold up to 480 sessions, ten to a date across 48
+cells. Each batch is atomic; the sequence is resumable, which the ordering
+above is what makes acceptable.
+
 ### `POST /gym/workouts` — Start
 
 ```jsonc
@@ -239,6 +324,13 @@ Removes a workout — the answer to the duplicate a cell can now collect.
 ## Deliberately absent
 
 - **`GET /exercises`** — see above; it is a CDN file.
+- **Copying a block.** There is no copy route and does not need to be one:
+  `POST /gym/mesocycles` already takes a name, a week count and day labels, so
+  copying is the client sending back the shape it is looking at. The new block
+  becomes current in the same transaction, which is what copying one is for.
+- **Undoing a block delete.** Nothing here is soft-deleted, so there is nothing
+  to undo with. The count on the list is what makes the confirmation
+  answerable, and the confirmation is the whole safety mechanism.
 - **Removing an exercise from a session.** Sets can be taken back one at a time;
   an entry cannot. The prototype has no such control either, so rather than
   invent the semantics it is left out — an entry with no sets contributes

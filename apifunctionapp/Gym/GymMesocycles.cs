@@ -178,4 +178,152 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
                     : new OkObjectResult(new { ok = true, mesocycle = updated.ToResponse() });
             }
         });
+
+    /// <summary>
+    /// Every block this user has planned, newest first.
+    ///
+    /// This is the Plan tab's block list, and the three things it exists to
+    /// support are the three things a row carries beyond the plan itself:
+    /// <c>isCurrent</c> so the one being trained is marked rather than guessed
+    /// at, and the two counts so "delete this block" can say what goes with it
+    /// before it goes.
+    ///
+    /// An empty list is a first run, the same as a null mesocycle on
+    /// <c>/current</c>. There is no 404 here for the same reason there is none
+    /// there: having planned nothing yet is the state the Plan tab is for.
+    /// </summary>
+    [Function("GymMesocyclesList")]
+    public Task<IActionResult> List(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "gym/mesocycles")] HttpRequest request,
+        CancellationToken cancellationToken) =>
+        GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
+        {
+            var blocks = await store.ListMesocyclesAsync(objectId, token);
+
+            return new OkObjectResult(new
+            {
+                ok = true,
+                mesocycles = blocks.Select(block => block.ToResponse()).ToArray(),
+            });
+        });
+
+    /// <summary>
+    /// Points the user at an existing block.
+    ///
+    /// Creating a block already switches to it, in the same transaction, which
+    /// is why there was no separate call for this until there was a list to
+    /// switch from. Now there is: a block you can see and cannot open is worse
+    /// than one you cannot see.
+    ///
+    /// PUT rather than POST because it replaces a value rather than adding
+    /// one, and it is idempotent — switching to the block you are already on
+    /// is a write that lands on what is already there.
+    /// </summary>
+    [Function("GymMesocyclesSetCurrent")]
+    public Task<IActionResult> SetCurrent(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "gym/mesocycles/current")] HttpRequest request,
+        CancellationToken cancellationToken) =>
+        GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
+        {
+            var (body, rejection) = await GymEndpoint.ReadBodyAsync(request, token);
+
+            if (body is null)
+            {
+                return rejection!;
+            }
+
+            using (body)
+            {
+                if (!GymRequests.TryReadCurrentMesocycle(body.RootElement, out var mesoId, out var error))
+                {
+                    return GymEndpoint.Invalid(error);
+                }
+
+                if (!await store.SwitchCurrentMesocycleAsync(objectId, mesoId, token))
+                {
+                    return GymEndpoint.Failure(
+                        HttpStatusCode.NotFound,
+                        "no_such_mesocycle",
+                        $"There is no mesocycle {mesoId} in this user's training log, so it cannot "
+                        + "be made the current one. GET /api/gym/mesocycles lists the ids that exist.");
+                }
+
+                var mesocycle = await store.ReadMesocycleAsync(objectId, mesoId, token);
+
+                return mesocycle is null
+                    ? GymEndpoint.Failure(
+                        HttpStatusCode.NotFound,
+                        "no_such_mesocycle",
+                        $"Mesocycle {mesoId} was made current and then could not be read back.")
+                    : new OkObjectResult(new { ok = true, mesocycle = mesocycle.ToResponse() });
+            }
+        });
+
+    /// <summary>
+    /// Deletes a block and every session logged in it.
+    ///
+    /// The cascade is the part to understand before calling this. Everywhere
+    /// else, this API goes out of its way not to destroy a logged workout —
+    /// re-logging a day files a second session rather than overwriting the
+    /// first, precisely because losing one to a mistyped tap is the worse
+    /// failure. This call is the deliberate exception, and it is deliberate
+    /// because the alternative makes clearing a mis-created block a
+    /// session-by-session chore.
+    ///
+    /// So the confirmation is the client's job and it is not optional.
+    /// <c>GET /api/gym/mesocycles</c> carries the session count for exactly
+    /// this, and <c>GET /api/gym/workouts?mesoId=</c> has the volume behind it
+    /// if the confirmation wants to say what is being thrown away in kilos
+    /// rather than in rows. There is no undo here and no soft delete anywhere
+    /// in this API.
+    ///
+    /// Safe to retry. An interrupted cascade leaves the block in place holding
+    /// fewer sessions, so a second call finishes it, and a call for a block
+    /// that is already gone is a 404 rather than damage.
+    ///
+    /// Deleting the current block repoints the user at the newest block left,
+    /// or clears the pointer when there is none — which is the first-run state,
+    /// not a broken one. The response says where it landed so the client does
+    /// not have to guess whether to reload.
+    /// </summary>
+    [Function("GymMesocyclesDelete")]
+    public Task<IActionResult> Delete(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "gym/mesocycles/{mesoId}")] HttpRequest request,
+        string mesoId,
+        CancellationToken cancellationToken) =>
+        GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
+        {
+            if (!GymIds.IsWellFormed(mesoId))
+            {
+                return GymEndpoint.Invalid(
+                    $"'{mesoId}' is not a mesocycle id. They are the ids this API hands back from "
+                    + "POST /api/gym/mesocycles, not names.");
+            }
+
+            var deletion = await store.DeleteMesocycleAsync(objectId, mesoId, token);
+
+            if (!deletion.Found)
+            {
+                return GymEndpoint.Failure(
+                    HttpStatusCode.NotFound,
+                    "no_such_mesocycle",
+                    $"There is no mesocycle {mesoId} in this user's training log. If a delete was "
+                    + "retried after a lost response, this is the retry finding the first one "
+                    + "finished.");
+            }
+
+            logger.LogInformation(
+                "Deleted mesocycle {MesoId} and {SessionCount} sessions with it.",
+                mesoId,
+                deletion.SessionsDeleted);
+
+            return new OkObjectResult(new
+            {
+                ok = true,
+                id = mesoId,
+                deleted = true,
+                sessionsDeleted = deletion.SessionsDeleted,
+                currentMesoId = deletion.NewCurrentMesoId,
+            });
+        });
 }

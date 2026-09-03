@@ -100,6 +100,38 @@ internal static class GymRequests
     }
 
     /// <summary>
+    /// <c>PUT /api/gym/mesocycles/current</c> — the Plan tab switching blocks.
+    ///
+    /// The id goes in the body rather than in the route because the route is
+    /// the thing being set: <c>gym/mesocycles/current</c> is the pointer, and
+    /// PUT replaces what it names. It also keeps the literal segment from
+    /// competing with <c>gym/mesocycles/{mesoId}</c> for the same verb.
+    /// </summary>
+    public static bool TryReadCurrentMesocycle(
+        JsonElement body,
+        out string mesoId,
+        out string error)
+    {
+        // 255 is the id ceiling Cosmos itself imposes, and the same bound
+        // GymIds.IsWellFormed checks below. Anything this long is not an id
+        // this API handed out, but rejecting it for length says so more
+        // usefully than rejecting it for shape.
+        if (!GymJson.TryReadString(body, "mesoId", 255, out mesoId, out error))
+        {
+            return false;
+        }
+
+        if (!GymIds.IsWellFormed(mesoId))
+        {
+            error = $"'{mesoId}' is not a mesocycle id. They are the ids this API hands back from "
+                + "POST /api/gym/mesocycles and GET /api/gym/mesocycles, not names.";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// <c>POST /api/gym/workouts</c> — Start.
     ///
     /// The mesocycle is not in the body and is not meant to be: the server

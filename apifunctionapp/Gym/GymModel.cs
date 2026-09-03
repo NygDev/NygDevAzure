@@ -115,6 +115,41 @@ public sealed record Mesocycle(string Id, string Name, int Weeks, IReadOnlyList<
 }
 
 /// <summary>
+/// A block as the Plan tab's list sees it: the plan, whether it is the one
+/// being trained, and how much is in it.
+///
+/// The counts are what make the two destructive actions on that screen
+/// answerable — "delete this block" has to be able to say what goes with it,
+/// and a row that reads "5 weeks · 4 days · 12 logged" is the difference
+/// between recognising a block and guessing at it. They are counted rather
+/// than stored, from a query that projects <c>mesoId</c> and <c>status</c> and
+/// nothing else: no <c>entries</c>, so listing every block costs a fraction of
+/// what reading one of them does.
+///
+/// Volume is deliberately not here. It needs the sets, and the sets are the
+/// expensive half of a session document — the delete confirmation fetches it
+/// for one block through <c>GET /gym/workouts?mesoId=</c> when it is about to
+/// be needed, rather than every block paying for it on every list.
+/// </summary>
+public readonly record struct MesocycleSummary(
+    Mesocycle Block,
+    bool IsCurrent,
+    int SessionCount,
+    int SubmittedCount)
+{
+    public object ToResponse() => new
+    {
+        id = Block.Id,
+        name = Block.Name,
+        weeks = Block.Weeks,
+        days = Block.Days.Select(day => new { dayIndex = day.DayIndex, label = day.Label }).ToArray(),
+        isCurrent = IsCurrent,
+        sessionCount = SessionCount,
+        submittedCount = SubmittedCount,
+    };
+}
+
+/// <summary>
 /// One logged set. No id and no order: array position is the order, and the
 /// patch path that appends one addresses by index.
 /// </summary>
