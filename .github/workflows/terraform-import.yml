@@ -1,14 +1,16 @@
 name: Terraform Import
 
-# One-shot. Adopts two things that were created by hand into terraform state:
-# the `data` container on nygdevcdn, and the Storage Blob Data Contributor
-# assignment on it for id-nygdev-api.
+# One-shot. Adopts three things that were created outside terraform into its
+# state: the `data` container on nygdevcdn, the Storage Blob Data Contributor
+# assignment on it for id-nygdev-api, and the nygdevgym Static Web App.
 #
-# Both are declared in the configuration — terraform/cdn.tf and
-# terraform/consumption.tf — but neither azurerm_storage_container nor
-# azurerm_role_assignment adopts something that already exists. Each fails the
-# apply instead. So the state has to be told about them once, and this is that
-# once.
+# All three are declared in the configuration — terraform/cdn.tf,
+# terraform/consumption.tf and terraform/staticsites.tf — but none of
+# azurerm_storage_container, azurerm_role_assignment or azurerm_static_web_app
+# adopts something that already exists. Each fails the apply instead, with "a
+# resource with the ID ... already exists - to be managed via Terraform this
+# resource needs to be imported into the State". So the state has to be told
+# about them once, and this is that once.
 #
 # Delete this workflow after it has run green. It is a migration rather than a
 # pipeline: from then on the ordinary Terraform Apply workflow manages both
@@ -186,9 +188,39 @@ jobs:
             -var="admin_username=${{ secrets.AZURE_VM_USERNAME }}" \
             azurerm_role_assignment.api_cdn_data "$ROLE_ID"
 
-      # The point of the run. Read this before applying anything: neither
-      # imported resource should be replaced, and if container_access_type is
-      # changing, that is the container having been made private.
+      # The Static Web App exists because it was created ahead of the front
+      # end rather than by an apply — terraform/staticsites.tf declares it so
+      # the API's CORS list has an origin to name, and something made it before
+      # this configuration got the chance.
+      #
+      # Its id is looked up rather than written down, for the same reason the
+      # two above are: the resource group is a variable with a default, and a
+      # hardcoded id that disagrees with it would import the wrong thing
+      # rather than fail.
+      - name: 'Import the gym Static Web App'
+        working-directory: terraform
+        run: |
+          set -euo pipefail
+
+          if grep -qxF 'azurerm_static_web_app.nygdevgym' <<< "$(terraform state list)"; then
+            echo "azurerm_static_web_app.nygdevgym is already in state; nothing to do."
+            exit 0
+          fi
+
+          SWA_ID=$(az staticwebapp show             --name nygdevgym             --resource-group rg-nygdev-web             --query id --output tsv)
+
+          if [ -z "$SWA_ID" ]; then
+            echo "::error::No Static Web App named nygdevgym in rg-nygdev-web. If it was never created, remove this step and let the apply create it."
+            exit 1
+          fi
+
+          echo "static web app: $SWA_ID"
+
+          terraform import             -var="home_ip=$HOME_IP"             -var="ssh_public_key=$SSH_PUBLIC_KEY"             -var="admin_username=${{ secrets.AZURE_VM_USERNAME }}"             azurerm_static_web_app.nygdevgym "$SWA_ID"
+
+      # The point of the run. Read this before applying anything: no imported
+      # resource should be replaced, and if container_access_type is changing,
+      # that is the container having been made private.
       - name: 'Terraform Plan'
         working-directory: terraform
         run: |

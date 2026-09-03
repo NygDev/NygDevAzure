@@ -146,13 +146,17 @@ resource "azurerm_cosmosdb_sql_container" "gym" {
   # write flat in the number of sets already logged. Under this policy a
   # set-tap indexes nothing at all.
   #
-  # /id is included explicitly rather than assumed: excluding /* leaves only
-  # the system paths indexed, and History's sort depends on id carrying a range
-  # index. There is deliberately no composite index — session ids are ISO dates,
-  # so newest-first is ORDER BY c.id DESC, a single-property sort a range index
-  # already serves. Composite indexes are only required for multi-property
-  # ORDER BY, which this shape avoids. Grouping into weeks happens off the
-  # week field, client-side.
+  # /id is deliberately absent, and cannot be added: Cosmos rejects a policy
+  # that names it, with "the specified path '/id/?' could not be accepted
+  # because it overrides system property 'id'". It is a system property with an
+  # index of its own that the policy gets no say in — which is also why
+  # excluding /* does not take it away, and why History's ORDER BY c.id DESC is
+  # still served under this policy.
+  #
+  # There is no composite index either. Session ids are ISO dates, so
+  # newest-first is a single-property sort; composite indexes are only required
+  # for multi-property ORDER BY, which this shape avoids. Grouping into weeks
+  # happens off the week field, client-side.
   #
   # This is an in-place update rather than a replacement: Cosmos reindexes in
   # the background on spare throughput and keeps serving reads throughout.
@@ -165,10 +169,6 @@ resource "azurerm_cosmosdb_sql_container" "gym" {
 
     included_path {
       path = "/mesoId/?"
-    }
-
-    included_path {
-      path = "/id/?"
     }
 
     excluded_path {
