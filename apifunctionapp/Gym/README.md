@@ -98,6 +98,37 @@ it. The source is `gym/exercises.json` in this repository; the
 Custom exercise names are not in it and never will be: they are the user's, so
 they post inline with the entry.
 
+## The built-in day templates are not here either
+
+Same file, same reasoning, one blob along:
+
+```
+https://nygdevcdn.blob.core.windows.net/data/gym-templates.json
+```
+
+A **day template** is a named plan — `Push`, `Lower A` — that the Plan tab drops
+into a day of a block. The ones that ship are identical for every user, so they
+are a blob; the ones a user saves are theirs, so they are the four routes below.
+The front end reads both and shows them in one picker. Source is
+`gym/templates.json` in this repository and `gym_template_library_url` is the
+authority on the URL.
+
+```jsonc
+{
+  "version": "2026-09-04",
+  "templates": [
+    {
+      "id": "builtin_push",
+      "name": "Push",
+      "plan": [{ "exerciseName": "Bench Press", "sets": 4 }]
+    }
+  ]
+}
+```
+
+The id prefix is what tells the two apart on the client: `builtin_` from this
+file, `template_` from the API. Only the second kind can be replaced or deleted.
+
 ---
 
 ## Routes
@@ -286,6 +317,62 @@ It is batched rather than atomic — Cosmos caps a transactional batch at 100
 operations and a block can hold up to 480 sessions, ten to a date across 48
 cells. Each batch is atomic; the sequence is resumable, which the ordering
 above is what makes acceptable.
+
+### Day templates
+
+A template is `{id, name, plan}`, where `plan` is exactly what a day's is —
+`[{exerciseName, sets}]`. That is not a coincidence: **applying a template is a
+copy**, so there is no route here that writes one into a block and there is not
+meant to be. The Plan tab already holds the whole block as a local draft and
+already sends `days` back wholesale on Save, so dropping a template into a day
+is an array assignment on the client followed by the PATCH that was going to
+happen anyway. A route for it would be a second way to write `days`, racing the
+first.
+
+The consequence worth knowing: nothing on a block records where a day's plan
+came from. Renaming or deleting a template cannot reach back into a block filled
+from it, which is what makes both safe to do with no confirmation and no
+cascade — the opposite end of the scale from `DELETE /gym/mesocycles/{id}`.
+
+#### `GET /gym/templates`
+
+The user's own, newest first. `{ok: true, templates: [...]}`. An empty array is
+ordinary rather than a first run: the picker is not empty without them, because
+the built-ins come from the CDN regardless.
+
+#### `POST /gym/templates`
+
+```jsonc
+{ "name": "Push", "plan": [{ "exerciseName": "Bench Press", "sets": 4 }] }
+```
+
+**201** with `{ok, template}`, `id` minted as `template_{ULID}`.
+
+An **empty `plan` is refused**, unlike a day's. A day with nothing planned is the
+ordinary starting state — you name it before you fill it — but a template *is*
+the exercises it drops into a day, so an empty one is a name that does nothing.
+
+Names are not unique and nothing here checks them: two templates called "Push"
+is a thing a person can want, and the id is the identity. The front end's own
+convention is the narrower one — saving under a name you already have re-saves
+that template through the PUT below rather than filing a near-duplicate beside
+it — and that is the client's reading, not a rule.
+
+**409 `template_limit`** at 50 saved templates. A guard against a client saving
+in a loop, in the same spirit as `date_full`.
+
+#### `PUT /gym/templates/{templateId}`
+
+Same body. Both fields are always sent — a template is two of them — so `plan`
+replaces wholesale and there is no partial-edit PATCH the way there is on a
+mesocycle. **200** with `{ok, template}`.
+
+#### `DELETE /gym/templates/{templateId}`
+
+**200** `{ok, id, deleted: true}`. Nothing cascades; see above.
+
+Both of these answer **404 `no_such_template`**, which after a lost response on
+a delete is the retry finding the first one finished.
 
 ### `POST /gym/workouts` — Start
 
@@ -491,10 +578,13 @@ Removes a workout — the answer to the duplicate a cell can now collect.
   sets come off one at a time first, each through its own guarded delete.
 - **Editing a logged set in place.** Delete it and log it again; both calls are
   guarded, so the pair is safe to retry.
+- **A route that applies a template to a day.** See above: it is a copy into
+  the Plan tab's draft, which the block's own PATCH then saves.
 - **The rest of the design's open questions** — deload flags, warm-up marking,
-  a rest timer. Day templates were one of these and are now the `plan` on a
-  day; the others are still free to add to the stored shape when they are
-  decided, and none is assumed here.
+  a rest timer. Day templates were one of these and are now two things: the
+  `plan` on a day, and the saved templates that fill one in. The others are
+  still free to add to the stored shape when they are decided, and none is
+  assumed here.
 - **Enforcing a plan.** Nothing checks a logged set against what the day
   prescribed. A seeded session is an ordinary session whose entries happen to be
   there already; what is logged is what was lifted, and an exercise can be added
@@ -508,12 +598,13 @@ Removes a workout — the answer to the duplicate a cell can now collect.
 | --- | --- | --- |
 | 400 | `invalid_json`, `invalid_request` | The body, or a route or query value. `message` names the field, what arrived and what was expected. |
 | 401 | `not_signed_in` | No validated principal. Sign in again. |
-| 404 | `no_such_workout`, `no_such_mesocycle` | Not in this user's log. |
+| 404 | `no_such_workout`, `no_such_mesocycle`, `no_such_template` | Not in this user's log. |
 | 409 | `count_mismatch` | Stale client state. Carries `expected` and `actual`; re-read and retry. Nothing was written. |
 | 409 | `no_such_entry` | The entry index is not in the session. |
 | 409 | `entry_not_empty` | The exercise still holds logged sets. Delete those first. |
 | 409 | `entry_conflict` | The session does not match the removal's guard. Re-read and try again. |
 | 409 | `no_current_mesocycle`, `date_full` | See Start, above. |
+| 409 | `template_limit` | 50 saved day templates. Delete one to save another. |
 | 500 | `unreadable_document`, `dangling_mesocycle` | A stored document does not match what the code writes. Not retryable. |
 | 502 | `storage_error` | Cosmos refused. `message` carries the hint for which cause. |
 | 503 | `timed_out` | Over the ten second budget. Every write here is safe to retry. |

@@ -109,6 +109,37 @@ public sealed class GymStore(Container container)
         """;
 
     /// <summary>
+    /// Every day template this user has saved, newest first.
+    ///
+    /// The same shape and the same reasoning as the block list: a template id is
+    /// a ULID behind a constant prefix, so lexical order is creation order and
+    /// newest-first costs the range index Cosmos already keeps on <c>id</c>.
+    /// <c>c.plan</c> is projected because it is the whole document — a template
+    /// is a name and twenty exercises at the outside, so there is no expensive
+    /// half to leave behind the way a session's sets are.
+    /// </summary>
+    private const string TemplatesQuery = """
+        SELECT c.id, c.name, c.plan
+        FROM c
+        WHERE c.type = @type
+        ORDER BY c.id DESC
+        """;
+
+    /// <summary>
+    /// How many templates this user has, for the cap in front of a save.
+    ///
+    /// Counted server-side rather than by listing and measuring: the answer is
+    /// one number on a page of one, where the list itself is every template's
+    /// exercises. Saving is rare enough that a query in front of the write costs
+    /// nothing anyone notices.
+    /// </summary>
+    private const string TemplateCountQuery = """
+        SELECT VALUE COUNT(1)
+        FROM c
+        WHERE c.type = @type
+        """;
+
+    /// <summary>
     /// The ids of one block's sessions, for the cascade behind a block delete.
     ///
     /// Ids alone: this feeds a list of delete operations, so anything else on
@@ -588,6 +619,159 @@ public sealed class GymStore(Container container)
         }
 
         return new MesocycleDeletion(true, sessionIds.Count, newCurrent);
+    }
+
+    // -----------------------------------------------------------------------
+    // Day templates
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Every day plan this user has saved, newest first.
+    ///
+    /// One single-partition query on an indexed path, and the whole document
+    /// each time — see <see cref="TemplatesQuery"/>. An empty list is the
+    /// ordinary state for anyone who has not saved one rather than a failure:
+    /// the built-in templates come from the CDN and are what the picker shows
+    /// regardless.
+    /// </summary>
+    public async Task<IReadOnlyList<DayTemplate>> ListTemplatesAsync(
+        string objectId,
+        CancellationToken cancellationToken)
+    {
+        var templates = new List<DayTemplate>();
+
+        await RunQueryAsync(
+            objectId,
+            new QueryDefinition(TemplatesQuery).WithParameter("@type", GymIds.TemplateType),
+            "Reading this user's day templates failed.",
+            document => templates.Add(DayTemplate.Read(document)),
+            cancellationToken);
+
+        return templates;
+    }
+
+    /// <summary>
+    /// Saves a day plan under a name.
+    ///
+    /// Null means the user is at <see cref="GymLimits.MaxTemplatesPerUser"/>.
+    /// The count in front of the write is not a race worth closing with a
+    /// transaction: two saves landing at once past the cap writes fifty-one
+    /// documents, which is a number rather than a broken state. What the count
+    /// is there for is a client saving in a loop, and that it catches.
+    ///
+    /// Names are not unique and nothing here checks them. Two templates called
+    /// "Push" are a thing a person can legitimately want — the id is the
+    /// identity, and the list shows what each one holds.
+    /// </summary>
+    public async Task<DayTemplate?> CreateTemplateAsync(
+        string objectId,
+        string name,
+        IReadOnlyList<PlannedExercise> plan,
+        CancellationToken cancellationToken)
+    {
+        var count = 0;
+
+        await RunQueryAsync(
+            objectId,
+            new QueryDefinition(TemplateCountQuery).WithParameter("@type", GymIds.TemplateType),
+            "Counting this user's day templates failed.",
+            document => count += document.GetInt32(),
+            cancellationToken);
+
+        if (count >= GymLimits.MaxTemplatesPerUser)
+        {
+            return null;
+        }
+
+        var templateId = GymIds.NewTemplateId();
+
+        using var payload = SerializeTemplate(objectId, templateId, name, plan);
+
+        using var response = await container.CreateItemStreamAsync(
+            payload,
+            new PartitionKey(objectId),
+            WriteOptions,
+            cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw Failure(response, $"Saving the day template '{name}' failed.");
+        }
+
+        return new DayTemplate(templateId, name, plan);
+    }
+
+    /// <summary>
+    /// Re-saves a template: a new name, a new plan, or both.
+    ///
+    /// A replace rather than a patch, because both fields are always sent — see
+    /// <see cref="GymRequests.TryReadTemplate"/> — and a replace of an id that
+    /// is not there answers 404 by itself. That is the guard, and it costs no
+    /// read in front of the write.
+    ///
+    /// False means there is no such template in this user's partition. Nothing
+    /// cascades either way: a day filled from this template copied the exercises
+    /// when it was applied and does not change now.
+    /// </summary>
+    public async Task<bool> ReplaceTemplateAsync(
+        string objectId,
+        string templateId,
+        string name,
+        IReadOnlyList<PlannedExercise> plan,
+        CancellationToken cancellationToken)
+    {
+        using var payload = SerializeTemplate(objectId, templateId, name, plan);
+
+        using var response = await container.ReplaceItemStreamAsync(
+            payload,
+            templateId,
+            new PartitionKey(objectId),
+            WriteOptions,
+            cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return false;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw Failure(response, $"Re-saving day template {templateId} failed.");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Removes a saved template. False means it was not there.
+    ///
+    /// No cascade and nothing to warn about, unlike
+    /// <see cref="DeleteMesocycleAsync"/>: applying a template copies its
+    /// exercises into a day, so nothing anywhere points back at this document
+    /// and deleting it cannot take a planned day or a logged session with it.
+    /// </summary>
+    public async Task<bool> DeleteTemplateAsync(
+        string objectId,
+        string templateId,
+        CancellationToken cancellationToken)
+    {
+        using var response = await container.DeleteItemStreamAsync(
+            templateId,
+            new PartitionKey(objectId),
+            WriteOptions,
+            cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return false;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw Failure(response, $"Deleting day template {templateId} failed.");
+        }
+
+        return true;
     }
 
     // -----------------------------------------------------------------------
@@ -1381,6 +1565,47 @@ public sealed class GymStore(Container container)
                 }
 
                 writer.WriteEndArray();
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        payload.Position = 0;
+        return payload;
+    }
+
+    /// <summary>
+    /// A saved day plan. Four keys, and the plan array is the same shape a day
+    /// on a mesocycle carries — deliberately, since applying one is a copy.
+    /// </summary>
+    private static MemoryStream SerializeTemplate(
+        string objectId,
+        string templateId,
+        string name,
+        IReadOnlyList<PlannedExercise> plan)
+    {
+        var payload = new MemoryStream();
+
+        using (var writer = new Utf8JsonWriter(payload))
+        {
+            writer.WriteStartObject();
+
+            // The prefix is already on it, unlike a mesocycle id: nothing
+            // references a template, so there is only one form of the id.
+            writer.WriteString("id", templateId);
+            writer.WriteString("objectId", objectId);
+            writer.WriteString("type", GymIds.TemplateType);
+            writer.WriteString("name", name);
+
+            writer.WriteStartArray("plan");
+
+            foreach (var exercise in plan)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("exerciseName", exercise.ExerciseName);
+                writer.WriteNumber("sets", exercise.Sets);
                 writer.WriteEndObject();
             }
 

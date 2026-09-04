@@ -3,9 +3,9 @@ using System.Text.Json;
 namespace ApiFunctionApp.Gym;
 
 /// <summary>
-/// The three documents db/gym holds, and the shapes derived from them.
+/// The four documents db/gym holds, and the shapes derived from them.
 ///
-/// Three types, one discriminator, and deliberately smaller than the design's
+/// Four types, one discriminator, and deliberately smaller than the design's
 /// entity list — every omission is either derivable from what is stored or was
 /// read by nothing, and every one of them can be added and backfilled later
 /// without a migration. What is written down is what records a decision the
@@ -58,6 +58,17 @@ internal static class GymLimits
     /// accident, and this is a bound on something a person types.
     /// </summary>
     public const int MaxPlannedPerDay = 20;
+
+    /// <summary>
+    /// How many day templates one user may have saved.
+    ///
+    /// The same kind of bound as <c>MaxSessionsPerDate</c> rather than a
+    /// judgement about training: fifty named plans is already more than anyone
+    /// scrolls, so hitting this means a client saving in a loop, and a partition
+    /// filling quietly is what it is here to prevent. Templates are listed in
+    /// one unpaged query, so it is also what keeps that query one page.
+    /// </summary>
+    public const int MaxTemplatesPerUser = 50;
 
     /// <summary>
     /// Kilograms. The upper bound is past any lift a human has recorded and is
@@ -238,6 +249,59 @@ public readonly record struct MesocycleSummary(
         isCurrent = IsCurrent,
         sessionCount = SessionCount,
         submittedCount = SubmittedCount,
+    };
+}
+
+/// <summary>
+/// A saved day plan, reusable across blocks: a name and the same
+/// <see cref="PlannedExercise"/> list a <see cref="MesoDay"/> carries.
+///
+/// It is deliberately the same shape as a day's plan and not a richer one,
+/// because applying a template is a copy into a day and nothing else — there is
+/// no link back, no id stored on the block, and nothing that re-applies a
+/// template when it is edited later. A day that was filled from a template is
+/// an ordinary planned day, which is what makes a template safe to rename or
+/// delete: no block can be broken by it.
+///
+/// No <c>createdAt</c>, for the reason <see cref="Mesocycle"/> gives: the id is
+/// a ULID, so creation order is already in it, and Cosmos records <c>_ts</c>
+/// regardless.
+///
+/// The built-in templates are not these. They are identical for every user and
+/// change when the app ships, so they are a CDN blob beside the exercise
+/// library — <c>gym-templates.json</c> — costing no function invocation, no
+/// token and no RU. What is stored here is only what a user saved.
+/// </summary>
+public sealed record DayTemplate(string Id, string Name, IReadOnlyList<PlannedExercise> Plan)
+{
+    public static DayTemplate Read(JsonElement document)
+    {
+        var plan = new List<PlannedExercise>();
+
+        if (document.TryGetProperty("plan", out var stored) && stored.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var exercise in stored.EnumerateArray())
+            {
+                plan.Add(PlannedExercise.Read(exercise));
+            }
+        }
+
+        return new DayTemplate(
+            GymDocument.String(document, "id"),
+            GymDocument.String(document, "name"),
+            plan);
+    }
+
+    /// <summary>
+    /// The wire shape. <c>id</c> is the document id unprefixed of anything —
+    /// see <see cref="GymIds.NewTemplateId"/> — so what comes back here is what
+    /// the routes take.
+    /// </summary>
+    public object ToResponse() => new
+    {
+        id = Id,
+        name = Name,
+        plan = Plan.Select(exercise => exercise.ToResponse()).ToArray(),
     };
 }
 

@@ -78,6 +78,11 @@ output "gym_exercise_library_url" {
   value       = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${azurerm_storage_container.data.name}/${azurerm_storage_blob.gym_exercises.name}"
 }
 
+output "gym_template_library_url" {
+  description = "Where the gym logger's built-in day templates are published — the named plans the Plan tab drops into a day. Anonymous-read and cached for a day, on the same terms as the exercise library beside it. The file is gym/templates.json in this repository; a user's own saved templates are not here, they are per-account documents in db/gym."
+  value       = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${azurerm_storage_container.data.name}/${azurerm_storage_blob.gym_templates.name}"
+}
+
 output "gymlog_spa_redirect_uri" {
   description = "Register these as Single-page application redirect URIs on the GymLog app registration. The front end signs in as that registration — Easy Auth on the api app checks the appid claim and turns away a token minted by any other client — so this is what has to be there before the first sign-in works. Manual, like everything else on the Entra side; the registration is not managed by this configuration."
   value = [

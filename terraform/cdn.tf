@@ -83,3 +83,38 @@ resource "azurerm_storage_blob" "gym_exercises" {
   # for a new exercise reaching a phone that has already loaded the app once.
   cache_control = "public, max-age=86400"
 }
+
+# The gym logger's built-in day templates, published at
+# https://nygdevcdn.blob.core.windows.net/data/gym-templates.json
+#
+# A template is a named plan — Push, Lower A — that drops into a day of a block
+# in the Plan tab. The built-in ones are here for the same reason the exercise
+# library is: they are identical for every user and change when the code ships,
+# so serving them per account through the API would be a function invocation, a
+# token and an RU spent handing back the same ten objects.
+#
+# The user's *own* saved templates are not here and cannot be. They are written
+# per account, so they are type = "template" documents in db/gym, in the same
+# logical partition as that user's blocks and sessions — see
+# apifunctionapp/Gym/GymTemplates.cs. The front end reads both and shows them
+# in one picker; only that half needs a principal.
+#
+# Applying a template writes nothing on either side: it copies the exercises
+# into the Plan tab's local draft, which saves with the block. So editing this
+# file changes what a new day can be filled with and never touches a block
+# somebody already filled.
+resource "azurerm_storage_blob" "gym_templates" {
+  name = "gym-templates.json"
+
+  storage_container_id = azurerm_storage_container.data.id
+
+  type        = "Block"
+  source      = "${path.module}/../gym/templates.json"
+  content_md5 = filemd5("${path.module}/../gym/templates.json")
+
+  content_type = "application/json"
+
+  # The same day the exercise library gets, and for the same reason — these two
+  # files are fetched together on a cold load and change on the same deploys.
+  cache_control = "public, max-age=86400"
+}

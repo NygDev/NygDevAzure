@@ -13,7 +13,7 @@ namespace ApiFunctionApp.Gym;
 /// It is there so a document says what it is at a glance, and so an id can be
 /// rebuilt from a type and a natural key without ambiguity.
 ///
-/// Two of the three natural keys are the caller's to construct, and that is the
+/// Two of the four natural keys are the caller's to construct, and that is the
 /// point of them:
 ///
 /// <list type="bullet">
@@ -24,18 +24,22 @@ namespace ApiFunctionApp.Gym;
 /// round trip in front of it.</item>
 /// </list>
 ///
-/// The mesocycle is the exception: its natural key is generated here, because
-/// nothing about a block is unique enough to name it by.
+/// The mesocycle and the day template are the exceptions: their natural keys
+/// are generated here, because nothing about either one is unique enough to
+/// name it by. A template's name least of all — it is renameable, and two of
+/// them may share one.
 /// </summary>
 internal static class GymIds
 {
     public const string UserType = "user";
     public const string MesocycleType = "mesocycle";
     public const string SessionType = "session";
+    public const string TemplateType = "template";
 
     private const string UserPrefix = "user_";
     private const string MesocyclePrefix = "meso_";
     private const string SessionPrefix = "session_";
+    private const string TemplatePrefix = "template_";
 
     /// <summary>
     /// The date format a session is keyed on: ISO, and never anything else.
@@ -155,16 +159,34 @@ internal static class GymIds
     }
 
     /// <summary>
-    /// A new mesocycle id: a ULID, lowercase Crockford base32.
+    /// A new mesocycle id, bare: references carry it without the prefix.
+    /// </summary>
+    public static string NewMesocycleId() => NewUlid();
+
+    /// <summary>
+    /// A new template id, <em>with</em> its prefix — unlike a mesocycle id.
+    ///
+    /// Nothing references a template, so there is no second form of the
+    /// identifier for a reference to carry, and the document id is what routes
+    /// and responses use as-is. That is the session's shape rather than the
+    /// mesocycle's, and it is the shape to copy when a new document type has no
+    /// references pointing at it: one identifier, no strip-the-prefix rule to
+    /// remember.
+    /// </summary>
+    public static string NewTemplateId() => TemplatePrefix + NewUlid();
+
+    /// <summary>
+    /// A ULID, lowercase Crockford base32.
     ///
     /// 48 bits of millisecond timestamp followed by 80 bits of randomness, so
     /// ids sort by the moment they were created and collide never in practice.
     /// The sort order is the reason for choosing this over a GUID: the data
-    /// model leaves <c>createdAt</c> off the mesocycle document because nothing
-    /// read it, and an id that is already in creation order means that decision
-    /// costs nothing if something ever does.
+    /// model leaves <c>createdAt</c> off the mesocycle and the template alike
+    /// because nothing read it, and an id that is already in creation order
+    /// means both lists get newest-first off the index Cosmos keeps on
+    /// <c>id</c> anyway.
     /// </summary>
-    public static string NewMesocycleId()
+    private static string NewUlid()
     {
         // Crockford's alphabet: no I, L, O or U, so an id read aloud or copied
         // by hand has no character that can be confused for another.
@@ -244,4 +266,18 @@ internal static class GymIds
     /// </summary>
     public static bool IsSessionId(string? id) =>
         IsWellFormed(id) && id!.StartsWith(SessionPrefix, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether a route segment names a template document and nothing else.
+    ///
+    /// The same guard as <see cref="IsSessionId"/> and for the same reason: a
+    /// template id reaches Cosmos as a point-write or delete key exactly as it
+    /// arrived, so without this <c>DELETE /gym/templates/user_{oid}</c> would
+    /// take the caller's own pointer document with it and a PUT at a session id
+    /// would overwrite a logged workout with a template. Inside the caller's
+    /// own partition in both cases, and both are states this API otherwise
+    /// promises it cannot reach.
+    /// </summary>
+    public static bool IsTemplateId(string? id) =>
+        IsWellFormed(id) && id!.StartsWith(TemplatePrefix, StringComparison.Ordinal);
 }

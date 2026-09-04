@@ -1,0 +1,118 @@
+{
+  "version": "2026-09-04",
+  "templates": [
+    {
+      "id": "builtin_upper-a",
+      "name": "Upper A",
+      "plan": [
+        { "exerciseName": "Bench Press", "sets": 4 },
+        { "exerciseName": "Barbell Row", "sets": 4 },
+        { "exerciseName": "Overhead Press", "sets": 3 },
+        { "exerciseName": "Lat Pulldown", "sets": 3 },
+        { "exerciseName": "Lateral Raise", "sets": 3 },
+        { "exerciseName": "Triceps Pushdown", "sets": 3 }
+      ]
+    },
+    {
+      "id": "builtin_upper-b",
+      "name": "Upper B",
+      "plan": [
+        { "exerciseName": "Incline Bench Press", "sets": 4 },
+        { "exerciseName": "Pull-up", "sets": 4 },
+        { "exerciseName": "Dip", "sets": 3 },
+        { "exerciseName": "Seated Row", "sets": 3 },
+        { "exerciseName": "Cable Fly", "sets": 3 },
+        { "exerciseName": "Bicep Curl", "sets": 3 }
+      ]
+    },
+    {
+      "id": "builtin_lower-a",
+      "name": "Lower A",
+      "plan": [
+        { "exerciseName": "Squat", "sets": 4 },
+        { "exerciseName": "Romanian Deadlift", "sets": 3 },
+        { "exerciseName": "Leg Press", "sets": 3 },
+        { "exerciseName": "Leg Curl", "sets": 3 },
+        { "exerciseName": "Calf Raise", "sets": 4 }
+      ]
+    },
+    {
+      "id": "builtin_lower-b",
+      "name": "Lower B",
+      "plan": [
+        { "exerciseName": "Deadlift", "sets": 3 },
+        { "exerciseName": "Front Squat", "sets": 4 },
+        { "exerciseName": "Leg Curl", "sets": 3 },
+        { "exerciseName": "Leg Press", "sets": 3 },
+        { "exerciseName": "Calf Raise", "sets": 4 }
+      ]
+    },
+    {
+      "id": "builtin_push",
+      "name": "Push",
+      "plan": [
+        { "exerciseName": "Bench Press", "sets": 4 },
+        { "exerciseName": "Overhead Press", "sets": 3 },
+        { "exerciseName": "Incline Bench Press", "sets": 3 },
+        { "exerciseName": "Cable Fly", "sets": 3 },
+        { "exerciseName": "Lateral Raise", "sets": 3 },
+        { "exerciseName": "Triceps Pushdown", "sets": 3 }
+      ]
+    },
+    {
+      "id": "builtin_pull",
+      "name": "Pull",
+      "plan": [
+        { "exerciseName": "Pull-up", "sets": 4 },
+        { "exerciseName": "Barbell Row", "sets": 4 },
+        { "exerciseName": "Lat Pulldown", "sets": 3 },
+        { "exerciseName": "Seated Row", "sets": 3 },
+        { "exerciseName": "Bicep Curl", "sets": 3 }
+      ]
+    },
+    {
+      "id": "builtin_legs",
+      "name": "Legs",
+      "plan": [
+        { "exerciseName": "Squat", "sets": 4 },
+        { "exerciseName": "Romanian Deadlift", "sets": 3 },
+        { "exerciseName": "Leg Press", "sets": 3 },
+        { "exerciseName": "Leg Curl", "sets": 3 },
+        { "exerciseName": "Calf Raise", "sets": 4 }
+      ]
+    },
+    {
+      "id": "builtin_full-body-a",
+      "name": "Full Body A",
+      "plan": [
+        { "exerciseName": "Squat", "sets": 3 },
+        { "exerciseName": "Bench Press", "sets": 3 },
+        { "exerciseName": "Barbell Row", "sets": 3 },
+        { "exerciseName": "Overhead Press", "sets": 2 },
+        { "exerciseName": "Leg Curl", "sets": 2 }
+      ]
+    },
+    {
+      "id": "builtin_full-body-b",
+      "name": "Full Body B",
+      "plan": [
+        { "exerciseName": "Deadlift", "sets": 3 },
+        { "exerciseName": "Incline Bench Press", "sets": 3 },
+        { "exerciseName": "Lat Pulldown", "sets": 3 },
+        { "exerciseName": "Leg Press", "sets": 3 },
+        { "exerciseName": "Bicep Curl", "sets": 2 }
+      ]
+    },
+    {
+      "id": "builtin_arms-shoulders",
+      "name": "Arms & Shoulders",
+      "plan": [
+        { "exerciseName": "Overhead Press", "sets": 4 },
+        { "exerciseName": "Lateral Raise", "sets": 4 },
+        { "exerciseName": "Dip", "sets": 3 },
+        { "exerciseName": "Bicep Curl", "sets": 3 },
+        { "exerciseName": "Triceps Pushdown", "sets": 3 }
+      ]
+    }
+  ]
+}

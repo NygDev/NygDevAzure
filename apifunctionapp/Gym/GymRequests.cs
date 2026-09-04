@@ -132,6 +132,47 @@ internal static class GymRequests
     }
 
     /// <summary>
+    /// <c>POST /api/gym/templates</c> and <c>PUT /api/gym/templates/{id}</c> —
+    /// saving a day plan to reuse, and re-saving one.
+    ///
+    /// One body for both, because a template is two fields and re-saving
+    /// replaces both of them. There is no partial edit here the way there is on
+    /// a mesocycle: the Plan tab holds the whole template while it is being
+    /// worked on and sends back what it is holding, so an optional-field patch
+    /// would only be a second way to send the same thing.
+    ///
+    /// An empty <c>plan</c> is refused, unlike a day's. A day with nothing
+    /// planned is the ordinary starting state — you name it before you fill it
+    /// — but a template <em>is</em> the exercises it drops into a day, so an
+    /// empty one is a name that does nothing, and it would sit in the picker
+    /// forever offering to clear a day.
+    /// </summary>
+    public static bool TryReadTemplate(
+        JsonElement body,
+        out string name,
+        out IReadOnlyList<PlannedExercise> plan,
+        out string error)
+    {
+        name = string.Empty;
+        plan = [];
+
+        if (!GymJson.TryReadString(body, "name", GymLimits.MaxNameLength, out name, out error)
+            || !TryReadPlan(body, "The template's plan", out plan, out error))
+        {
+            return false;
+        }
+
+        if (plan.Count == 0)
+        {
+            error = "'plan' is missing or empty. A template is the exercises it drops into a day, "
+                + "so plan the day first and save that — there is nothing to store otherwise.";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// <c>POST /api/gym/workouts</c> — Start.
     ///
     /// The mesocycle is not in the body and is not meant to be: the server
@@ -396,7 +437,7 @@ internal static class GymRequests
                     return false;
                 }
 
-                if (!TryReadPlan(day, index, out plan, out error))
+                if (!TryReadPlan(day, $"Day {index}'s plan", out plan, out error))
                 {
                     return false;
                 }
@@ -437,16 +478,20 @@ internal static class GymRequests
     /// an older front end sends, and there is nothing to tell it: the plan it
     /// saves is right in every respect that is still read.
     /// </summary>
+    /// <param name="owner">The object carrying the <c>plan</c> — a day, or a
+    /// template's body.</param>
+    /// <param name="where">What to call it in a refusal, sentence-initial:
+    /// "Day 0's plan", "The template's plan".</param>
     private static bool TryReadPlan(
-        JsonElement day,
-        int dayIndex,
+        JsonElement owner,
+        string where,
         out IReadOnlyList<PlannedExercise> plan,
         out string error)
     {
         plan = [];
         error = string.Empty;
 
-        if (!day.TryGetProperty("plan", out var property) || property.ValueKind == JsonValueKind.Null)
+        if (!owner.TryGetProperty("plan", out var property) || property.ValueKind == JsonValueKind.Null)
         {
             // Absent is empty. A day with nothing planned is the ordinary case,
             // and every day of every block written before planning existed.
@@ -455,8 +500,8 @@ internal static class GymRequests
 
         if (property.ValueKind != JsonValueKind.Array)
         {
-            error = $"Day {dayIndex} of 'days' has a 'plan' that is {property.ValueKind}, expected "
-                + "an array of {exerciseName, sets} objects.";
+            error = $"{where} is {property.ValueKind}, expected an array of "
+                + "{exerciseName, sets} objects.";
             return false;
         }
 
@@ -464,7 +509,7 @@ internal static class GymRequests
 
         if (length > GymLimits.MaxPlannedPerDay)
         {
-            error = $"Day {dayIndex} of 'days' plans {length} exercises, over the "
+            error = $"{where} holds {length} exercises, over the "
                 + $"{GymLimits.MaxPlannedPerDay} allowed.";
             return false;
         }
@@ -476,8 +521,8 @@ internal static class GymRequests
         {
             if (exercise.ValueKind != JsonValueKind.Object)
             {
-                error = $"Entry {position} of day {dayIndex}'s plan is {exercise.ValueKind}, "
-                    + "expected an {exerciseName, sets} object.";
+                error = $"{where}, entry {position}, is {exercise.ValueKind}, expected an "
+                    + "{exerciseName, sets} object.";
                 return false;
             }
 
@@ -489,7 +534,7 @@ internal static class GymRequests
                     out error)
                 || !GymJson.TryReadInt(exercise, "sets", 1, GymLimits.MaxSetsPerEntry, out var sets, out error))
             {
-                error = $"Entry {position} of day {dayIndex}'s plan: {error}";
+                error = $"{where}, entry {position}: {error}";
                 return false;
             }
 
