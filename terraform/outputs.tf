@@ -73,6 +73,11 @@ output "gym_static_site_hostname" {
   value       = azurerm_static_web_app.nygdevgym.default_host_name
 }
 
+output "gymbro_static_site_hostname" {
+  description = "Default hostname of the desktop planner's Static Web App. Same role as gym_static_site_hostname: it is the planner's own origin and one of the entries in the api function app's CORS list. gymbro.nygard.dev is allowed alongside it, and the DNS for it is a separate manual step."
+  value       = azurerm_static_web_app.nygdevgymbro.default_host_name
+}
+
 output "gym_exercise_library_url" {
   description = "Where the gym logger's built-in exercise library is published. Anonymous-read and cached for a day, so the front end fetches it once with no token and no function call. The file is gym/exercises.json in this repository; editing it and applying is what republishes it."
   value       = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${azurerm_storage_container.data.name}/${azurerm_storage_blob.gym_exercises.name}"
@@ -84,9 +89,15 @@ output "gym_template_library_url" {
 }
 
 output "gymlog_spa_redirect_uri" {
-  description = "Register these as Single-page application redirect URIs on the GymLog app registration. The front end signs in as that registration — Easy Auth on the api app checks the appid claim and turns away a token minted by any other client — so this is what has to be there before the first sign-in works. Manual, like everything else on the Entra side; the registration is not managed by this configuration."
+  description = "Register all of these as Single-page application redirect URIs on the GymLog app registration. Both front ends sign in as that registration — Easy Auth on the api app checks the appid claim and turns away a token minted by any other client — so this is what has to be there before the first sign-in works. Two entries per origin, and both are load-bearing: since MSAL v5 every authorization response comes back through /auth.html, including the one the hidden renewal iframe waits ten seconds for, while sign-out lands on the origin root and Entra validates that against the same reply-URL list. Matched as strings, trailing slash included. Manual, like everything else on the Entra side; the registration is not managed by this configuration."
   value = [
-    "https://gym.nygard.dev",
-    "https://${azurerm_static_web_app.nygdevgym.default_host_name}",
+    "https://gym.nygard.dev/auth.html",
+    "https://gym.nygard.dev/",
+    "https://${azurerm_static_web_app.nygdevgym.default_host_name}/auth.html",
+    "https://${azurerm_static_web_app.nygdevgym.default_host_name}/",
+    "https://gymbro.nygard.dev/auth.html",
+    "https://gymbro.nygard.dev/",
+    "https://${azurerm_static_web_app.nygdevgymbro.default_host_name}/auth.html",
+    "https://${azurerm_static_web_app.nygdevgymbro.default_host_name}/",
   ]
 }

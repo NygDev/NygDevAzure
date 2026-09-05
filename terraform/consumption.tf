@@ -282,6 +282,14 @@ resource "azurerm_function_app_flex_consumption" "api" {
         # its own token and the Easy Auth token store is off.
         "https://gym.nygard.dev",
         "https://${azurerm_static_web_app.nygdevgym.default_host_name}",
+
+        # The desktop planner, on the same terms. It reads and writes the same
+        # /gym routes as the logger with the same bearer token — a different
+        # origin is the only thing about it this list cares about, and an origin
+        # missing from here is a browser discarding a 200 and reporting a bare
+        # network failure.
+        "https://gymbro.nygard.dev",
+        "https://${azurerm_static_web_app.nygdevgymbro.default_host_name}",
       ]
 
       # No cookies on the call, and support_credentials would force an

@@ -54,3 +54,28 @@ resource "azurerm_static_web_app" "nygdevgym" {
     ignore_changes = [repository_branch, repository_token, repository_url, app_settings]
   }
 }
+
+# The desktop planner for the same training log. Provisioned empty here, content
+# deployed by its own pipeline in the nygdevweb repository.
+#
+# A fourth Static Web App rather than a path on the gym one because SWA routes
+# on path only, with no host-based routing — a second subdomain with different
+# content needs a second resource, which is the same reason there are three
+# already.
+#
+# It shares everything on the identity side with nygdevgym and shares nothing on
+# the hosting side. Same API, same Cosmos partition, same GymLog registration:
+# Easy Auth on the api app checks the appid claim, so a planner with a
+# registration of its own would be turned away with a 403. What that costs is
+# two more manual Entra entries — this app's origin has to join the SPA redirect
+# URI list, which is why gymlog_spa_redirect_uri now prints four values.
+resource "azurerm_static_web_app" "nygdevgymbro" {
+  name                = "nygdevgymbro"
+  resource_group_name = var.web_resource_group
+  location            = "westeurope"
+  tags                = local.common_tags
+
+  lifecycle {
+    ignore_changes = [repository_branch, repository_token, repository_url, app_settings]
+  }
+}
