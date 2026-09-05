@@ -25,9 +25,6 @@ public sealed record WhoopTokenResponse
 
     [JsonPropertyName("scope")]
     public string? Scope { get; init; }
-
-    [JsonPropertyName("token_type")]
-    public string? TokenType { get; init; }
 }
 
 /// <summary>What a completed token exchange leaves behind, minus the tokens.</summary>
@@ -40,20 +37,18 @@ public sealed record WhoopTokenResult
     public required bool RefreshTokenStored { get; init; }
 }
 
-/// <summary>GET /v2/user/profile/basic — the cheapest call that proves the token works.</summary>
+/// <summary>
+/// GET /v2/user/profile/basic — the cheapest call that proves the token works.
+///
+/// The user id and nothing else. WHOOP answers with a name and an email
+/// alongside it, and neither is bound: this record exists to confirm a token
+/// is live, the id is what the check logs, and a field declared here would be
+/// somebody's name deserialized into a process that has no use for it.
+/// </summary>
 public sealed record WhoopProfile
 {
     [JsonPropertyName("user_id")]
     public long UserId { get; init; }
-
-    [JsonPropertyName("email")]
-    public string? Email { get; init; }
-
-    [JsonPropertyName("first_name")]
-    public string? FirstName { get; init; }
-
-    [JsonPropertyName("last_name")]
-    public string? LastName { get; init; }
 }
 
 /// <summary>One page of a WHOOP collection: the records, and where to resume.</summary>

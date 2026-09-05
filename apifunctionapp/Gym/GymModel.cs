@@ -144,10 +144,6 @@ public readonly record struct PlannedExercise(string ExerciseName, int Sets)
 /// </summary>
 public readonly record struct MesoDay(int DayIndex, string Label, IReadOnlyList<PlannedExercise> Plan)
 {
-    /// <summary>A day with nothing planned against it, which is every day of a
-    /// block written before this field existed.</summary>
-    public static MesoDay Unplanned(int dayIndex, string label) => new(dayIndex, label, []);
-
     public static MesoDay Read(JsonElement element)
     {
         var plan = new List<PlannedExercise>();

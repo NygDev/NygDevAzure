@@ -1406,9 +1406,6 @@ public sealed class GymStore(Container container)
     // -----------------------------------------------------------------------
 
     /// <summary>
-    /// A point read, or null when there is nothing there. The caller disposes.
-    /// </summary>
-    /// <summary>
     /// Runs a single-partition query and hands each document to the caller.
     ///
     /// The stream iterator rather than the typed one, for the reason the rest
@@ -1468,6 +1465,9 @@ public sealed class GymStore(Container container)
         }
     }
 
+    /// <summary>
+    /// A point read, or null when there is nothing there. The caller disposes.
+    /// </summary>
     private async Task<JsonDocument?> ReadDocumentAsync(
         string objectId,
         string documentId,
@@ -1672,7 +1672,8 @@ public sealed class GymStore(Container container)
     }
 
     /// <summary>
-    /// Day labels as the Cosmos SDK will serialize them.
+    /// The days of a block as a patch value, shaped the way the Cosmos SDK
+    /// will serialize them.
     ///
     /// Dictionaries rather than a record, and this is not a style choice: the
     /// value of a patch operation goes through the CosmosClient's own
@@ -1680,9 +1681,6 @@ public sealed class GymStore(Container container)
     /// document with its C# property names — <c>DayIndex</c>, <c>Label</c> —
     /// and stop matching everything that reads it. A dictionary's keys are
     /// written literally, so what is spelled here is what is stored.
-    /// </summary>
-    /// <summary>
-    /// The days of a block as a patch value.
     ///
     /// <c>dayIndex</c> is written from the array position rather than copied
     /// off the MesoDay, so the stored index cannot disagree with where the day
@@ -1719,10 +1717,6 @@ public sealed class GymStore(Container container)
 }
 
 /// <summary>
-/// What Start did: the session to log into, and whether it was already open.
-/// A null session means the date has as many sessions as it is allowed.
-/// </summary>
-/// <summary>
 /// What a block delete removed, and where it left the user.
 ///
 /// <c>NewCurrentMesoId</c> is null both when nothing was repointed — the
@@ -1738,6 +1732,10 @@ public readonly record struct MesocycleDeletion(
     public static MesocycleDeletion NotFound => new(false, 0, null);
 }
 
+/// <summary>
+/// What Start did: the session to log into, and whether it was already open.
+/// A null session means the date has as many sessions as it is allowed.
+/// </summary>
 public readonly record struct SessionCreation(GymSession? Session, bool Resumed);
 
 /// <summary>How a guarded patch ended.</summary>
