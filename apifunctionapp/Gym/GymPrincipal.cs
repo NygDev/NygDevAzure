@@ -52,17 +52,19 @@ internal static class GymPrincipal
     private const string LocalObjectIdSetting = "GYM_LOCAL_OBJECT_ID";
 
     /// <summary>
-    /// The claim types an object id can arrive under. Easy Auth passes claims
-    /// through under the type the token used, and which one that is depends on
-    /// how the token was minted: v2.0 tokens carry the short <c>oid</c>, while
-    /// anything that went through the WS-Federation claim mapping carries the
-    /// schema URI. Both mean the same thing, so both are accepted.
+    /// The claim type an object id arrives under when the token went through
+    /// the WS-Federation claim mapping. Easy Auth passes claims through under
+    /// the type the token used, and which one that is depends on how the token
+    /// was minted — see <see cref="ObjectIdClaimShort"/> for the other.
     /// </summary>
-    private static readonly string[] ObjectIdClaimTypes =
-    [
-        "http://schemas.microsoft.com/identity/claims/objectidentifier",
-        "oid",
-    ];
+    private const string ObjectIdClaimUri =
+        "http://schemas.microsoft.com/identity/claims/objectidentifier";
+
+    /// <summary>
+    /// What a v2.0 token carries instead. It means the same thing as
+    /// <see cref="ObjectIdClaimUri"/>, so both are accepted.
+    /// </summary>
+    private const string ObjectIdClaimShort = "oid";
 
     /// <summary>
     /// Resolves the caller's object id, or explains in words why it could not.
@@ -207,7 +209,7 @@ internal static class GymPrincipal
             if (claim.ValueKind != JsonValueKind.Object
                 || !claim.TryGetProperty("typ", out var type)
                 || type.ValueKind != JsonValueKind.String
-                || !ObjectIdClaimTypes.Contains(type.GetString(), StringComparer.Ordinal))
+                || !IsObjectIdClaim(type))
             {
                 continue;
             }
@@ -223,4 +225,18 @@ internal static class GymPrincipal
 
         return false;
     }
+
+    /// <summary>
+    /// Whether a claim's <c>typ</c> is one of the two an object id arrives
+    /// under.
+    ///
+    /// <see cref="JsonElement.ValueEquals(string)"/> compares against the
+    /// element's own UTF-8 rather than materialising it, which matters because
+    /// this runs against every claim of every gym request: an Easy Auth
+    /// principal carries a couple of dozen, and the string built to compare
+    /// each one would be thrown away on the same line. The hot path here is a
+    /// set-tap, thirty or forty times a session.
+    /// </summary>
+    private static bool IsObjectIdClaim(JsonElement type) =>
+        type.ValueEquals(ObjectIdClaimUri) || type.ValueEquals(ObjectIdClaimShort);
 }

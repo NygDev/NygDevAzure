@@ -246,10 +246,27 @@ internal static class GymIds
     /// document id) coming back as an opaque 400 from the SDK instead of an
     /// answer that says which value was wrong.
     /// </summary>
-    public static bool IsWellFormed(string? id) =>
-        !string.IsNullOrWhiteSpace(id)
-        && id.Length <= 255
-        && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or '.' or ':');
+    public static bool IsWellFormed(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || id.Length > 255)
+        {
+            return false;
+        }
+
+        // A loop over the span rather than `id.All(…)`. This is on the hot
+        // path — every set-tap goes through it — and the LINQ form boxes the
+        // string into an IEnumerable<char> and allocates an enumerator to walk
+        // characters that are already sitting contiguously in memory.
+        foreach (var c in id.AsSpan())
+        {
+            if (!char.IsAsciiLetterOrDigit(c) && c is not ('_' or '-' or '.' or ':'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     /// <summary>
     /// Whether a route segment names a session document and nothing else.

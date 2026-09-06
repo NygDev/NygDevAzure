@@ -410,6 +410,12 @@ public sealed class GymStore(Container container)
     /// query per block — is a round trip per row on the one screen guaranteed
     /// to have several.
     ///
+    /// The three are issued together rather than one after another. None of
+    /// them reads what another writes — the pointer is a point read, and the
+    /// two queries fill lists of their own — so what the sequential form bought
+    /// was three round trips for a screen that needs one. The CosmosClient is a
+    /// singleton built to be shared, and every call here is single-partition.
+    ///
     /// A user with no blocks gets an empty list rather than a failure. That is
     /// the same first run <c>ReadCurrentMesoIdAsync</c> answers null for.
     /// </summary>
@@ -417,21 +423,20 @@ public sealed class GymStore(Container container)
         string objectId,
         CancellationToken cancellationToken)
     {
-        var currentMesoId = await ReadCurrentMesoIdAsync(objectId, cancellationToken);
-
         var blocks = new List<Mesocycle>();
+        var total = new Dictionary<string, int>(StringComparer.Ordinal);
+        var submitted = new Dictionary<string, int>(StringComparer.Ordinal);
 
-        await RunQueryAsync(
+        var pointer = ReadCurrentMesoIdAsync(objectId, cancellationToken);
+
+        var listing = RunQueryAsync(
             objectId,
             new QueryDefinition(MesocyclesQuery).WithParameter("@type", GymIds.MesocycleType),
             "Reading this user's mesocycles failed.",
             document => blocks.Add(Mesocycle.Read(document)),
             cancellationToken);
 
-        var total = new Dictionary<string, int>(blocks.Count, StringComparer.Ordinal);
-        var submitted = new Dictionary<string, int>(blocks.Count, StringComparer.Ordinal);
-
-        await RunQueryAsync(
+        var counting = RunQueryAsync(
             objectId,
             new QueryDefinition(SessionOwnersQuery).WithParameter("@type", GymIds.SessionType),
             "Counting this user's sessions failed.",
@@ -448,6 +453,15 @@ public sealed class GymStore(Container container)
                 }
             },
             cancellationToken);
+
+        // WhenAll rather than three awaits, so that a failure in one does not
+        // leave the other two's exceptions unobserved. The pointer goes last
+        // because WhenAll rethrows the first fault in argument order, and a
+        // query's message names the read that broke where the pointer's is the
+        // same for every screen that reads it.
+        await Task.WhenAll(listing, counting, pointer);
+
+        var currentMesoId = await pointer;
 
         return blocks
             .Select(block => new MesocycleSummary(
@@ -550,12 +564,16 @@ public sealed class GymStore(Container container)
 
         for (var offset = 0; offset < sessionIds.Count; offset += MaxBatchOperations)
         {
-            var chunk = sessionIds.Skip(offset).Take(MaxBatchOperations).ToArray();
+            // Indexed rather than Skip().Take().ToArray(): that form re-walks
+            // the list from the front for every chunk and allocates the chunk
+            // to walk it, which on a full block — 480 sessions, five batches —
+            // is work bought for nothing.
+            var length = Math.Min(MaxBatchOperations, sessionIds.Count - offset);
             var batch = container.CreateTransactionalBatch(partition);
 
-            foreach (var sessionId in chunk)
+            for (var i = offset; i < offset + length; i++)
             {
-                batch.DeleteItem(sessionId);
+                batch.DeleteItem(sessionIds[i]);
             }
 
             using var response = await batch.ExecuteAsync(cancellationToken);
@@ -563,7 +581,7 @@ public sealed class GymStore(Container container)
             if (!response.IsSuccessStatusCode)
             {
                 throw new CosmosException(
-                    $"Deleting {chunk.Length} sessions of mesocycle {mesoId} failed. The block "
+                    $"Deleting {length} sessions of mesocycle {mesoId} failed. The block "
                     + "itself is untouched, so nothing is orphaned and the delete can be retried. "
                     + response.ErrorMessage,
                     response.StatusCode,
