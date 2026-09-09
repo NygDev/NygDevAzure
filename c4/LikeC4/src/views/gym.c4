@@ -1,0 +1,140 @@
+views {
+
+  view gym {
+    title 'gym.nygard.dev and gymbro.nygard.dev — the training log'
+    description '
+      Journey four, and the first one with a person in it who writes rather
+      than reads. Two front doors open on the same room: the logger is a phone
+      held in one hand with a bar in the other, the planner is the same block
+      on a desk. Behind them there is one API, one Cosmos container and one
+      Entra registration, and that is the whole design rather than a stage it
+      has not grown out of.
+
+      Both pages fetch from two places, and the split is the interesting part.
+      The exercise library and the built-in day templates are identical for
+      every account, so they are anonymous blobs in the same container the
+      running dashboard is published to — no token, no function call, no RU,
+      cached for a day. Everything a person wrote goes through the API with a
+      bearer token instead, because it is theirs.
+
+      The registration is drawn because it is load-bearing and because it is
+      the one thing here no terraform apply can create. Easy Auth checks both
+      that the token was minted for GymLog and that it was obtained by GymLog,
+      so the planner signs in as the logger rather than as itself.
+      `gymSignIn` is that exchange in order.
+
+      What the API does with the token is the whole tenancy boundary: the
+      Entra object id off the validated principal is the Cosmos partition key,
+      and it is never read from a route, a query string or a body.
+      `gymSet` is one write, and what a lost reply costs.
+    '
+
+    include
+      user,
+      gym,
+      gymbro,
+      entra,
+      entra.gymlog,
+      api,
+      api.gymApi,
+      cosmos,
+      cdn,
+      cdn.dataContainer
+
+    exclude
+      user -> api,        // the one-time WHOOP consent, on the same app — see `whoopBootstrap`
+      api -> entra.gymlog // what Easy Auth checks, and in what order — see `gymSignIn`
+
+    autoLayout LeftRight 150 110
+
+    // Entra is not ours, the same way WHOOP is not ours on `running`. The
+    // registration inside it is amber by kind because most app registrations
+    // in this model are CI identities; this one is not.
+    style entra, entra.gymlog {
+      color muted
+    }
+  }
+
+  dynamic view gymSignIn {
+    title 'Signing in to the training log'
+    description '
+      How a page ends up holding a token the API will accept, and why there is
+      only one registration in it.
+
+      Nothing here has a client secret and nothing can: a browser cannot keep
+      one, so the code exchange is PKCE and what makes the flow safe is that
+      the redirect URI is registered and the verifier never left the page. The
+      registration has to be on the Single-page application platform for that
+      — the same URI registered under Web looks identical in the portal and
+      fails at sign-in, because a Web redirect URI makes Entra treat the caller
+      as a confidential client and demand the secret a browser cannot hold.
+
+      Step seven is where the two checks that matter happen, and they are not
+      the same check. One asks who the token was minted for; the other asks
+      which client obtained it. A front end with a registration of its own
+      passes the first and fails the second, which is exactly why the planner
+      signs in as GymLog and why giving it an identity of its own is a
+      terraform change rather than a front-end one.
+
+      Step eight is the point of all of it. The object id off the validated
+      principal is the Cosmos partition key, so it decides whose training log
+      the call reads — which is why it is taken from the platform headers and
+      never from anything the request could have said about itself.
+    '
+
+    user -> gym 'Taps sign in'
+    gym -> entra.gymlog 'Redirects to Entra as GymLog: authorization code with PKCE, no secret'
+    entra.gymlog -> gym 'Code back to the bridge page, which broadcasts it to the app'
+    gym -> entra.gymlog 'Exchanges the code, then asks for an access token for the API scope'
+    entra.gymlog -> gym 'An access token: minted for GymLog, obtained by GymLog'
+    gym -> api 'Calls a gym route with the token in the Authorization header'
+    api -> entra.gymlog 'Easy Auth validates it — signature, issuer tenant, audience, and which client obtained it'
+    api -> cosmos 'The route reads the object id off the validated principal, and partitions on that'
+
+    autoLayout TopBottom
+
+    // Grey, as on `gym`: this registration is Entra, not our delivery plane,
+    // and the kind is amber because most app registrations in this model are
+    // the identity a workflow runs as.
+    style entra.gymlog {
+      color muted
+    }
+  }
+
+  dynamic view gymSet {
+    title 'Logging a set, and what a lost reply costs'
+    description '
+      One tap, and then the same tap again after the reply went missing. This
+      is the behaviour the whole front end is built on, so it is worth a page.
+
+      Every write carries the number of sets the page believes the exercise
+      already holds, and the patch applies only while that is still true.
+      Steps one to four are the ordinary case. Five to seven are the same
+      request arriving a second time — a reply lost on gym wifi, a tap
+      repeated, an offline queue replayed on reconnect — and the count no
+      longer matching is what makes it a no-op rather than a second set.
+
+      Answering that with a 200 rather than an error is the deliberate part.
+      "Already recorded" means the first attempt landed, so the client has
+      nothing to reconcile and no rule to write about which of two replies to
+      believe. That is what makes the one-tap button safe to hammer, and it is
+      also what lets the page draw the row on the tap instead of three hundred
+      milliseconds later: the count the server checks is what makes drawing
+      first safe rather than optimistic.
+
+      The other outcome is a refusal that says so — the page is stale, nothing
+      was written, and the answer carries what the count actually is so the
+      client re-reads the session and logs again from what it holds.
+    '
+
+    user -> gym 'Taps "Log same again"'
+    gym -> api.gymApi 'POSTs the set, carrying the set count the page believes the exercise holds'
+    api.gymApi -> cosmos 'Patches the session — but only while the stored count still matches'
+    api.gymApi -> gym '200: recorded, and the row the page already drew is now stored'
+    gym -> api.gymApi 'The reply never arrived, so the same request again'
+    api.gymApi -> cosmos 'The count no longer matches, so the patch does not apply'
+    api.gymApi -> gym '200 alreadyRecorded: the first attempt landed, and nothing was written twice'
+
+    autoLayout TopBottom
+  }
+}

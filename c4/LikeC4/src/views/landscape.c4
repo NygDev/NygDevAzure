@@ -1,25 +1,32 @@
 views {
 
   view index {
-    title 'The estate — three front doors'
+    title 'The estate — five front doors'
     description '
-      Everything a visitor can reach, and what sits behind it. Read it as
-      three journeys that share a backend and almost nothing else:
+      Everything a visitor can reach, and what sits behind it. Read it as four
+      journeys that share a backend and almost nothing else:
 
       nygard.dev is a page of links that polls the game server for its
-      status. run.nygard.dev is a page that draws one JSON file. And
-      rpg.nygard.dev is a virtual machine running Foundry VTT.
+      status. run.nygard.dev is a page that draws one JSON file.
+      rpg.nygard.dev is a virtual machine running Foundry VTT. And
+      gym.nygard.dev and gymbro.nygard.dev are two front doors on one
+      training log — a phone and a desk, one API and one Cosmos partition
+      behind them.
 
-      The only real depth is behind the running dashboard: the API walks
-      WHOOP into Cosmos on a timer, builds the charts back out of Cosmos,
-      and publishes them as a blob the page fetches directly. `running`
-      opens that up, and `runningPipeline` is the same thing in order.
+      The depth is behind two of them. The running dashboard is a chain the
+      API runs on a timer: WHOOP into Cosmos, Cosmos into charts, charts into
+      a blob the page fetches directly — `running` opens that up and
+      `runningPipeline` is the same thing in order. The training log is the
+      other, and what is deep about it is not the shape but the token: it is
+      the only thing here with a caller to authenticate, and `gym` is that
+      page.
 
       What builds all of this is left out on purpose — see `delivery`, and
-      `rpgTerraform` for the virtual machine specifically. So is the
-      one-time WHOOP consent, which is a person clicking through an OAuth
-      screen once and not something either site does; that is
-      `whoopBootstrap`.
+      `rpgTerraform` for the virtual machine specifically. So is Entra, which
+      both the gym sign-in and every deploy go through; it is on `gym` and on
+      `delivery` rather than crossing this page twice. So is the one-time
+      WHOOP consent, which is a person clicking through an OAuth screen once
+      and not something any site does; that is `whoopBootstrap`.
     '
 
     include
@@ -27,6 +34,8 @@ views {
       web,
       running,
       rpg,
+      gym,
+      gymbro,
       api,
       cosmos,
       keyvault,
@@ -54,9 +63,9 @@ views {
       three of these arrows start.
 
       Two accounts are read rather than owned: nygdevcdn, of which only the
-      `data` container is managed here, and the foundrydata disk, which is
-      attached and never created — that is what lets rpg-vm be destroyed and
-      rebuilt without losing a world.
+      `data` container and the two gym files in it are managed here, and the
+      foundrydata disk, which is attached and never created — that is what
+      lets rpg-vm be destroyed and rebuilt without losing a world.
     '
 
     include

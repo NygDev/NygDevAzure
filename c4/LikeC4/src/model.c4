@@ -3,8 +3,8 @@
 //
 // One convention, used throughout: a Static Web App element stands for the page
 // it serves, and an edge drawn from it is a fetch the visitor browser makes.
-// Both sites are on the free SKU, which has no linked backend and no proxying,
-// so nothing ever runs server-side behind them — every such edge is
+// All four sites are on the free SKU, which has no linked backend and no
+// proxying, so nothing ever runs server-side behind them — every such edge is
 // cross-origin from the browser, and the label says so.
 model {
 
@@ -17,6 +17,10 @@ model {
       Reads the sites and plays on the game server. Also the person at the
       WHOOP consent screen, once — a refresh token can be renewed forever,
       but only a human can create the first one.
+
+      On the training log they are more than a reader: they sign in, and the
+      Entra object id that comes back is the Cosmos partition every block,
+      session and set of theirs is written under.
     '
   }
 
@@ -25,7 +29,7 @@ model {
   }
 
   // =======================================================================
-  // The three front doors
+  // The front doors
   // =======================================================================
 
   web = static-web-app 'nygard.dev' {
@@ -42,6 +46,40 @@ model {
       The page holds no logic of its own worth drawing: it fetches one
       pre-built JSON document from the CDN account and draws the charts in
       it. Nothing is computed here, and no function is called.
+    '
+  }
+
+  gym = static-web-app 'gym.nygard.dev' {
+    technology 'Azure Static Web App — Free SKU, westeurope'
+    description '
+      nygdevgym — GymLog, the training logger. Provisioned empty by terraform;
+      the built React app is deployed from the nygdevweb repository.
+
+      The first page in the estate that signs anybody in. Everything it shows
+      belongs to one account, so it holds an MSAL client, signs in against
+      Entra as the GymLog registration, and puts the resulting bearer token on
+      every call it makes to the API.
+
+      It is also the first page that both fetches a blob and calls a function,
+      and the split is deliberate: the exercise library and the built-in day
+      templates are the same for every account, so they are anonymous blobs it
+      reads once and caches, and only what a person wrote goes through the API.
+    '
+  }
+
+  gymbro = static-web-app 'gymbro.nygard.dev' {
+    technology 'Azure Static Web App — Free SKU, westeurope'
+    description '
+      nygdevgymbro — the desktop planner for the same training log. A Static
+      Web App of its own rather than a path on the logger, because a Static Web
+      App routes on path only: a second subdomain with different content needs
+      a second resource, which is the same reason there were three already.
+
+      It shares everything but the layout. Same API, same Cosmos partition,
+      same GymLog registration — Easy Auth checks which client obtained the
+      token, so a planner with a registration of its own would be answered 403
+      rather than given a login of its own. What it adds is a screen wide
+      enough to write a block on and to read a whole one back off.
     '
   }
 
@@ -84,9 +122,19 @@ model {
       which is how it reaches Cosmos, the vault and the CDN account without
       holding a key or a connection string.
 
-      Two jobs live in it, on two schedules a quarter of an hour apart, and
-      they are separate on purpose: one talks to WHOOP, the other to Cosmos
-      and blob storage, so neither failure is reported as the other.
+      Three things live in it, drawn apart on purpose. Two are jobs on
+      schedules a quarter of an hour apart: one talks to WHOOP, the other to
+      Cosmos and blob storage, so neither failure is reported as the other.
+      The third is the training log, which runs when somebody taps rather than
+      when a clock fires.
+
+      Easy Auth sits in front of all of them and is the reason the third can
+      exist at all: the platform validates a bearer token before any function
+      runs and hands the code the claims. It is turned on without being
+      enforced — a request that carries no token is passed through rather than
+      bounced to a login, which is what keeps the WHOOP callback and the GPS
+      upload working — so refusing an unauthenticated caller is each gym
+      route doing it for itself.
     '
 
     sync = job 'WHOOP sync' {
@@ -124,6 +172,33 @@ model {
         change to the arithmetic, which reshapes the whole history.
       '
     }
+
+    gymApi = job 'Gym API' {
+      technology 'HTTP triggers, anonymous at the platform and gated on a validated principal'
+      description '
+        The training log: blocks, sessions, sets and saved day templates, read
+        and written a tap at a time by the two gym front ends.
+
+        Drawn beside the timers rather than folded into the app for the same
+        reason they are drawn apart from each other. It runs when a person
+        taps, it writes a different Cosmos container, and it is the only thing
+        in the estate with a caller of its own to authenticate.
+
+        The functions are at Anonymous auth level because a browser cannot
+        keep a function key secret, so what guards them is the principal Easy
+        Auth builds and an explicit check in every route. The Entra object id
+        off that principal is the Cosmos partition key and therefore the whole
+        tenancy boundary, which is why it is read from the platform headers
+        and never from a route, a query string or a body.
+
+        Every write carries the count the client believes the session already
+        holds and applies only while that is still true. So a request whose
+        reply was lost is safe to send again — it answers "already recorded"
+        rather than logging the set twice, which is what makes a one-tap
+        button safe to hammer on gym wifi and what lets the page draw the row
+        before the call returns.
+      '
+    }
   }
 
   azadmin = function-app 'Admin Automation' {
@@ -134,14 +209,27 @@ model {
   cosmos = cosmos-db 'Cosmos DB' {
     technology 'Azure Cosmos DB (NoSQL) — free tier'
     description '
-      nygdev-cosmos-db / db / primary, partitioned on /type. Local auth is
-      off, so the Entra role assignment for id-nygdev-api is the only way in.
+      nygdev-cosmos-db / db, one account holding three containers that share
+      nothing but the throughput. Local auth is off, so the account-scoped
+      Entra role assignment for id-nygdev-api is the only way in.
 
-      Indexed opt-in: /* excluded, with /sport_name and /score_state included
-      for the one query that exists — the dashboard build reading scored runs
-      out of the whoop_workout partition. Everything else is written and read
-      by id. Indexing a record in full would be paid on every write of every
-      sync to earn nothing.
+      `primary` is the WHOOP store, partitioned on /type. `gym` is the
+      training log, partitioned on /objectId — the signed-in caller, which is
+      what makes the partition key the tenancy boundary rather than a routing
+      detail. `gps` is the phone location spool on /sender, with a three-day
+      TTL.
+
+      All three are indexed opt-in, /* excluded and only what is filtered on
+      included: /sport_name and /score_state on primary, for the dashboard
+      build reading scored runs; /type and /mesoId on gym, for History and the
+      block map. Excluding is doing the most work on gym, where the sets are
+      the bulk of a document and are never filtered on — which is what keeps a
+      set-tap costing the same on the thirtieth set as on the first.
+
+      Session consistency, and the training log is what asked for it: log a
+      set, re-read the session, and on Eventual the replica that answers may
+      not hold it yet. On a single-region account it costs the same RU as
+      Eventual.
     '
   }
 
@@ -169,15 +257,30 @@ model {
       description 'Foundry VTT media, fetched straight by player browsers'
     }
 
-    dashboardData = blob-container 'data' {
+    dataContainer = blob-container 'data' {
       technology 'Anonymous blob read; the container cannot be listed'
       description '
-        marathonprep.json — the built running dashboard, rewritten in place
-        on every build and carrying a five-minute Cache-Control, so each
-        rebuild reaches the page well before the next one runs.
+        Three files, published by two different things.
 
-        Anonymous read is what lets run.nygard.dev fetch it with no key, no
-        token and no function call in between.
+        marathonprep.json is the built running dashboard, written by the API
+        and rewritten in place on every build, carrying a five-minute
+        Cache-Control so each rebuild reaches the page well before the next
+        one runs.
+
+        gym-exercises.json and gym-templates.json are the exercise library and
+        the built-in day templates. They are not written by anything at run
+        time — they are files in the repository that terraform uploads, so
+        editing one is an apply rather than a deploy. They are here rather
+        than in Cosmos because they are identical for every account and change
+        when the app ships: served per account they would cost a function
+        invocation, a token and an RU to hand back the same objects. Cached
+        for a day, which is also the worst case for a new exercise reaching a
+        phone that has already loaded the app.
+
+        Anonymous read is what lets all three be fetched with no key, no token
+        and no function call in between. The gym fetches deliberately send no
+        Authorization header either: adding one would turn a simple
+        cross-origin GET into a preflight this endpoint has no CORS rule for.
       '
     }
 
@@ -198,6 +301,35 @@ model {
     '
   }
 
+  // The tenant itself is declared in delivery.c4, where it issues the tokens
+  // the workflows run as. This is the other half of what it does for us, and
+  // it is runtime rather than delivery: the registration a person signs in
+  // against on the training log.
+  extend entra {
+    gymlog = app-registration 'GymLog' {
+      technology 'Single-page application platform, no client secret'
+      description '
+        The identity both gym front ends sign in as, and the identity Easy
+        Auth on the API accepts. Both halves of that check name it: the token
+        is minted for GymLog, and it was obtained by GymLog.
+
+        The second half is the one with consequences. The platform reads the
+        claim naming the client that obtained the token, so a front end given
+        a registration of its own is answered 403 rather than quietly working
+        — which is why the planner signs in as this registration rather than
+        as itself, and why giving it one later is a terraform change and not a
+        front-end one.
+
+        Managed by hand, and it is the one thing in journey four that no
+        apply can create. Declaring it would mean the azuread provider and a
+        Microsoft Graph application grant on the workflow identity, which is a
+        much wider permission than one registration justifies. What that costs
+        is that the SPA redirect URIs and the exposed scope are portal work;
+        terraform prints them as outputs instead.
+      '
+    }
+  }
+
   // =======================================================================
   // Journey 1 — nygard.dev
   // =======================================================================
@@ -215,7 +347,7 @@ model {
 
   // Also from the browser, and the reason the `data` container is
   // anonymous-read: there is nothing in this path that could hold a key.
-  running -> cdn.dashboardData 'Fetches the built dashboard from the page (GET data/marathonprep.json)'
+  running -> cdn.dataContainer 'Fetches the built dashboard from the page (GET data/marathonprep.json)'
 
   // The refresh token is read, spent and rewritten on the same call, which is
   // why the identity holds Secrets Officer here rather than a reader role.
@@ -228,7 +360,7 @@ model {
   api.sync -> cosmos 'Upserts each record on its WHOOP id, and one sync cursor per collection' #managed-identity
 
   api.dashboard -> cosmos 'Queries the scored running workouts back out (the only query in the model)' #managed-identity
-  api.dashboard -> cdn.dashboardData 'Publishes marathonprep.json (PUT, in place)' #managed-identity
+  api.dashboard -> cdn.dataContainer 'Publishes marathonprep.json (PUT, in place)' #managed-identity
 
   // Once, by hand. The refresh grant can keep a token pair alive forever but
   // cannot create one — only a person at the consent screen can do that.
@@ -244,4 +376,39 @@ model {
 
   azadmin -> cdn.foundryMedia 'Sets Cache-Control on blobs' #managed-identity
   cdn.foundryMedia -> azadmin 'Blob-created events (Event Grid)'
+
+  // =======================================================================
+  // Journey 4 — gym.nygard.dev and gymbro.nygard.dev
+  // =======================================================================
+  //
+  // The one journey with a person in it who is more than a reader, and the
+  // only one where two front doors open on the same room: the logger is a
+  // phone held in one hand, the planner is the same block on a desk. There is
+  // no second API, no second store and no second registration behind them.
+
+  user -> gym 'Logs a session at https://gym.nygard.dev'
+  user -> gymbro 'Plans a block at https://gymbro.nygard.dev'
+
+  // From the browser, as everywhere else on this page. MSAL runs in the page,
+  // the code exchange is PKCE and there is no client secret anywhere — a SPA
+  // that could keep one would not be a SPA.
+  gym -> entra.gymlog 'Signs in as this registration (MSAL, authorization code with PKCE)'
+  gymbro -> entra.gymlog 'Signs in as the same registration, for the same reason'
+
+  // Cross-origin, which is why both origins are in the CORS list on the
+  // function app. The token is what decides whose log is read: nothing in
+  // these calls names a user.
+  gym -> api.gymApi 'Reads and writes the training log, one tap at a time' #signed-in
+  gymbro -> api.gymApi 'Reads and writes the same routes, a whole block at a time' #signed-in
+
+  // No token on these two, deliberately: an Authorization header would turn a
+  // simple cross-origin GET into a preflight the blob endpoint has no rule for.
+  gym -> cdn.dataContainer 'Fetches the exercise library and the built-in day templates, once, and caches them'
+  gymbro -> cdn.dataContainer 'Fetches the same two files'
+
+  // Easy Auth on the app, in front of every function in it — which is why this
+  // edge starts at the app rather than at the gym routes inside it.
+  api -> entra.gymlog 'Validates the bearer token against this registration before any function runs'
+
+  api.gymApi -> cosmos 'Reads and writes the blocks, sessions and saved templates in db/gym, under the object id off the token' #managed-identity
 }
