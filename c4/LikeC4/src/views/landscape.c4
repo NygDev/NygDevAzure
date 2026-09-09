@@ -27,6 +27,13 @@ views {
       `delivery` rather than crossing this page twice. So is the one-time
       WHOOP consent, which is a person clicking through an OAuth screen once
       and not something any site does; that is `whoopBootstrap`.
+
+      One more leg is left off for readability rather than for altitude: the
+      gym pages also fetch the shipped exercise library and day templates off
+      the CDN account. Both arrows crossed the page to say something the API
+      leg beside them already implies, and both are on `gym`. The one blob
+      fetch drawn here is run.nygard.dev, where it is not a detail — it is the
+      only thing that page does.
     '
 
     include
@@ -43,9 +50,15 @@ views {
       azadmin,
       whoop
 
+    // The last two are the shipped exercise library and the day templates.
+    // Unlike run.nygard.dev, whose only arrow that fetch is, the gym pages
+    // read them once and then work off the API — so at this altitude it is a
+    // detail, and it cost two arrows across the whole page to say it.
     exclude
       user -> api,             // the one-time consent — see `whoopBootstrap`
-      cdn.webSite -> user      // the published diagrams — see `delivery`
+      cdn.webSite -> user,     // the published diagrams — see `delivery`
+      gym -> cdn,              // the shipped library and templates — see `gym`
+      gymbro -> cdn
 
     autoLayout LeftRight 150 110
 
