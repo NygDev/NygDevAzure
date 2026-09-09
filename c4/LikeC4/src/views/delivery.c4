@@ -13,6 +13,12 @@ views {
       Apply does not; it is dispatched by hand, because it is the one that
       can destroy and rebuild a virtual machine.
 
+      Two paths feed it, which is the answer to a question this page gets
+      asked. The gym exercise library and the built-in day templates are
+      JSON files that terraform uploads to the CDN, so a new exercise ships
+      through an apply rather than through any deploy — there is no pipeline
+      that publishes them, and looking for one is the wrong search.
+
       No Azure credential is stored in GitHub. The environment holds
       identifiers only — tenant, subscription, client id — and the runner
       mints a signed OIDC token that Entra trades for a short-lived access

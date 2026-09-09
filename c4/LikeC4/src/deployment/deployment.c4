@@ -53,7 +53,7 @@ deployment {
     rgDb = resource-group 'rg-nygdev-db' {
       cosmosDb = instanceOf cosmos {
         title 'nygdev-cosmos-db'
-        description 'GlobalDocumentDB, free tier, local auth disabled — db / primary'
+        description 'GlobalDocumentDB, free tier, local auth disabled, Session consistency — db / primary, gym and gps'
       }
     }
 
@@ -70,6 +70,19 @@ deployment {
         webRun = instanceOf running
       }
 
+      gymSite = static-site 'nygdevgym' {
+        description 'Serves https://gym.nygard.dev'
+        webGym = instanceOf gym
+      }
+
+      // A fourth resource rather than a path on the third: a Static Web App
+      // routes on path only, so a second subdomain with different content has
+      // to be a second app.
+      gymbroSite = static-site 'nygdevgymbro' {
+        description 'Serves https://gymbro.nygard.dev'
+        webGymbro = instanceOf gymbro
+      }
+
       // The account itself is read by terraform, not owned by it; only the
       // `data` container below is managed here.
       cdnStorage = blob-storage 'nygdevcdn' {
@@ -78,7 +91,7 @@ deployment {
         }
 
         dataContainer = storage-container 'data' {
-          dashboardBlob = instanceOf cdn.dashboardData
+          dashboardBlob = instanceOf cdn.dataContainer
         }
 
         webContainer = storage-container '$web' {
@@ -141,19 +154,30 @@ deployment {
   // --- what a visitor reaches --------------------------------------------
   internet.browser -> azure.rgWeb.apex 'HTTPS to nygard.dev'
   internet.browser -> azure.rgWeb.runDash 'HTTPS to run.nygard.dev'
+  internet.browser -> azure.rgWeb.gymSite 'HTTPS to gym.nygard.dev'
+  internet.browser -> azure.rgWeb.gymbroSite 'HTTPS to gymbro.nygard.dev'
   internet.browser -> azure.rgNetwork.pip 'HTTPS to rpg.nygard.dev'
 
   // The page on run.nygard.dev fetches the built dashboard straight off the
   // storage account. The free Static Web App SKU has no linked backend, so
   // there is nothing server-side behind the site that could hold a key —
   // which is why the container is anonymous-read rather than proxied.
-  internet.browser -> azure.rgWeb.cdnStorage.dataContainer 'GET data/marathonprep.json (anonymous, cross-origin)'
+  // The gym front ends read two files out of the same container on the same
+  // terms and for the same reason: identical for every account, so there is
+  // nothing in the path that needs a key or a principal.
+  internet.browser -> azure.rgWeb.cdnStorage.dataContainer 'GET marathonprep.json, gym-exercises.json and gym-templates.json (anonymous, cross-origin)'
+
+  // The one browser call in the estate that carries a token. Both origins are
+  // in the CORS list on the app, and the platform validates the token before
+  // any function runs.
+  azure.rgWeb.gymSite -> azure.rgConsumption.aspDotnet.apiApp 'Calls /gym cross-origin with a bearer token'
+  azure.rgWeb.gymbroSite -> azure.rgConsumption.aspDotnet.apiApp 'The same routes, from the planner'
 
   // --- inside ------------------------------------------------------------
   azure.rgNetwork.pip -> azure.rgVm.rpgVm.caddyProc 'Forwards 80/443 through rpg-snet'
   azure.rgVm.rpgVm.foundryProc -> azure.rgData.foundryData 'Stores worlds, modules and media on the attached disk'
 
-  azure.rgConsumption.aspDotnet.apiApp -> azure.rgDb.cosmosDb 'HTTPS/443, gateway mode, Entra token for id-nygdev-api'
+  azure.rgConsumption.aspDotnet.apiApp -> azure.rgDb.cosmosDb 'HTTPS/443, gateway mode, Entra token for id-nygdev-api — one account-scoped grant covering all three containers'
   azure.rgConsumption.aspDotnet.apiApp -> azure.rgSecurity.kv 'HTTPS/443, Entra token for id-nygdev-api'
   azure.rgConsumption.aspDotnet.apiApp -> azure.rgWeb.cdnStorage.dataContainer 'Publishes marathonprep.json as id-nygdev-api'
   azure.rgConsumption.aspDotnet.apiApp -> internet.whoopApi 'OAuth token grants and v2 reads'

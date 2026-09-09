@@ -22,8 +22,9 @@ touching `c4/LikeC4/**` runs `likec4 validate`, then `likec4 build`, then upload
 ## How it is organised
 
 The estate is small and the model is arranged around what a reader actually comes
-looking for: **three journeys** — one per hostname — plus the plane that builds all
-of them.
+looking for: **four journeys** — one per thing a person can do, which is one per
+hostname except on the training log, where a phone and a desk open on the same
+data — plus the plane that builds all of them.
 
 Nothing is drawn twice at the same level of detail. Where a fact belongs on more
 than one page, it is on the most specific one and excluded from the others, with a
@@ -39,6 +40,7 @@ src/
     apex.c4             journey 1 — nygard.dev
     running.c4          journey 2 — run.nygard.dev, and the WHOOP chain
     rpg.c4              journey 3 — rpg.nygard.dev, its infrastructure, its terraform
+    gym.c4              journey 4 — the training log, its sign-in, and one guarded write
     delivery.c4         GitHub to Azure
   deployment/
     _spec.c4            deployment node kinds — the Azure containment hierarchy
@@ -53,9 +55,15 @@ A view overrides colour only when it is making a point.
 Each workflow is a single element. What a run does step by step lives in the
 element's `description`, not in child elements — steps churn much faster than the
 shape of the pipeline, and a diagram of `actions/checkout` teaches nobody anything.
-The same rule is broken exactly once, for the two jobs inside `func-nygdev-api`,
-because they run on different timers, fail for unrelated reasons and touch
-different things, and one box would hide all three facts.
+The same rule is broken exactly once, inside `func-nygdev-api`, which is drawn as
+three: two timers that fire on different schedules and fail for unrelated reasons,
+and the gym routes, which run when somebody taps, write a different Cosmos
+container and are the only thing in the estate with a caller to authenticate. One
+box would hide all of that.
+
+`terraform-apply-gymbro.yml` has no element for the opposite reason: it is the same
+configuration under `-target`, so it can touch nothing `Terraform Apply` cannot, and
+what is worth knowing about it is on that element instead.
 
 ## Views
 
@@ -63,7 +71,7 @@ different things, and one box would hide all three facts.
 
 | View | What it answers |
 | --- | --- |
-| `index` | The whole estate: three front doors and what sits behind them |
+| `index` | The whole estate: five front doors and what sits behind them |
 
 ### Journey 1 — nygard.dev
 
@@ -87,6 +95,14 @@ different things, and one box would hide all three facts.
 | `rpg` | Browser to Caddy to Foundry, and where the media comes from |
 | `rpgInfra` | The public IP, subnet and NSG, the VM, and the disk that outlives it |
 | `rpgTerraform` | How that machine comes to exist at all |
+
+### Journey 4 — gym.nygard.dev and gymbro.nygard.dev
+
+| View | What it answers |
+| --- | --- |
+| `gym` | The logger, the planner, the one registration they share, and what comes from a blob rather than the API |
+| `gymSignIn` | How a page ends up holding a token the API accepts, and the two checks Easy Auth makes on it |
+| `gymSet` | One logged set, and why sending it twice cannot record it twice |
 
 ### The plane that builds it
 

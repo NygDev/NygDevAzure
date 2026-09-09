@@ -35,7 +35,7 @@ views {
       keyvault,
       cosmos,
       cdn,
-      cdn.dashboardData
+      cdn.dataContainer
 
     exclude
       user -> api    // the one-time consent — see `whoopBootstrap`
@@ -76,9 +76,9 @@ views {
     api.sync -> whoop 'Pages cycles, sleep, workouts and recovery, 25 records at a time'
     api.sync -> cosmos 'Upserts each record on its WHOOP id, then saves the cursor'
     api.dashboard -> cosmos 'Fifteen minutes later: queries the scored running workouts'
-    api.dashboard -> cdn.dashboardData 'Publishes marathonprep.json, with a five-minute cache lifetime'
+    api.dashboard -> cdn.dataContainer 'Publishes marathonprep.json, with a five-minute cache lifetime'
     user -> running 'Opens run.nygard.dev, whenever'
-    running -> cdn.dashboardData 'The page fetches the published JSON directly — anonymous, no function in the path'
+    running -> cdn.dataContainer 'The page fetches the published JSON directly — anonymous, no function in the path'
 
     autoLayout TopBottom
   }

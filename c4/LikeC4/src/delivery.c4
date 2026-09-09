@@ -7,6 +7,16 @@
 // terraform-import.yml is deliberately absent: it is a one-shot migration that
 // adopts two hand-made resources into state and is meant to be deleted once it
 // has run, not a pipeline.
+//
+// terraform-apply-gymbro.yml is absent for a different reason: it is the same
+// configuration under -target, so it can touch nothing Terraform Apply cannot
+// and a box for it would answer the same question twice. What is worth knowing
+// about it — that the narrower blast radius is the whole point, and what
+// -target leaves out — is on tfApply below.
+//
+// So is the nygdevweb repository. The four sites are provisioned empty here and
+// their content is deployed from there, on pipelines of their own; this file is
+// about what turns text in *this* repository into Azure.
 model {
 
   github = external-system 'GitHub' {
@@ -28,7 +38,16 @@ model {
 
       srcApi = source-files 'apifunctionapp/**' {
         technology 'C# / .NET 10 isolated worker'
-        description 'The WHOOP endpoints, the two timers, and the running dashboard build'
+        description 'The WHOOP endpoints, the two timers, the running dashboard build, the gym routes and the GPS upload'
+      }
+
+      // Not code, and not deployed by a code pipeline: two JSON files that
+      // terraform uploads to the CDN. That is the whole reason they are drawn
+      // apart from srcApi — editing an exercise ships through an apply, and a
+      // reader who assumed otherwise would look for it in the wrong workflow.
+      srcGym = source-files 'gym/**' {
+        technology 'JSON, uploaded as blobs'
+        description 'The gym exercise library and the built-in day templates — the part of the training log that is the same for every account'
       }
 
       srcPs = source-files 'psfunctionapp/**' {
@@ -88,13 +107,31 @@ model {
           the Foundry disk and the Cosmos account are read or adopted, not
           replaced. State is serialised by a terraform-apply concurrency
           group.
+
+          It also uploads the two gym JSON files, which is why editing an
+          exercise is an apply rather than a deploy: the provider notices the
+          checksum change and reuploads the blob.
+
+          terraform-apply-gymbro.yml is the same configuration run under
+          -target for the planner Static Web App and the API app alone, so a
+          front-end change need not put the VM and the SQL server in its blast
+          radius. It plans before it applies, and it is narrower rather than
+          different — the caveat is that -target excludes dependents, so the
+          two role assignments hanging off the API app are not in its graph.
+          A plan there showing the app or its identity being replaced is the
+          signal to run this one instead.
         '
       }
     }
   }
 
   entra = identity-provider 'Microsoft Entra ID' {
-    description 'The tenant that issues the access tokens the workflows use'
+    description '
+      The tenant behind both kinds of token in this estate: the short-lived
+      Azure access tokens the workflows run as, and the bearer tokens a person
+      signs in for on the training log. The registration for the second is
+      declared with journey four in model.c4.
+    '
 
     ghOidc = app-registration 'GitHub deploy identity' {
       technology 'Workload identity federation'
@@ -125,6 +162,7 @@ model {
   github.repo.srcApi -> github.actions.deployApi 'Change here runs' #ci
   github.repo.srcPs -> github.actions.deployFunc 'Change here runs' #ci
   github.repo.srcTf -> github.actions.tfApply 'Change here is applied by' #ci
+  github.repo.srcGym -> github.actions.tfApply 'Change here is uploaded by' #ci
 
   github.ghEnv -> github.actions 'Supplies tenant, subscription and client ids to' #ci
 
@@ -145,10 +183,12 @@ model {
   azurerm -> rpg 'Creates rpg-vm and its NIC, the public IP, the VNet, subnet and NSG, and attaches the foundrydata disk'
   azurerm -> web 'Creates the nygdevapex Static Web App'
   azurerm -> running 'Creates the nygdevrun Static Web App'
-  azurerm -> api 'Creates func-nygdev-api, id-nygdev-api, its Cosmos and blob role assignments, its CORS rules and the app settings the WHOOP code reads'
+  azurerm -> gym 'Creates the nygdevgym Static Web App'
+  azurerm -> gymbro 'Creates the nygdevgymbro Static Web App'
+  azurerm -> api 'Creates func-nygdev-api, id-nygdev-api, its Cosmos and blob role assignments, the CORS list naming all four site origins, the Easy Auth block, and the app settings the WHOOP code reads'
   azurerm -> azadmin 'Creates func-nygdev-azadmin and its blob role assignment'
-  azurerm -> cosmos 'Creates the account, database, container and indexing policy'
-  azurerm -> cdn.dashboardData 'Creates the data container (the account around it is read, not owned)'
+  azurerm -> cosmos 'Creates the account, the database, the three containers and their indexing policies'
+  azurerm -> cdn.dataContainer 'Creates the data container and uploads the two gym JSON files (the account around it is read, not owned)'
   azurerm -> keyvault 'Creates the vault and the SSH public key resource — but none of the secrets'
 
   // --- the published result ----------------------------------------------
