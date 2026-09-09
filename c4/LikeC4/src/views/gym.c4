@@ -23,6 +23,11 @@ views {
       so the planner signs in as the logger rather than as itself.
       `gymSignIn` is that exchange in order.
 
+      Only the logger sign-in leg is drawn. The planner makes exactly the same
+      call to the same registration, and a second arrow saying so crossed
+      three others to add nothing — the box it points at says whose identity
+      it is.
+
       What the API does with the token is the whole tenancy boundary: the
       Entra object id off the validated principal is the Cosmos partition key,
       and it is never read from a route, a query string or a body.
@@ -30,9 +35,16 @@ views {
     '
 
     include
-      user,
-      gym,
-      gymbro,
+      user
+
+    // Boxed together because they are one application in two shells, and
+    // because it keeps them adjacent: two front ends reaching the same three
+    // things is a fan that crosses itself unless they stay side by side.
+    group 'The training log, in two shells' {
+      include gym, gymbro
+    }
+
+    include
       entra,
       entra.gymlog,
       api,
@@ -42,8 +54,9 @@ views {
       cdn.dataContainer
 
     exclude
-      user -> api,        // the one-time WHOOP consent, on the same app — see `whoopBootstrap`
-      api -> entra.gymlog // what Easy Auth checks, and in what order — see `gymSignIn`
+      user -> api,             // the one-time WHOOP consent, on the same app — see `whoopBootstrap`
+      api -> entra.gymlog,     // what Easy Auth checks, and in what order — see `gymSignIn`
+      gymbro -> entra.gymlog   // identical to the logger leg, and drawn twice it only adds crossings
 
     autoLayout LeftRight 150 110
 
