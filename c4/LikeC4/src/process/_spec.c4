@@ -1,0 +1,76 @@
+// Element kinds for the one model in this repository that is not derived from
+// anything in it. Nothing below is provisioned, deployed or built: it is a
+// room, two of the same person, and a task that does not survive the walk
+// back.
+//
+// Colour follows the rule the estate spec sets — a box is coloured by what it
+// is. People are green, because the estate spec already decided that people
+// are green and this page has no reason to disagree. Furniture is muted,
+// because the furniture is not the point; it is only there so that moving is
+// drawable. The task is amber for as long as somebody is holding it, and what
+// it becomes is drawn at almost no opacity, which is the honest rendering.
+specification {
+
+  // The room. A container and nothing else: it exists so the five things
+  // inside it stay on one page, and so that none of them share a namespace
+  // with anything that has a resource id.
+  element workplace {
+    notation 'Workplace'
+    style {
+      color muted
+      opacity 10%
+    }
+  }
+
+  // Where a person is when nobody is talking to them.
+  //
+  // Two of these is what makes "walks over" and "walks back" drawable at all.
+  // Without them both legs are arrows between the same two people, and the
+  // diagram says somebody spoke twice rather than that somebody crossed a
+  // room twice — which is the part of this process that costs anything.
+  element workstation {
+    notation 'Workstation'
+    style {
+      shape rectangle
+      color muted
+      opacity 25%
+    }
+  }
+
+  // A piece of work while it is still only an idea. Amber, like everything in
+  // the delivery plane, because this is the same kind of thing: something
+  // proposed that may or may not end up running.
+  element work-item {
+    notation 'Proposed Work'
+    style {
+      color amber
+    }
+  }
+
+  // Where work goes when the only copy of it was two people remembering it.
+  //
+  // Drawn as a store because that is exactly what it is not: it has an arrow
+  // in, nothing comes out, and nothing can be queried. The opacity is not a
+  // style choice.
+  element oblivion {
+    notation 'No System of Record'
+    style {
+      shape storage
+      color muted
+      opacity 0%
+    }
+  }
+
+  // --- tags ---------------------------------------------------------------
+
+  // Exists as speech and as nothing else: no ticket, no message, no calendar
+  // entry, no second copy
+  tag verbal {
+    color rgb(147 51 234)
+  }
+
+  // Survives only as long as somebody happens to remember it
+  tag unwritten {
+    color rgb(220 38 38)
+  }
+}

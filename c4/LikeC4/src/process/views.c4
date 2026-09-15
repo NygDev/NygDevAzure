@@ -1,0 +1,87 @@
+views {
+
+  view proposal {
+    title 'The office — a task proposed out loud'
+    description '
+      The room and everything in it. Two people, two desks, one task and the
+      place the task ends up, which is drawn almost invisibly because that is
+      an accurate rendering of it.
+
+      Read this page for the shape and `taskProposal` for the order. What the
+      shape says on its own is that there is no edge here that leaves the
+      room: nothing is written to, nothing is queued, nothing is notified. The
+      task has exactly two holders, both of them people, and the only arrow
+      leading out of it goes somewhere with no arrows coming back.
+
+      The desks are drawn because this process is physical and would otherwise
+      look like a conversation. Delivery of the proposal is a person standing
+      up, and the return leg is the only part of the whole exchange that is
+      guaranteed to complete.
+    '
+
+    include
+      office,
+      office.*
+
+    autoLayout LeftRight 160 110
+
+    // The task is amber while somebody is holding it. Where it goes is not,
+    // and the difference between those two boxes is the entire point of the
+    // page.
+    style office.nowhere {
+      color muted
+    }
+  }
+
+  dynamic view taskProposal {
+    title 'Proposing a task, and what is left of it afterwards'
+    description '
+      The same five steps that happen most days, in order.
+
+      Steps one and four are the same four metres and cost the same amount.
+      Step one is the transport layer: there is no ticket and no message, so
+      the only way the task reaches Desk B is that somebody carries it there.
+      That makes the proposal expensive to make and free to decline, which is
+      most of why this ends the way it does.
+
+      Step three is the decision, and it is worth being precise about what is
+      decided. The answer is about capacity at the moment of asking and not
+      about whether the task should be done — the question of merit is never
+      put, and after step five it cannot be put, because there is nothing left
+      to put it about.
+
+      Step five is drawn in parallel because that is how it happens: not one
+      party dropping it and the other holding on, but both copies expiring at
+      roughly the same time and for the same reason. Neither party did
+      anything wrong here. There were two copies of the task, both in heads,
+      and the process contains no step that writes a third.
+
+      The fix is a step this diagram does not have and would only need to be
+      one line long, which is why the diagram is worth looking at.
+    '
+
+    // 1 — the transport layer
+    office.t25 -> office.deskB 'Stands up and crosses the room; four metres, unscheduled'
+
+    // 2 — delivery
+    office.t25 -> office.t37 'Proposes the task, out loud, once and only once'
+
+    // 3 — the decision
+    office.t37 -> office.t25 'Declines: the current workload has no room for it'
+
+    // 4 — the return leg, which is the only step that always completes
+    office.t25 -> office.deskA 'Crosses back and sits down; the task has not been written anywhere'
+
+    // 5 — both copies expire
+    parallel {
+      office.t25 -> office.nowhere 'Forgets it, having kept the only copy in his head'
+      office.t37 -> office.nowhere 'Forgets it too, for exactly the same reason'
+    }
+
+    autoLayout TopBottom
+
+    style office.nowhere {
+      color muted
+    }
+  }
+}

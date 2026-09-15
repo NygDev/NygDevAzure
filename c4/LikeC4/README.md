@@ -45,6 +45,10 @@ src/
   deployment/
     _spec.c4            deployment node kinds — the Azure containment hierarchy
     deployment.c4       where every element physically sits
+  process/
+    _spec.c4            element kinds for the one model with nothing behind it
+    process.c4          two people, two desks, and a task nobody wrote down
+    views.c4            the room, and the same five steps in order
 ```
 
 Colour is set once, on the element kind in `_spec.c4`, rather than per view: a box
@@ -60,6 +64,14 @@ three: two timers that fire on different schedules and fail for unrelated reason
 and the gym routes, which run when somebody taps, write a different Cosmos
 container and are the only thing in the estate with a caller to authenticate. One
 box would hide all of that.
+
+`process/` is the exception to all of the above: it is not derived from anything
+in this repository and nothing in it is provisioned, deployed or built. It models
+a process that happens in a room — a task proposed out loud, declined on workload,
+and gone by the time both parties sit back down — and it is here because the thing
+it shows, work with no system of record behind it, is the same failure the rest of
+this repository spends its effort avoiding. It shares the `actor` kind with the
+estate and touches none of its views.
 
 `terraform-apply-gymbro.yml` has no element for the opposite reason: it is the same
 configuration under `-target`, so it can touch nothing `Terraform Apply` cannot, and
@@ -110,3 +122,10 @@ what is worth knowing about it is on that element instead.
 | --- | --- |
 | `delivery` | Which workflow can touch what, and the secretless identity all four go through |
 | `azureDeployment` | Every resource group and what is in it |
+
+### Not part of the estate
+
+| View | What it answers |
+| --- | --- |
+| `proposal` | The room: two people, two desks, one spoken task, and the place it ends up |
+| `taskProposal` | The same five steps in order, from standing up to both parties forgetting |
