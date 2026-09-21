@@ -451,3 +451,199 @@ resource "azurerm_role_assignment" "api_cdn_data" {
   role_definition_name = "Storage Blob Data Contributor"
   principal_id         = azurerm_user_assigned_identity.api.principal_id
 }
+
+# ---------------------------------------------------------------------------
+# The integrations app — the other half of func-nygdev-api, pre-created.
+#
+# Nothing is deployed here yet, and nothing routes here. It exists so that
+# splitting the api app in two is later a code move and a workflow change
+# rather than an infrastructure change: WHOOP, GPS and the running dashboard
+# move to this app, the gym logger stays where it is, and the two halves stop
+# having to share one answer to "must a caller be signed in".
+#
+# Sharing that answer is the whole problem. Easy Auth on func-nygdev-api runs
+# with require_authentication = false because the WHOOP callback has to be
+# reachable by WHOOP, and the GPS upload by a phone holding a function key —
+# and the platform gate cannot be turned on for the gym endpoints without
+# shutting the door on both in the same instant. Once those callers live here,
+# that app has nothing anonymous left on it and the gate can go on with no
+# exclusions at all: no excludedPaths list, whose documented behaviour covers
+# the login redirect rather than a 401 and would have to be verified by
+# experiment, and no exempt path for a future endpoint to be written into by
+# accident.
+#
+# Moving the code is not the whole move. These are manual, and none of them can
+# be done from here:
+#   - the redirect URL on the WHOOP developer dashboard, from func-nygdev-api
+#     to this app — integrations_whoop_redirect_uri in outputs.tf is the string
+#   - the phone's GPS upload URL, and a function key minted on this app
+#   - deploy-api-function-app.yml, which today publishes one project to one app
+# ---------------------------------------------------------------------------
+
+# A third plan for a third app, and not by preference: Flex Consumption permits
+# exactly one app per plan, so an app is a plan whatever its runtime. (That is
+# also the real reason flex_ps and flex_dotnet are two plans rather than one —
+# the runtime is set on the app, not here.)
+#
+# The plan costs nothing standing. Flex bills execution time plus an always-
+# ready baseline, and there are no always-ready instances on this app, so an
+# idle plan bills zero.
+resource "azurerm_service_plan" "flex_integrations" {
+  name                = "asp-nygdev-flex-integrations"
+  resource_group_name = azurerm_resource_group.consumption.name
+  location            = azurerm_resource_group.consumption.location
+  os_type             = "Linux"
+  sku_name            = "FC1"
+  tags                = local.common_tags
+}
+
+# Deployment artifact container for the integrations function app
+resource "azurerm_storage_container" "integrations" {
+  name                  = "integrations-deploy"
+  storage_account_id    = azurerm_storage_account.consumption.id
+  container_access_type = "private"
+}
+
+# Its own identity rather than a second app on id-nygdev-api, because the point
+# of the split is that these two apps stop sharing things. Sharing the identity
+# would leave the gym app's principal holding Key Vault Secrets Officer and the
+# integrations app's principal holding read/write on db/gym — each with the
+# other's rights and no use for them.
+#
+# It also leaves room to narrow id-nygdev-api afterwards: once WHOOP lives
+# here, that identity has no reason to keep its vault access or its grant on
+# the CDN data container.
+resource "azurerm_user_assigned_identity" "integrations" {
+  name                = "id-nygdev-integrations"
+  resource_group_name = azurerm_resource_group.consumption.name
+  location            = azurerm_resource_group.consumption.location
+  tags                = local.common_tags
+}
+
+# WHOOP, GPS and the running dashboard, once they move. .NET 10 isolated on
+# Flex Consumption, same as the app it is splitting from — the code is the same
+# code, so the runtime has to be.
+#
+# No auth_settings_v2 block, and that is the point of this app rather than an
+# omission: everything destined for it authenticates as something other than an
+# Entra user. The WHOOP callback is anonymous because WHOOP redirects a browser
+# to it with a code; the rest are at Function auth level and carry a key. Easy
+# Auth knows nothing about function keys, so turning it on here would 401 them
+# all before the host ever checked one.
+#
+# No CORS block either. Nothing that moves here is called from a browser by
+# XHR: the phone posts to /api/gps/locations directly, the WHOOP callback is a
+# top-level navigation, and run.nygard.dev reads the dashboard as a blob off
+# the CDN rather than through the function. A cors block would be a list of
+# origins that never send a preflight.
+resource "azurerm_function_app_flex_consumption" "integrations" {
+  name                = "func-nygdev-integrations"
+  resource_group_name = azurerm_resource_group.consumption.name
+  location            = azurerm_resource_group.consumption.location
+  service_plan_id     = azurerm_service_plan.flex_integrations.id
+
+  storage_container_type      = "blobContainer"
+  storage_container_endpoint  = "${azurerm_storage_account.consumption.primary_blob_endpoint}${azurerm_storage_container.integrations.name}"
+  storage_authentication_type = "StorageAccountConnectionString"
+  storage_access_key          = azurerm_storage_account.consumption.primary_access_key
+
+  runtime_name    = "dotnet-isolated"
+  runtime_version = "10.0"
+
+  # The same shape as the api app. Worth leaving alone: the on-demand free
+  # grant of GB-s and executions applies only while an app has no always-ready
+  # instances — always-ready billing has no free grants at all — and nothing
+  # here is latency-sensitive enough to buy warm instances for. The WHOOP sync
+  # and the dashboard build run on timers, and the phone's upload is a spool
+  # that resends.
+  instance_memory_in_mb  = 512
+  maximum_instance_count = 1
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.integrations.id]
+  }
+
+  app_settings = {
+    APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
+
+    # The same account, the same containers, the same vault as the api app
+    # reads today — what changes at the split is which app holds them, not
+    # where anything lives. See the api app above for why each is a bare
+    # endpoint rather than a connection string: local auth is off on Cosmos and
+    # the secrets never leave the vault.
+    COSMOS_ENDPOINT    = azurerm_cosmosdb_account.db.endpoint
+    DASHBOARD_BLOB_URL = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${azurerm_storage_container.data.name}/marathonprep.json"
+    KEY_VAULT_URI      = azurerm_key_vault.nygdev.vault_uri
+
+    MANAGED_IDENTITY_CLIENT_ID = azurerm_user_assigned_identity.integrations.client_id
+
+    WHOOP_CLIENT_ID = var.whoop_client_id
+    WHOOP_SCOPES    = var.whoop_scopes
+
+    # WEBSITE_AUTH_AAD_ALLOWED_TENANTS is deliberately absent, unlike on the
+    # api app: it is an Easy Auth control, and there is no Easy Auth here.
+    #
+    # WHOOP_REDIRECT_URI is absent for the reason it is absent there — it would
+    # name this app's own hostname, which is a dependency cycle. The code reads
+    # WEBSITE_HOSTNAME at run time instead.
+  }
+
+  site_config {}
+
+  tags = local.common_tags
+
+  lifecycle {
+    # As on the two apps above: Flex Consumption doesn't return the App
+    # Insights connection string in app_settings on read, mirrors it into
+    # site_config, and adds a hidden-link tag once connected.
+    ignore_changes = [
+      app_settings["APPLICATIONINSIGHTS_CONNECTION_STRING"],
+      site_config[0].application_insights_connection_string,
+      tags["hidden-link: /app-insights-resource-id"],
+    ]
+  }
+}
+
+# Cosmos data-plane read/write for the integrations app, account-scoped on the
+# same reasoning as api_cosmos above: db holds this project's data and nothing
+# else, and container-scoped assignments turn every future container into a
+# terraform change that can briefly leave the app with no access at all.
+#
+# It is granted before anything is deployed here on purpose. A data-plane
+# assignment takes a few minutes to propagate, and finding that out on the
+# first sync after the split is worse than finding it out now.
+resource "azurerm_cosmosdb_sql_role_assignment" "integrations_cosmos" {
+  resource_group_name = azurerm_resource_group.databases.name
+  account_name        = azurerm_cosmosdb_account.db.name
+  role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
+  principal_id        = azurerm_user_assigned_identity.integrations.principal_id
+  scope               = azurerm_cosmosdb_account.db.id
+}
+
+# Write access on the CDN data container, for the dashboard blob the running
+# build rewrites in place. Container-scoped rather than account-scoped for the
+# reason api_cdn_data gives: nygdevcdn also holds Foundry's media and the
+# LikeC4 site, neither of which is this app's business.
+resource "azurerm_role_assignment" "integrations_cdn_data" {
+  scope                = azurerm_storage_container.data.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = azurerm_user_assigned_identity.integrations.principal_id
+}
+
+# Key Vault Secrets Officer, for whoop-clientsecret on the way in and the
+# rotated whoop-token on the way back out. Officer rather than a reader role
+# because the write-back is the whole point — see security.tf.
+#
+# Declared here, unlike the equivalent assignment for id-nygdev-api, which was
+# granted out of band and left out of this configuration because
+# azurerm_role_assignment fails on an assignment that already exists. This one
+# does not exist yet, so there is nothing to adopt. It is the one resource in
+# this block that needs the apply identity to hold role-assignment rights on
+# rg-nygdev-security; if an apply fails here alone, grant it by hand and drop
+# this resource, which is how the other one came to be missing.
+resource "azurerm_role_assignment" "integrations_key_vault" {
+  scope                = azurerm_key_vault.nygdev.id
+  role_definition_name = "Key Vault Secrets Officer"
+  principal_id         = azurerm_user_assigned_identity.integrations.principal_id
+}
