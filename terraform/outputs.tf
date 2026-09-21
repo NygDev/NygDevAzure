@@ -101,3 +101,18 @@ output "gymlog_spa_redirect_uri" {
     "https://${azurerm_static_web_app.nygdevgymbro.default_host_name}/",
   ]
 }
+
+output "integrations_function_app_hostname" {
+  description = "Default hostname of the integrations function app, pre-created for the split of func-nygdev-api. Nothing is deployed to it yet, so nothing calls this host today; it is here because everything that has to be re-pointed when WHOOP, GPS and the running dashboard move is derived from it."
+  value       = azurerm_function_app_flex_consumption.integrations.default_hostname
+}
+
+output "integrations_whoop_redirect_uri" {
+  description = "What the WHOOP developer dashboard's redirect URL becomes when the WHOOP code moves to the integrations app — not before. WHOOP compares it on both legs of the authorization code grant and permits one value, so this is a cutover rather than an addition: change it and the flow on func-nygdev-api stops working the same minute. Doing it in the other order is the safer half-hour, since a WHOOP sync failing is a retry on the next timer."
+  value       = "https://${azurerm_function_app_flex_consumption.integrations.default_hostname}/api/whoop/callback"
+}
+
+output "integrations_gps_endpoint" {
+  description = "Where the phone's location spool posts once the GPS code moves to the integrations app. Needs ?code=<function key> appended, as it does today — the endpoint is at Function auth level, and the key is minted per app, so the phone needs this app's key rather than the one it holds for func-nygdev-api."
+  value       = "https://${azurerm_function_app_flex_consumption.integrations.default_hostname}/api/gps/locations"
+}
