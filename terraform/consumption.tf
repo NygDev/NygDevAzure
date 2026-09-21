@@ -478,6 +478,9 @@ resource "azurerm_role_assignment" "api_cdn_data" {
 #     to this app — integrations_whoop_redirect_uri in outputs.tf is the string
 #   - the phone's GPS upload URL, and a function key minted on this app
 #   - deploy-api-function-app.yml, which today publishes one project to one app
+#   - Key Vault Secrets Officer for id-nygdev-integrations, which this
+#     configuration is not permitted to grant — see the note at the end of this
+#     block for the command and why it is not a resource
 # ---------------------------------------------------------------------------
 
 # A third plan for a third app, and not by preference: Flex Consumption permits
@@ -631,19 +634,33 @@ resource "azurerm_role_assignment" "integrations_cdn_data" {
   principal_id         = azurerm_user_assigned_identity.integrations.principal_id
 }
 
-# Key Vault Secrets Officer, for whoop-clientsecret on the way in and the
-# rotated whoop-token on the way back out. Officer rather than a reader role
-# because the write-back is the whole point — see security.tf.
+# Key Vault Secrets Officer for id-nygdev-integrations is granted out of band
+# and is deliberately not declared here, which is what security.tf already
+# records for id-nygdev-api. The reason is the same in substance and different
+# in mechanism: that one pre-existed and azurerm_role_assignment refuses to
+# adopt an assignment that already exists, while this one was declared, tried,
+# and refused — the apply workflow's identity holds no
+# Microsoft.Authorization/roleAssignments/write on rg-nygdev-security, so
+# terraform cannot make the grant at all.
 #
-# Declared here, unlike the equivalent assignment for id-nygdev-api, which was
-# granted out of band and left out of this configuration because
-# azurerm_role_assignment fails on an assignment that already exists. This one
-# does not exist yet, so there is nothing to adopt. It is the one resource in
-# this block that needs the apply identity to hold role-assignment rights on
-# rg-nygdev-security; if an apply fails here alone, grant it by hand and drop
-# this resource, which is how the other one came to be missing.
-resource "azurerm_role_assignment" "integrations_key_vault" {
-  scope                = azurerm_key_vault.nygdev.id
-  role_definition_name = "Key Vault Secrets Officer"
-  principal_id         = azurerm_user_assigned_identity.integrations.principal_id
-}
+# Granting it to the workflow would mean User Access Administrator on the
+# resource group holding the vault, so that every future apply could hand any
+# role on it to anyone. That is a much wider standing permission than one
+# assignment is worth, and the same trade was already made and declined for
+# id-nygdev-api.
+#
+# What has to be run once, by someone who does hold it, before WHOOP moves to
+# this app — until then the app has no code and nothing asks for a secret:
+#
+#   az role assignment create \
+#     --assignee-object-id $(az identity show \
+#       --resource-group rg-nygdev-consumption \
+#       --name id-nygdev-integrations \
+#       --query principalId --output tsv) \
+#     --assignee-principal-type ServicePrincipal \
+#     --role "Key Vault Secrets Officer" \
+#     --scope $(az keyvault show --name nygdev --query id --output tsv)
+#
+# --assignee-principal-type is not optional ceremony: without it the CLI looks
+# the principal up in Graph, and a managed identity created moments earlier is
+# not replicated yet, so the command fails on a principal that plainly exists.
