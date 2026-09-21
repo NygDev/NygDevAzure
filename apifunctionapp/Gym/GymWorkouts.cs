@@ -187,6 +187,20 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
     /// their totals already added up, because volume and average RPE are
     /// derived rather than stored and the entries had to be read to derive
     /// them.
+    ///
+    /// <c>?include=entries</c> keeps those entries on the answer instead of
+    /// dropping them once they are added up. It exists for one caller — the
+    /// planner's Analytics view, which charts one lift across a block and
+    /// therefore needs to know which exercise each session's volume came from,
+    /// which no total carries. Without it that view opens every session in the
+    /// block one at a time: up to forty-eight round trips, and forty-eight
+    /// point reads, for sets this query had already read and this endpoint had
+    /// already parsed.
+    ///
+    /// So it is opt-in rather than the default, and the asymmetry is the point:
+    /// answering with the sets costs the bytes and nothing else, while asking
+    /// for them when the block map is all that is wanted would put a session
+    /// document per cell on the wire for a screen that draws a tick per cell.
     /// </summary>
     [Function("GymWorkoutList")]
     public Task<IActionResult> List(
@@ -201,6 +215,19 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
                 return GymEndpoint.Invalid($"'{requested}' is not a mesocycle id.");
             }
 
+            // Named rather than boolean — `?include=` is the shape that has
+            // somewhere to grow — and spelled exactly. A misspelling that
+            // quietly answered without the sets would read on the client as a
+            // block in which nobody has ever lifted anything.
+            var include = request.Query["include"].FirstOrDefault();
+
+            if (include is not null && include != "entries")
+            {
+                return GymEndpoint.Invalid(
+                    $"'include' is '{include}', and the only thing this route can include is "
+                    + "'entries'. Leave it off for the totals alone.");
+            }
+
             var mesoId = requested ?? await store.ReadCurrentMesoIdAsync(objectId, token);
 
             if (mesoId is null)
@@ -213,7 +240,11 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
                 });
             }
 
-            var sessions = await store.ListSessionsAsync(objectId, mesoId, token);
+            var sessions = await store.ListSessionsAsync(
+                objectId,
+                mesoId,
+                token,
+                withEntries: include == "entries");
 
             return new OkObjectResult(new
             {

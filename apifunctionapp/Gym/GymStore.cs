@@ -898,11 +898,21 @@ public sealed class GymStore(Container container)
     /// <summary>
     /// Every session in a block, for History and the block map — the same query
     /// rendered two different ways.
+    ///
+    /// <paramref name="withEntries"/> keeps the sets on each summary instead of
+    /// dropping them once the totals are derived. It changes nothing about the
+    /// read: <see cref="SessionsQuery"/> projects <c>c.entries</c> in either
+    /// case, because the totals are derived rather than stored and deriving
+    /// them means pulling the sets. So the whole block's sets in one answer
+    /// costs exactly what the block map already costs, and the alternative —
+    /// the client opening each session in turn — is a point read per session
+    /// on top of this query having already read every one of them.
     /// </summary>
     public async Task<IReadOnlyList<SessionSummary>> ListSessionsAsync(
         string objectId,
         string mesoId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool withEntries = false)
     {
         var sessions = new List<SessionSummary>();
 
@@ -912,7 +922,7 @@ public sealed class GymStore(Container container)
                 .WithParameter("@type", GymIds.SessionType)
                 .WithParameter("@mesoId", mesoId),
             $"Reading the sessions of mesocycle {mesoId} failed.",
-            document => sessions.Add(SessionSummary.Read(document)),
+            document => sessions.Add(SessionSummary.Read(document, withEntries)),
             cancellationToken);
 
         return sessions;

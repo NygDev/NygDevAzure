@@ -525,15 +525,36 @@ public readonly record struct SessionTotals(
 /// <summary>
 /// A session as the block map and History see it: where it sits, whether it is
 /// finished, and what it added up to.
+///
+/// <see cref="Entries"/> is the sets themselves, and is null unless the caller
+/// asked for them. Every summary is built by reading them — volume and average
+/// RPE are derived rather than stored, so the sets have to be parsed to add
+/// them up — and the default is to add them up and drop them, because the block
+/// map and History want a number per cell rather than a session per cell.
+///
+/// Keeping them instead is what <c>?include=entries</c> buys, and the reason it
+/// can be nearly free: the query already projects <c>c.entries</c> and this
+/// already walks every set in it, so the cost of answering with them is the
+/// bytes on the wire and nothing else. See <see cref="GymWorkouts.List"/> for
+/// what that replaces.
 /// </summary>
 public readonly record struct SessionSummary(
     string Id,
     int Week,
     int DayIndex,
     string Status,
-    SessionTotals Totals)
+    SessionTotals Totals,
+    IReadOnlyList<SessionEntry>? Entries = null)
 {
-    public static SessionSummary Read(JsonElement document)
+    /// <summary>
+    /// Reads one row of the block's session query.
+    ///
+    /// <paramref name="withEntries"/> decides whether the parsed sets are kept
+    /// on the summary or thrown away once they have been added up. It does not
+    /// decide whether they are read: they are on the document either way, and
+    /// the totals cannot be derived without walking them.
+    /// </summary>
+    public static SessionSummary Read(JsonElement document, bool withEntries = false)
     {
         var entries = new List<SessionEntry>();
 
@@ -550,20 +571,39 @@ public readonly record struct SessionSummary(
             GymDocument.Int32(document, "week"),
             GymDocument.Int32(document, "dayIndex"),
             GymDocument.String(document, "status"),
-            SessionTotals.Of(entries));
+            SessionTotals.Of(entries),
+            withEntries ? entries : null);
     }
 
-    public object ToResponse() => new
-    {
-        id = Id,
-        week = Week,
-        dayIndex = DayIndex,
-        status = Status,
-        exerciseCount = Totals.ExerciseCount,
-        setCount = Totals.SetCount,
-        volumeKg = Totals.VolumeKg,
-        avgRpe = Totals.AverageRpe,
-    };
+    /// <summary>
+    /// The wire shape. <c>entries</c> is present only when it was asked for,
+    /// rather than sent as null: a client reading the block map should not have
+    /// to skip over a key that is never populated for it.
+    /// </summary>
+    public object ToResponse() => Entries is null
+        ? new
+        {
+            id = Id,
+            week = Week,
+            dayIndex = DayIndex,
+            status = Status,
+            exerciseCount = Totals.ExerciseCount,
+            setCount = Totals.SetCount,
+            volumeKg = Totals.VolumeKg,
+            avgRpe = Totals.AverageRpe,
+        }
+        : new
+        {
+            id = Id,
+            week = Week,
+            dayIndex = DayIndex,
+            status = Status,
+            exerciseCount = Totals.ExerciseCount,
+            setCount = Totals.SetCount,
+            volumeKg = Totals.VolumeKg,
+            avgRpe = Totals.AverageRpe,
+            entries = Entries.Select(entry => entry.ToResponse()).ToArray(),
+        };
 }
 
 /// <summary>

@@ -432,6 +432,49 @@ exists once Start has created it.
 History. Without `mesoId`, the current block. Same session summaries as
 `/mesocycles/current`, newest first, grouped into weeks client-side off `week`.
 
+Add `&include=entries` and every summary carries its `entries` — the same array
+`/gym/workouts/{id}` returns, with the totals still flattened onto the summary
+beside it:
+
+```jsonc
+{
+  "ok": true,
+  "mesoId": "01k4…",
+  "sessions": [
+    {
+      "id": "session_2026-09-03",
+      "week": 2, "dayIndex": 1, "status": "submitted",
+      "exerciseCount": 1, "setCount": 1, "volumeKg": 500, "avgRpe": 7.5,
+      "entries": [
+        {
+          "exerciseName": "Back squat",
+          "sets": [{ "weightKg": 100, "reps": 5, "rpe": 7.5 }]
+        }
+      ]
+    }
+  ]
+}
+```
+
+It costs the bytes and nothing else. This route reads `c.entries` whatever it
+is asked for — volume and average RPE are derived rather than stored, so the
+sets have to be walked to add them up — and `include` only decides whether they
+are kept afterwards. The alternative, which is what the planner's Analytics
+view used to do, is a round trip and a point read per session: up to
+forty-eight of them, for sets this one query had already read.
+
+It is opt-in rather than the default because the asymmetry runs one way only.
+Keeping the sets is nearly free for the caller that needs them; sending them to
+the block map, which draws a tick per cell, would put a session document per
+cell on the wire for a screen that reads four numbers. `include` spelled as
+anything but `entries` is a **400** rather than a silent fallback: a summary
+that quietly arrived without its sets reads on a client as a block in which
+nobody ever lifted anything.
+
+The only caller is the chart. Nothing on a session's totals says which exercise
+the volume came from, so a lift charted across a block cannot be drawn from the
+block map alone — and that question is the whole reason this parameter exists.
+
 ### `POST /gym/workouts/{id}/entries` — the picker
 
 ```jsonc
