@@ -139,6 +139,9 @@ views {
     whoop -> api 'Access token, and the first refresh token'
     api -> keyvault 'Writes whoop-token'
 
-    autoLayout TopBottom
+    // Left to right and tight between ranks. Top to bottom, both browser legs
+    // to WHOOP had to cut through the two vault arrows under the API; this is
+    // the layout that routes them round instead.
+    autoLayout LeftRight 40 200
   }
 }

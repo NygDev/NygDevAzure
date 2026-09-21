@@ -72,13 +72,16 @@ views {
     title 'Deployment — the whole subscription'
     description '
       Every resource group and what is in it, as terraform provisions it.
-      The one node outside Azure is the visitor browser, which is where
-      three of these arrows start.
+      Two nodes sit outside Azure: the visitor browser, where every request
+      into the estate starts, and the WHOOP API, the one thing the estate
+      calls out to.
 
-      Two accounts are read rather than owned: nygdevcdn, of which only the
-      `data` container and the two gym files in it are managed here, and the
-      foundrydata disk, which is attached and never created — that is what
-      lets rpg-vm be destroyed and rebuilt without losing a world.
+      Two things are read rather than owned: the nygdevcdn account, of which
+      only the `data` container and the two gym files in it are managed
+      here, and the foundrydata disk, which is attached and never created —
+      that is what lets rpg-vm be destroyed and rebuilt without losing a
+      world. sql-nygdev is the opposite case: owned here, in Sweden Central
+      rather than Norway East, and reached by nothing else on the page.
     '
 
     include
@@ -104,6 +107,13 @@ views {
       azure.rgData.*,
       azure.rgSecurity,
       azure.rgSecurity.*
+
+    // Three legs that belong to one journey each and, drawn here, ran the
+    // width of the subscription across everything between them.
+    exclude
+      internet.browser -> azure.rgConsumption.aspDotnet.apiApp,  // the one-time WHOOP consent — see `whoopBootstrap`
+      azure.rgWeb.cdnStorage.webContainer -> internet.browser,    // the published diagrams — see `delivery`
+      azure.rgWeb.apex -> azure.rgVm.rpgVm.caddyProc              // the nygard.dev status poll — see `apex`
 
     autoLayout LeftRight 180 110
 

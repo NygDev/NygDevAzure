@@ -76,8 +76,7 @@ views {
     // something this one does.
     exclude
       internet.browser -> azure,                        // the WHOOP consent
-      internet.browser -> azure.rgWeb,                  // visits to the two Static Web Apps
-      internet.browser -> azure.rgWeb.cdnStorage,       // the running dashboard fetch
+      internet.browser -> azure.rgWeb,                  // visits to the Static Web Apps
       azure.rgWeb -> azure.rgVm.rpgVm.caddyProc,        // the nygard.dev status poll
       azure.rgWeb.cdnStorage -> internet.browser        // the published diagrams
 
@@ -104,12 +103,13 @@ views {
       its own.
 
       Two values it needs are not in the repository and are fetched at run
-      time from the vault: the home IP the NSG opens SSH and the Foundry
-      ports to, and the nygdev-ed25519 public key the VM admin account is
-      built with. Neither is ever written to state as a secret, and nothing
-      in this picture holds an Azure credential — the runner mints an OIDC
-      token, Entra trades it for a short-lived access token, and RBAC on
-      that principal is the real blast radius.
+      time from rg-nygdev-security: the home IP the NSG opens SSH and the
+      Foundry ports to, which is a secret in the vault, and the
+      nygdev-ed25519 public key the VM admin account is built with, which is
+      a resource of its own beside it. Neither is ever written to state as a
+      secret, and nothing in this picture holds an Azure credential — the
+      runner mints an OIDC token, Entra trades it for a short-lived access
+      token, and RBAC on that principal is the real blast radius.
     '
 
     include

@@ -5,8 +5,9 @@
 // diagram of actions/checkout teaches nobody anything.
 //
 // terraform-import.yml is deliberately absent: it is a one-shot migration that
-// adopts two hand-made resources into state and is meant to be deleted once it
-// has run, not a pipeline.
+// adopts three hand-made resources into state — the `data` container, the
+// blob role on it for id-nygdev-api, and the nygdevgym Static Web App — and is
+// meant to be deleted once it has run, not a pipeline.
 //
 // terraform-apply-gymbro.yml is absent for a different reason: it is the same
 // configuration under -target, so it can touch nothing Terraform Apply cannot
@@ -175,7 +176,9 @@ model {
   github.actions.deployC4 -> cdn.webSite 'Clears and re-uploads dist/ (az storage blob upload-batch)'
   github.actions.deployApi -> api 'Deploys the published worker'
   github.actions.deployFunc -> azadmin 'Deploys the function package'
-  github.actions.tfApply -> keyvault 'Reads HomeIP and the SSH public key at run time'
+  // The SSH key is not a secret in the vault but its own resource beside it,
+  // read with az sshkey show; the edge ends here because that is where it sits.
+  github.actions.tfApply -> keyvault 'Reads HomeIP, and the nygdev-ed25519 public key beside it, at run time'
   github.actions.tfApply -> tfstate 'Locks and writes state'
   github.actions.tfApply -> azurerm 'terraform apply -auto-approve'
 
@@ -185,7 +188,7 @@ model {
   azurerm -> running 'Creates the nygdevrun Static Web App'
   azurerm -> gym 'Creates the nygdevgym Static Web App'
   azurerm -> gymbro 'Creates the nygdevgymbro Static Web App'
-  azurerm -> api 'Creates func-nygdev-api, id-nygdev-api, its Cosmos and blob role assignments, the CORS list naming all four site origins, the Easy Auth block, and the app settings the WHOOP code reads'
+  azurerm -> api 'Creates func-nygdev-api, id-nygdev-api, its Cosmos and blob role assignments, the CORS list naming run, gym and gymbro under both of their hostnames, the Easy Auth block, and the app settings the WHOOP code reads'
   azurerm -> azadmin 'Creates func-nygdev-azadmin and its blob role assignment'
   azurerm -> cosmos 'Creates the account, the database, the three containers and their indexing policies'
   azurerm -> cdn.dataContainer 'Creates the data container and uploads the two gym JSON files (the account around it is read, not owned)'

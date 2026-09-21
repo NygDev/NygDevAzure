@@ -28,7 +28,11 @@ deployment {
 
         apiApp = instanceOf api {
           title 'func-nygdev-api'
-          description '512 MB instances, max 1. Runs as id-nygdev-api; CORS allows run.nygard.dev.'
+          description '
+            512 MB instances, max 1. Runs as id-nygdev-api. CORS allows run,
+            gym and gymbro, each under its custom domain and its default
+            hostname; Easy Auth validates GymLog tokens without enforcing them.
+          '
         }
       }
 
@@ -54,6 +58,18 @@ deployment {
       cosmosDb = instanceOf cosmos {
         title 'nygdev-cosmos-db'
         description 'GlobalDocumentDB, free tier, local auth disabled, Session consistency — db / primary, gym and gps'
+      }
+
+      // Nothing in the logical model talks to it, which is why it is only
+      // here: it is a resource terraform owns, not a part of any journey.
+      sqlServer = sql-server 'sql-nygdev' {
+        technology 'Azure SQL — swedencentral'
+        description '
+          Sweden Central, because the free Azure SQL offer is not available
+          in Norway East. Entra-only authentication and a firewall open to
+          the home IP alone. The free-tier database inside it was made by hand
+          and is deliberately not managed here.
+        '
       }
     }
 
@@ -91,7 +107,7 @@ deployment {
         }
 
         dataContainer = storage-container 'data' {
-          dashboardBlob = instanceOf cdn.dataContainer
+          dataBlobs = instanceOf cdn.dataContainer
         }
 
         webContainer = storage-container '$web' {
@@ -158,15 +174,13 @@ deployment {
   internet.browser -> azure.rgWeb.gymbroSite 'HTTPS to gymbro.nygard.dev'
   internet.browser -> azure.rgNetwork.pip 'HTTPS to rpg.nygard.dev'
 
-  // The page on run.nygard.dev fetches the built dashboard straight off the
-  // storage account. The free Static Web App SKU has no linked backend, so
-  // there is nothing server-side behind the site that could hold a key —
-  // which is why the container is anonymous-read rather than proxied.
-  // The gym front ends read two files out of the same container on the same
-  // terms and for the same reason: identical for every account, so there is
-  // nothing in the path that needs a key or a principal.
-  internet.browser -> azure.rgWeb.cdnStorage.dataContainer 'GET marathonprep.json, gym-exercises.json and gym-templates.json (anonymous, cross-origin)'
-
+  // The anonymous reads off the `data` container are not declared here. They
+  // arrive from the logical model, drawn from each site the way every other
+  // browser call in it is: run.nygard.dev fetching marathonprep.json, and the
+  // two gym front ends fetching the exercise library and the day templates.
+  // A second copy from the browser node said the same thing and had to loop
+  // round the whole subscription to say it.
+  //
   // The one browser call in the estate that carries a token. Both origins are
   // in the CORS list on the app, and the platform validates the token before
   // any function runs.

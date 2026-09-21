@@ -23,10 +23,12 @@ views {
       so the planner signs in as the logger rather than as itself.
       `gymSignIn` is that exchange in order.
 
-      Only the logger sign-in leg is drawn. The planner makes exactly the same
-      call to the same registration, and a second arrow saying so crossed
-      three others to add nothing — the box it points at says whose identity
-      it is.
+      Only the logger legs to Entra and to the blob are drawn. The planner
+      makes exactly the same sign-in to the same registration and fetches
+      exactly the same two files, and a second arrow for either crossed
+      another to add nothing — the box each one points at says what it is.
+      What the planner does differently is on the arrow it keeps: the same
+      routes, a whole block at a time.
 
       What the API does with the token is the whole tenancy boundary: the
       Entra object id off the validated principal is the Cosmos partition key,
@@ -56,7 +58,8 @@ views {
     exclude
       user -> api,             // the one-time WHOOP consent, on the same app — see `whoopBootstrap`
       api -> entra.gymlog,     // what Easy Auth checks, and in what order — see `gymSignIn`
-      gymbro -> entra.gymlog   // identical to the logger leg, and drawn twice it only adds crossings
+      gymbro -> entra.gymlog,       // identical to the logger leg, and drawn twice it only adds crossings
+      gymbro -> cdn.dataContainer   // the same two files the logger fetches; two fronts to two targets always cross once
 
     autoLayout LeftRight 150 110
 
@@ -104,7 +107,10 @@ views {
     api -> entra.gymlog 'Easy Auth validates it — signature, issuer tenant, audience, and which client obtained it'
     api -> cosmos 'The route reads the object id off the validated principal, and partitions on that'
 
-    autoLayout TopBottom
+    // Left to right, so the page and Entra sit side by side and the four legs
+    // between them stay a straight bundle; top to bottom, the call to the API
+    // had to loop round that bundle to get past Entra.
+    autoLayout LeftRight
 
     // Grey, as on `gym`: this registration is Entra, not our delivery plane,
     // and the kind is amber because most app registrations in this model are

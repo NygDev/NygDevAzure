@@ -94,6 +94,13 @@ specification {
     }
   }
 
+  deploymentNode sql-server {
+    notation 'Azure SQL Server'
+    style {
+      icon azure:sql-server
+    }
+  }
+
   deploymentNode key-vault {
     notation 'Key Vault'
     style {
