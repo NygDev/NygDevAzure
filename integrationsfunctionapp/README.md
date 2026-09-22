@@ -34,20 +34,15 @@ dashboard off the CDN rather than through a function.
 
 ## What is left on the api app
 
-`func-nygdev-api` is the gym logger and nothing else. Two things remain to
-finish there, in this order:
+`func-nygdev-api` is the gym logger and nothing else, and its Easy Auth gate is
+now on — `require_authentication = true` with `Return401`, no `excluded_paths`,
+which is what moving this code bought.
 
-1. **Turn the Easy Auth gate on** — `require_authentication = true` with
-   `unauthenticated_action = "Return401"`, and no `excluded_paths`, which is
-   what moving this code bought. Test the CORS preflight on a throwaway app
-   first: a browser sends `OPTIONS` with no `Authorization` header, and if the
-   auth module answers 401 to it, both front ends break at once and it reads
-   as a CORS fault.
-2. **Revoke the two grants `id-nygdev-api` no longer needs** — Storage Blob
-   Data Contributor on the CDN `data` container, and Key Vault Secrets
-   Officer. Both are revoked out of band and then removed from the
-   configuration; the commands and the reasoning are in
-   `terraform/consumption.tf` beside the assignment.
+One thing remains there: **revoking the two grants `id-nygdev-api` no longer
+needs** — Storage Blob Data Contributor on the CDN `data` container, and Key
+Vault Secrets Officer. Both are revoked out of band and then removed from the
+configuration; the commands and the reasoning are in
+`terraform/consumption.tf` beside the assignment.
 
 Narrowing that app's Cosmos grant from the account to `db/gym` is a third,
 optional one. It is a destroy and a create rather than an edit, so it wants

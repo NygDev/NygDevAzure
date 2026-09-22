@@ -281,31 +281,47 @@ resource "azurerm_function_app_flex_consumption" "api" {
   # exposed scope, the redirect URIs. The gymlog_easy_auth_redirect_uri output
   # exists because of that, the same way whoop_redirect_uri does.
   #
-  # Still not enforced, and now for no reason but sequencing. This ran with
-  # require_authentication = false because the WHOOP callback, the phone's GPS
-  # upload and the dashboard trigger shared the app and could present no token:
-  # the gate would have shut the door on them in the same instant. That is what
-  # the split was for, and they are gone — every function left here is a gym
-  # endpoint a browser calls with a bearer token.
+  # Enforced, finally, and with no excluded_paths — which is what the split was
+  # for. This ran with require_authentication = false for as long as the WHOOP
+  # callback, the phone's GPS upload and the dashboard trigger shared the app:
+  # none of them can present a token, so the gate would have shut the door on
+  # them in the same instant. Exempting them by path was the alternative, and a
+  # poor one, because excluded_paths is documented against the login redirect
+  # rather than a 401 — relying on it would have meant proving by experiment
+  # that it does anything at all here. Moving them to func-nygdev-integrations
+  # left nothing to exempt.
   #
-  # So the remaining change is require_authentication = true with
-  # unauthenticated_action "Return401", and no excluded_paths, which was the
-  # point of moving the code rather than exempting it: excluded_paths is
-  # documented against the login redirect rather than a 401, so relying on it
-  # here would have meant proving it by experiment.
+  # Return401 rather than RedirectToLoginPage because every caller is a fetch
+  # from a front end that already holds a token. A redirect would arrive at the
+  # browser as an opaque failure on an XHR; a 401 is something the client can
+  # act on, and it matches what GymEndpoint already answers.
   #
-  # One thing to test before flipping it, on a throwaway app rather than here:
-  # a browser sends the CORS preflight with no Authorization header, so if the
-  # auth module answers 401 to OPTIONS, both front ends break at once and it
-  # will read as a CORS fault rather than an auth one.
+  # The one thing to watch after applying this is the CORS preflight. A browser
+  # sends OPTIONS with no Authorization header, so if the auth module answers
+  # 401 to it, both front ends stop working at once and it reads as a CORS
+  # fault rather than an auth one. Test it directly rather than through the
+  # site, because the browser will not tell you which of the two it was:
   #
-  # The code-side check in GymPrincipal stays either way. The gate establishes
-  # that a token was valid; that check establishes which user, which is the
-  # partition key.
+  #   curl -i -X OPTIONS \
+  #     https://func-nygdev-api.azurewebsites.net/api/gym/workouts \
+  #     -H 'Origin: https://gym.nygard.dev' \
+  #     -H 'Access-Control-Request-Method: GET' \
+  #     -H 'Access-Control-Request-Headers: authorization'
+  #
+  # A 200 or 204 carrying Access-Control-Allow-Origin is what it should be. A
+  # 401 means the module is gating preflight, and the fix is to put these two
+  # arguments back the way they were — the code-side gate is unaffected either
+  # way, so reverting costs nothing but the platform's belt on top of it.
+  #
+  # Because that is the point worth keeping hold of: GymPrincipal is not made
+  # redundant by this. The gate establishes that a token was valid. That check
+  # establishes which user it was for, which is the Cosmos partition key, and
+  # it is still the only thing between the training logs and a forged header if
+  # auth_enabled is ever turned off — a config change rather than a deploy.
   auth_settings_v2 {
     auth_enabled           = true
-    require_authentication = false
-    unauthenticated_action = "AllowAnonymous"
+    require_authentication = true
+    unauthenticated_action = "Return401"
     require_https          = true
 
     active_directory_v2 {
@@ -458,22 +474,19 @@ resource "azurerm_role_assignment" "api_cdn_data" {
 # ---------------------------------------------------------------------------
 # The integrations app — the other half of func-nygdev-api, pre-created.
 #
-# Nothing is deployed here yet, and nothing routes here. It exists so that
-# splitting the api app in two is later a code move and a workflow change
-# rather than an infrastructure change: WHOOP, GPS and the running dashboard
-# move to this app, the gym logger stays where it is, and the two halves stop
-# having to share one answer to "must a caller be signed in".
+# WHOOP, the phone's GPS spool and the running dashboard, split off from
+# func-nygdev-api so the two halves stop having to share one answer to "must a
+# caller be signed in".
 #
-# Sharing that answer is the whole problem. Easy Auth on func-nygdev-api runs
-# with require_authentication = false because the WHOOP callback has to be
-# reachable by WHOOP, and the GPS upload by a phone holding a function key —
-# and the platform gate cannot be turned on for the gym endpoints without
-# shutting the door on both in the same instant. Once those callers live here,
-# that app has nothing anonymous left on it and the gate can go on with no
-# exclusions at all: no excludedPaths list, whose documented behaviour covers
-# the login redirect rather than a 401 and would have to be verified by
-# experiment, and no exempt path for a future endpoint to be written into by
-# accident.
+# Sharing that answer was the whole problem. Easy Auth on the api app ran with
+# require_authentication = false because the WHOOP callback has to be reachable
+# by WHOOP, and the GPS upload by a phone holding a function key — so the
+# platform gate could not be turned on for the gym endpoints without shutting
+# the door on both in the same instant. With those callers here, that app has
+# nothing anonymous left and its gate is on, with no exclusions at all: no
+# excludedPaths list, whose documented behaviour covers the login redirect
+# rather than a 401 and would have had to be verified by experiment, and no
+# exempt path for a future endpoint to be written into by accident.
 #
 # The code has moved and so have the callers: the WHOOP developer dashboard's
 # redirect URL and the phone's GPS upload URL both name this app now, and
