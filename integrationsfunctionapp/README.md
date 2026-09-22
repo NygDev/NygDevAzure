@@ -20,61 +20,36 @@ what the module is doing for us. Move these endpoints here and the api app has
 nothing anonymous left on it, so the platform gate can go on with no exclusion
 list at all.
 
-## What is a copy, and what is not
+## What this app holds
 
-Every `.cs` file under `Gps/`, `Running/` and `Whoop/` is byte-identical to its
-counterpart under `apifunctionapp/`, namespaces included. Keeping them
-identical is the point: the two trees can be diffed to nothing, so the cutover
-is a deletion rather than a merge, and nothing has to be re-reviewed.
+WHOOP (the OAuth flow, a status check, the sync and its timer), the phone's GPS
+spool, and the running dashboard with its own timer. `Program.cs` is the only
+file that was written rather than moved: the same registrations as the api app
+had, minus the gym logger's.
 
-The copy is complete, the two timer functions included. `Program.cs` is the
-only hand-written file: the same registrations minus the gym logger's, which
-stays where it is.
+No Easy Auth and no CORS list, and neither is an omission. Nothing that calls
+this app is a browser holding a token — the WHOOP callback is a top-level
+redirect, the rest carry function keys, and `run.nygard.dev` reads the
+dashboard off the CDN rather than through a function.
 
-## func-nygdev-api is stopped, and has to stay that way
+## What is left on the api app
 
-The timers are only safe to hold here because that app is stopped. Two apps
-running `WhoopSyncTimer` would be two syncs against one WHOOP refresh token,
-and WHOOP rotates it on every use — the app refreshing second finds its stored
-token dead, and the fix is re-authorizing by hand. The extension's blob lease
-would not save it: the lease is scoped to one app, and these are two.
+`func-nygdev-api` is the gym logger and nothing else. Two things remain to
+finish there, in this order:
 
-So until `Gps/`, `Running/` and `Whoop/` are deleted from `apifunctionapp/`,
-nothing may start that app again. Worth knowing that a deploy can do it
-without anyone deciding to — `deploy-api-function-app.yml` fires on any push
-to `master` touching `apifunctionapp/**`, and deploying to a stopped app is a
-good way to find it running again.
+1. **Turn the Easy Auth gate on** — `require_authentication = true` with
+   `unauthenticated_action = "Return401"`, and no `excluded_paths`, which is
+   what moving this code bought. Test the CORS preflight on a throwaway app
+   first: a browser sends `OPTIONS` with no `Authorization` header, and if the
+   auth module answers 401 to it, both front ends break at once and it reads
+   as a CORS fault.
+2. **Revoke the two grants `id-nygdev-api` no longer needs** — Storage Blob
+   Data Contributor on the CDN `data` container, and Key Vault Secrets
+   Officer. Both are revoked out of band and then removed from the
+   configuration; the commands and the reasoning are in
+   `terraform/consumption.tf` beside the assignment.
 
-The same stop takes the gym logger down with it: `gym.nygard.dev` and
-`gymbro.nygard.dev` are served by that app, and they stay down until it comes
-back. That is the cost of this window, and the reason to keep it short.
-
-## While the copy lasts
-
-Both apps can serve these endpoints at once. They share the `whoop-token`
-secret, and `WhoopSecretStore` reads it from the vault on every refresh rather
-than caching it, so a rotation by one app is visible to the other — the two
-stay consistent as long as they do not refresh *concurrently*.
-
-The api app's timers fire at `0 0 */6 * * *` (00:00, 06:00, 12:00, 18:00 UTC)
-and `0 15 */6 * * *`. Triggering `whoop/sync` here in the minutes around those
-is the one thing to avoid.
-
-## The cutover
-
-1. Point the WHOOP developer dashboard's redirect URL at this app — the
-   `integrations_whoop_redirect_uri` terraform output is the string. The
-   six-hourly sync keeps working without this: the `refresh_token` grant sends
-   no `redirect_uri` (see `WhoopClient`), so only a fresh `whoop/authorize`
-   needs it.
-2. Point the phone at this app's `gps/locations`, with a key minted here —
-   function keys are per app, so the one it holds today does not carry over.
-3. Delete `Gps/`, `Running/` and `Whoop/` from `apifunctionapp/`, deploy it,
-   and start it again — in that order, so the gym logger comes back on an app
-   that no longer holds a timer.
-4. Then the terraform follow-ups: repoint the `whoop_*` outputs, drop
-   `KEY_VAULT_URI`, `WHOOP_*` and `DASHBOARD_BLOB_URL` from the api app, drop
-   `azurerm_role_assignment.api_cdn_data`, and revoke `id-nygdev-api`'s
-   out-of-band Key Vault Secrets Officer.
-5. Last, and only after testing that a CORS preflight survives it:
-   `require_authentication = true` with `Return401` on the api app.
+Narrowing that app's Cosmos grant from the account to `db/gym` is a third,
+optional one. It is a destroy and a create rather than an edit, so it wants
+its own change: the window it opens is now a failed write in front of somebody
+mid-workout rather than a sync that retries.

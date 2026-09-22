@@ -148,19 +148,20 @@ resource "azurerm_user_assigned_identity" "api" {
   tags                = local.common_tags
 }
 
-# The API app — .NET 10 isolated on Flex Consumption. Hosts the WHOOP
-# integration: the OAuth flow, a status check, and the sync that writes WHOOP's
-# collections into nygdev-cosmos-db / db / primary; the endpoint that writes the
-# phone's location spool into db / gps; and the gym logger's API, which reads
-# and writes one user's training block in db / gym. Its Cosmos access is granted
-# by the account-scoped role assignment below, which covers all three and
-# whatever comes next.
+# The API app — .NET 10 isolated on Flex Consumption. The gym logger, and
+# since the split nothing else: it reads and writes one user's training block
+# in nygdev-cosmos-db / db / gym. WHOOP, the phone's GPS spool and the running
+# dashboard moved to func-nygdev-integrations further down.
 #
-# The gym endpoints are the first ones that are not anonymous or key-protected.
-# They are at Anonymous auth level on purpose — a browser front end cannot hold
-# a function key — and are gated instead by the Easy Auth block further down
-# plus an explicit check in the code: every gym function refuses a request that
-# arrives without a validated principal, because the object id off that
+# Its Cosmos access is still granted by the account-scoped role assignment
+# below, which now reaches two containers this app has no code for. Narrowing
+# it to db/gym is a follow-up rather than an omission — see the comment there
+# for why it is a destroy and a create rather than an edit.
+#
+# Every endpoint is at Anonymous auth level on purpose — a browser front end
+# cannot hold a function key — and gated instead by the Easy Auth block further
+# down plus an explicit check in the code: every gym function refuses a request
+# that arrives without a validated principal, because the object id off that
 # principal is the Cosmos partition key and therefore the whole tenancy
 # boundary. See GymPrincipal in apifunctionapp/Gym.
 resource "azurerm_function_app_flex_consumption" "api" {
@@ -193,34 +194,11 @@ resource "azurerm_function_app_flex_consumption" "api" {
     # authenticates with its managed identity via DefaultAzureCredential.
     COSMOS_ENDPOINT = azurerm_cosmosdb_account.db.endpoint
 
-    # Where the running dashboard is published — the whole blob URI, so the app
-    # builds one client from it and carries no account, container or file name
-    # of its own. Composed from the account's own endpoint rather than typed
-    # out, so it cannot drift from the account the role assignment below grants
-    # against.
-    DASHBOARD_BLOB_URL = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${azurerm_storage_container.data.name}/marathonprep.json"
-
     # Which identity to authenticate as. A user-assigned identity has to be
     # named explicitly — unlike a system-assigned one, the platform can't infer
     # it, and a token request without a client id fails on an app that has no
     # system-assigned identity.
     MANAGED_IDENTITY_CLIENT_ID = azurerm_user_assigned_identity.api.client_id
-
-    # WHOOP. The vault holds both secrets — whoop-clientsecret, copied from the
-    # developer dashboard, and whoop-token, which the app rewrites every time
-    # WHOOP rotates the refresh token. Neither appears here; the app reads them
-    # at run time as id-nygdev-api, which is Key Vault Secrets Officer on the
-    # vault (officer, not reader: the write-back is the whole point).
-    KEY_VAULT_URI = azurerm_key_vault.nygdev.vault_uri
-
-    # Public half of the WHOOP app registration — it rides along in the browser
-    # on every authorization redirect, so it is configuration, not a secret.
-    WHOOP_CLIENT_ID = var.whoop_client_id
-
-    # Narrow this (via var.whoop_scopes) if the app registration is not granted
-    # all of them — WHOOP refuses the entire authorization request when it is
-    # asked for one scope the client does not hold, rather than dropping it.
-    WHOOP_SCOPES = var.whoop_scopes
 
     # Tenant requirement on Easy Auth: allow requests only from the issuer
     # tenant. The platform checks the `tid` claim against this list and answers
@@ -239,23 +217,16 @@ resource "azurerm_function_app_flex_consumption" "api" {
     # stops being true.
     WEBSITE_AUTH_AAD_ALLOWED_TENANTS = var.tenant_id
 
-    # WHOOP_REDIRECT_URI is deliberately not set. It would have to contain this
-    # app's own default_hostname, and an app setting on the app that reads that
-    # attribute is a dependency cycle. The app builds the URL from the
-    # platform's WEBSITE_HOSTNAME instead; the whoop_redirect_uri output below
-    # is the same string, for pasting into the developer dashboard.
-
-    # WEBSITE_TIME_ZONE is deliberately not set either, and should not be. It
-    # is what would let the WhoopSyncTimer function write its NCRONTAB schedule
-    # in local time rather than UTC, but Microsoft does not support it on Linux
-    # under Flex Consumption — setting it there causes TLS errors and stops the
-    # app's metrics. The timer runs on UTC instead.
-
-    # AzureWebJobsStorage is not listed here either, and is not missing: the
-    # timer trigger needs it for the blob lease that keeps one firing from
-    # overlapping the next, and the azurerm provider derives it from the
-    # storage account and storage_access_key above. Adding it by hand would
-    # fight the value the provider injects on every apply.
+    # AzureWebJobsStorage is not listed here, and is not missing: the azurerm
+    # provider derives it from the storage account and storage_access_key
+    # above, and adding it by hand would fight the value injected on every
+    # apply. Nothing here leases a blob any more — the timers went to
+    # func-nygdev-integrations with WHOOP and the dashboard — but the host
+    # still expects the setting.
+    #
+    # The WHOOP_REDIRECT_URI and WEBSITE_TIME_ZONE notes that used to sit here
+    # went with those functions; they are on the integrations app now, which is
+    # where the reasoning applies.
   }
 
   site_config {
@@ -266,20 +237,18 @@ resource "azurerm_function_app_flex_consumption" "api" {
     # header; the function code never sees the preflight.
     cors {
       allowed_origins = [
-        "https://run.nygard.dev",
-
-        # The Static Web App's own hostname, so the site still works when
-        # opened there instead of through the custom domain (the deploy
-        # pipeline publishes to the app, and DNS is a separate step).
-        "https://${azurerm_static_web_app.nygdevrun.default_host_name}",
-
-        # The gym logger, both ways round for the same reason. Its calls do
-        # carry an Authorization header, which the running dashboard's do not —
-        # that costs nothing here, because a bearer header is a request header
-        # the platform reflects in Access-Control-Allow-Headers on the preflight
-        # rather than a credential in the CORS sense. Cookies are what
-        # support_credentials is about, and there are none: every call carries
-        # its own token and the Easy Auth token store is off.
+        # The gym logger. Its calls carry an Authorization header, which costs
+        # nothing here: a bearer header is a request header the platform
+        # reflects in Access-Control-Allow-Headers on the preflight rather than
+        # a credential in the CORS sense. Cookies are what support_credentials
+        # is about, and there are none — every call carries its own token and
+        # the Easy Auth token store is off.
+        #
+        # run.nygard.dev and its Static Web App hostname used to be listed
+        # here and are not missing: that page reads marathonprep.json straight
+        # off the CDN and has never called a function. Its own CSP says so —
+        # connect-src in sites/run/staticwebapp.config.json names the blob
+        # endpoint alone.
         "https://gym.nygard.dev",
         "https://${azurerm_static_web_app.nygdevgym.default_host_name}",
 
@@ -312,19 +281,27 @@ resource "azurerm_function_app_flex_consumption" "api" {
   # exposed scope, the redirect URIs. The gymlog_easy_auth_redirect_uri output
   # exists because of that, the same way whoop_redirect_uri does.
   #
-  # Deliberately not enforced yet. require_authentication = false with
-  # AllowAnonymous means every existing caller keeps working exactly as it does
-  # today: the WHOOP callback, the GPS upload from the phone, the dashboard
-  # timer, all of them anonymous. A request that does carry a token gets it
-  # validated and the claims populated; a request that carries none is passed
-  # through untouched rather than bounced to a login. So this turns on the
-  # machinery without turning on the gate, which is what makes it safe to apply
-  # before a single client knows how to sign in.
+  # Still not enforced, and now for no reason but sequencing. This ran with
+  # require_authentication = false because the WHOOP callback, the phone's GPS
+  # upload and the dashboard trigger shared the app and could present no token:
+  # the gate would have shut the door on them in the same instant. That is what
+  # the split was for, and they are gone — every function left here is a gym
+  # endpoint a browser calls with a bearer token.
   #
-  # Flipping require_authentication to true and unauthenticated_action to
-  # "Return401" is what closes it later — and doing that shuts the door on the
-  # anonymous callers above at the same instant, so those need their own answer
-  # (a separate app, or an exclusion path) before it happens.
+  # So the remaining change is require_authentication = true with
+  # unauthenticated_action "Return401", and no excluded_paths, which was the
+  # point of moving the code rather than exempting it: excluded_paths is
+  # documented against the login redirect rather than a 401, so relying on it
+  # here would have meant proving it by experiment.
+  #
+  # One thing to test before flipping it, on a throwaway app rather than here:
+  # a browser sends the CORS preflight with no Authorization header, so if the
+  # auth module answers 401 to OPTIONS, both front ends break at once and it
+  # will read as a CORS fault rather than an auth one.
+  #
+  # The code-side check in GymPrincipal stays either way. The gate establishes
+  # that a token was valid; that check establishes which user, which is the
+  # partition key.
   auth_settings_v2 {
     auth_enabled           = true
     require_authentication = false
@@ -417,11 +394,13 @@ resource "azurerm_function_app_flex_consumption" "api" {
 # this app landing in the account. If that happens, this goes back to one
 # assignment per container the app actually writes to.
 #
-# Replacing the two with this one is a destroy and a create, and terraform does
-# not order them: an apply can briefly leave the app with no Cosmos access at
-# all. Nothing is lost to that — the WHOOP sync runs again on its timer and the
-# phone keeps its spool and resends — but a GPS upload or a sync landing inside
-# the window will fail once.
+# Replacing this with a narrower one is a destroy and a create, and terraform
+# does not order them: an apply can briefly leave the app with no Cosmos access
+# at all. That used to be cheap — a WHOOP sync ran again on its timer, the
+# phone kept its spool and resent. It is not any more. Everything on this app
+# is now a person tapping a set between exercises, so the window is a failed
+# write in front of somebody, and narrowing the scope to db/gym is worth doing
+# deliberately rather than as a rider on another change.
 resource "azurerm_cosmosdb_sql_role_assignment" "api_cosmos" {
   resource_group_name = azurerm_resource_group.databases.name
   account_name        = azurerm_cosmosdb_account.db.name
@@ -442,6 +421,30 @@ resource "azurerm_cosmosdb_sql_role_assignment" "api_cosmos" {
 # container it is scoped to. azurerm_role_assignment fails on an assignment
 # that already exists rather than adopting it, so an apply could never have
 # been the thing that first put this in state.
+#
+# Nothing on this app writes that blob any more — the running dashboard went
+# to func-nygdev-integrations, which holds its own grant on the same container.
+# This is kept rather than deleted because deleting it is not free: the
+# resource is in state, so removing it from the configuration asks the apply
+# workflow to destroy a role assignment, and that identity has already been
+# refused roleAssignments/write once, on rg-nygdev-security. Discovering it
+# cannot delete this one either, in the middle of an apply, is a worse way to
+# find out than choosing when to.
+#
+# So it is revoked out of band, then removed from here and from the import
+# step in .github/workflows/terraform-import.yml that adopts it:
+#
+#   az role assignment delete \
+#     --assignee $(az identity show \
+#       --resource-group rg-nygdev-consumption \
+#       --name id-nygdev-api \
+#       --query principalId --output tsv) \
+#     --role "Storage Blob Data Contributor" \
+#     --scope $(az storage account show --name nygdevcdn \
+#       --query id --output tsv)/blobServices/default/containers/data
+#
+# The same is true of id-nygdev-api's Key Vault Secrets Officer, which was
+# never declared here at all — see security.tf.
 resource "azurerm_role_assignment" "api_cdn_data" {
   # The container's own id is the Resource Manager id — which is what a role
   # assignment scope has to be — because the resource is declared with
@@ -472,15 +475,14 @@ resource "azurerm_role_assignment" "api_cdn_data" {
 # experiment, and no exempt path for a future endpoint to be written into by
 # accident.
 #
-# Moving the code is not the whole move. These are manual, and none of them can
-# be done from here:
-#   - the redirect URL on the WHOOP developer dashboard, from func-nygdev-api
-#     to this app — integrations_whoop_redirect_uri in outputs.tf is the string
-#   - the phone's GPS upload URL, and a function key minted on this app
-#   - deploy-api-function-app.yml, which today publishes one project to one app
-#   - Key Vault Secrets Officer for id-nygdev-integrations, which this
-#     configuration is not permitted to grant — see the note at the end of this
-#     block for the command and why it is not a resource
+# The code has moved and so have the callers: the WHOOP developer dashboard's
+# redirect URL and the phone's GPS upload URL both name this app now, and
+# deploy-integrations-function-app.yml publishes to it. Key Vault Secrets
+# Officer for id-nygdev-integrations was granted out of band — see the note at
+# the end of this block for the command and why it is not a resource here.
+#
+# What is left is on the api app rather than this one: turning its Easy Auth
+# gate on, and revoking the two grants id-nygdev-api no longer needs.
 # ---------------------------------------------------------------------------
 
 # A third plan for a third app, and not by preference: Flex Consumption permits

@@ -23,13 +23,22 @@ namespace ApiFunctionApp.Gym;
 /// what makes trusting it safe: with the auth module on, a caller cannot forge
 /// one.
 ///
-/// The gate is still in code rather than in the platform because Easy Auth is
-/// deliberately configured with require_authentication = false. The WHOOP
-/// callback, the GPS upload and the dashboard timer share this app and are
-/// anonymous, so turning the platform gate on would shut the door on them at
-/// the same instant. AllowAnonymous means an unauthenticated request arrives
-/// here with no principal instead of being bounced — and refusing it is this
-/// class's job.
+/// The gate is in code as well as in the platform, and for most of this app's
+/// life it was the only one. Easy Auth ran with require_authentication = false
+/// because the WHOOP callback, the GPS upload and the dashboard timer shared
+/// this app and could present no token: turning the platform gate on would
+/// have shut the door on them in the same instant. Under AllowAnonymous an
+/// unauthenticated request arrives here with no principal rather than being
+/// bounced, and refusing it is this class's job.
+///
+/// Those callers now live on func-nygdev-integrations, so nothing anonymous is
+/// left here and the platform gate can finally be turned on — see the Easy
+/// Auth block in terraform/consumption.tf. This check stays either way. It is
+/// not made redundant by the gate: require_authentication only establishes
+/// that a token was valid, while what this resolves is *which* user, and that
+/// answer is the Cosmos partition key. It is also the only thing standing
+/// between the training logs and a forged header if the auth module is ever
+/// switched off, which is a config change rather than a deploy.
 /// </summary>
 internal static class GymPrincipal
 {
