@@ -27,20 +27,27 @@ counterpart under `apifunctionapp/`, namespaces included. Keeping them
 identical is the point: the two trees can be diffed to nothing, so the cutover
 is a deletion rather than a merge, and nothing has to be re-reviewed.
 
-Two files are deliberately **not** copied yet:
+The copy is complete, the two timer functions included. `Program.cs` is the
+only hand-written file: the same registrations minus the gym logger's, which
+stays where it is.
 
-- `Whoop/WhoopSyncTimer.cs`
-- `Running/RunningDashboardTimer.cs`
+## func-nygdev-api is stopped, and has to stay that way
 
-Both apps carrying the same timer would mean two of them firing on the same
-schedule. The timer extension's blob lease is scoped to one app, so it would
-not coordinate the two, and WHOOP rotates the refresh token on every use — the
-app that refreshes second would find its stored token dead, and the fix for
-that is re-authorizing by hand. The HTTP endpoints do the same work on demand
-(`whoop/sync`, `running/dashboard`), so nothing is untestable in the meantime.
+The timers are only safe to hold here because that app is stopped. Two apps
+running `WhoopSyncTimer` would be two syncs against one WHOOP refresh token,
+and WHOOP rotates it on every use — the app refreshing second finds its stored
+token dead, and the fix is re-authorizing by hand. The extension's blob lease
+would not save it: the lease is scoped to one app, and these are two.
 
-`Program.cs` is the only hand-written file: the same registrations minus the
-gym logger's, which stays where it is.
+So until `Gps/`, `Running/` and `Whoop/` are deleted from `apifunctionapp/`,
+nothing may start that app again. Worth knowing that a deploy can do it
+without anyone deciding to — `deploy-api-function-app.yml` fires on any push
+to `master` touching `apifunctionapp/**`, and deploying to a stopped app is a
+good way to find it running again.
+
+The same stop takes the gym logger down with it: `gym.nygard.dev` and
+`gymbro.nygard.dev` are served by that app, and they stay down until it comes
+back. That is the cost of this window, and the reason to keep it short.
 
 ## While the copy lasts
 
@@ -62,9 +69,9 @@ is the one thing to avoid.
    needs it.
 2. Point the phone at this app's `gps/locations`, with a key minted here —
    function keys are per app, so the one it holds today does not carry over.
-3. Copy the two timer files across and delete `Gps/`, `Running/` and `Whoop/`
-   from `apifunctionapp/` in the same commit, so only one app ever holds a
-   timer.
+3. Delete `Gps/`, `Running/` and `Whoop/` from `apifunctionapp/`, deploy it,
+   and start it again — in that order, so the gym logger comes back on an app
+   that no longer holds a timer.
 4. Then the terraform follow-ups: repoint the `whoop_*` outputs, drop
    `KEY_VAULT_URI`, `WHOOP_*` and `DASHBOARD_BLOB_URL` from the api app, drop
    `azurerm_role_assignment.api_cdn_data`, and revoke `id-nygdev-api`'s

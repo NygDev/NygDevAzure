@@ -4,9 +4,13 @@
 // Every file here but this one is a byte-identical copy of its counterpart
 // under apifunctionapp/, namespaces included, and that is deliberate for as
 // long as the copy lasts: the two can be diffed to nothing, so the cutover is
-// a deletion rather than a merge. What differs is this file, which registers
-// the same services minus the gym logger's, and the two timer functions that
-// are not here yet — see IntegrationsFunctionApp.csproj for why.
+// a deletion rather than a merge. This file is the only one that differs — the
+// same registrations minus the gym logger's.
+//
+// The copy is now complete, timers included, which is only safe because
+// func-nygdev-api is stopped. Two apps running WhoopSyncTimer would be two
+// syncs against one WHOOP refresh token, and WHOOP rotates it on every use.
+// That app stays stopped until its copies of these files are deleted.
 //
 // The gym logger stays on func-nygdev-api. That is the point of the split
 // rather than an accident of which half was easier to move: everything here

@@ -1,7 +1,7 @@
 {
   "IsEncrypted": false,
   "Values": {
-    "_comment_storage": "Nothing in this project takes a blob lease yet — the two timer functions are still on apifunctionapp until the cutover — so every endpoint here runs without an Azurite instance behind this value. It is left set because the timers arrive at that cutover and need it.",
+    "_comment_storage": "The scheduled sync (WhoopSyncTimer) takes a blob lease here, so running it locally means an Azurite instance behind this value. The HTTP endpoints do not need one.",
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
     "COSMOS_ENDPOINT": "https://nygdev-cosmos-db.documents.azure.com:443/",

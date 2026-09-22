@@ -29,15 +29,15 @@
     <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.63.1" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.52.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.1.1" />
-    <!-- Referenced although this project carries no timer function yet, and
-         that absence is deliberate rather than pending: while apifunctionapp
-         still holds the same code, a WhoopSyncTimer here would be a second one
-         firing on the same schedule against one WHOOP refresh token. The lease
-         the extension takes is scoped to an app, so it would not coordinate
-         the two. WhoopSyncTimer.cs and RunningDashboardTimer.cs are the last
-         two files to copy, at the cutover, when the originals are deleted in
-         the same commit — the reference is here so that is a file move and not
-         a packages change too. -->
+    <!-- The scheduled WHOOP sync and dashboard rebuild. The extension takes a
+         blob lease on AzureWebJobsStorage to keep one instance's timer from
+         firing while another's is running; terraform does not set that
+         connection by hand, the azurerm provider derives it from the app's
+         storage account. The lease is scoped to one app, and this account also
+         backs func-nygdev-api — which is why the two apps must not both be
+         running these timers, and why that app is stopped until its copies are
+         deleted. Host ids differ, so the leases themselves do not collide;
+         what would collide is two syncs against one WHOOP refresh token. -->
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Timer" Version="4.3.1" />
     <!-- Teaches the OpenTelemetry pipeline about the worker: it activates the
          invocation ActivitySource and stamps the trace context the host
