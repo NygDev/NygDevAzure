@@ -17,3 +17,7 @@ terraform.rc
 
 # Azure Functions local config
 **/local.settings.json
+
+# Node / build output (anywhere in the repo)
+node_modules/
+dist/
