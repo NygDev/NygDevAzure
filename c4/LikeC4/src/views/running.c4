@@ -10,7 +10,8 @@ views {
       which is why the `data` container is anonymous-read.
 
       Everything else on this page happens hours before anyone visits. The
-      two jobs in the API are drawn separately because they are separate:
+      two jobs in the Integrations app are drawn separately because they are
+      separate:
       one talks to WHOOP and writes to Cosmos, the other reads Cosmos and
       writes a blob. They run on their own timers, a quarter of an hour
       apart, so neither failure is reported as the other, and the build
@@ -18,7 +19,8 @@ views {
 
       The vault is on this page because the WHOOP leg does not work without
       it: WHOOP rotates the refresh token on every renewal and kills the old
-      one immediately, so the token is state the API reads and rewrites on
+      one immediately, so the token is state the Integrations app reads and
+      rewrites on
       the same call, not configuration sitting in an app setting.
       `whoopRefresh` is that exchange in order.
 
@@ -28,9 +30,9 @@ views {
     include
       user,
       running,
-      api,
-      api.sync,
-      api.dashboard,
+      integrations,
+      integrations.sync,
+      integrations.dashboard,
       whoop,
       keyvault,
       cosmos,
@@ -38,7 +40,7 @@ views {
       cdn.dataContainer
 
     exclude
-      user -> api    // the one-time consent — see `whoopBootstrap`
+      user -> integrations    // the one-time consent — see `whoopBootstrap`
 
     autoLayout LeftRight 150 110
 
@@ -69,14 +71,14 @@ views {
       budget and a later one pick it up.
     '
 
-    api.sync -> keyvault 'Reads whoop-clientsecret and the stored refresh token'
-    api.sync -> whoop 'refresh_token grant, re-requesting the offline scope'
-    whoop -> api.sync 'A new access token, and a rotated refresh token — the old one is now dead'
-    api.sync -> keyvault 'Writes the replacement, before the access token is used for anything'
-    api.sync -> whoop 'Pages cycles, sleep, workouts and recovery, 25 records at a time'
-    api.sync -> cosmos 'Upserts each record on its WHOOP id, then saves the cursor'
-    api.dashboard -> cosmos 'Fifteen minutes later: queries the scored running workouts'
-    api.dashboard -> cdn.dataContainer 'Publishes marathonprep.json, with a five-minute cache lifetime'
+    integrations.sync -> keyvault 'Reads whoop-clientsecret and the stored refresh token'
+    integrations.sync -> whoop 'refresh_token grant, re-requesting the offline scope'
+    whoop -> integrations.sync 'A new access token, and a rotated refresh token — the old one is now dead'
+    integrations.sync -> keyvault 'Writes the replacement, before the access token is used for anything'
+    integrations.sync -> whoop 'Pages cycles, sleep, workouts and recovery, 25 records at a time'
+    integrations.sync -> cosmos 'Upserts each record on its WHOOP id, then saves the cursor'
+    integrations.dashboard -> cosmos 'Fifteen minutes later: queries the scored running workouts'
+    integrations.dashboard -> cdn.dataContainer 'Publishes marathonprep.json, with a five-minute cache lifetime'
     user -> running 'Opens run.nygard.dev, whenever'
     running -> cdn.dataContainer 'The page fetches the published JSON directly — anonymous, no function in the path'
 
@@ -87,22 +89,22 @@ views {
     title 'WHOOP refresh — spending and replacing the token'
     description '
       The steady state, once the vault holds a refresh token. No person and
-      no browser: the API renews on its own and the visitor never appears.
+      no browser: the app renews on its own and the visitor never appears.
 
       The ordering in the middle is the whole point, and is why the identity
       holds Key Vault Secrets Officer rather than a reader role. It is also
-      why the API refuses to refresh twice at once, and why it re-requests
+      why the app refuses to refresh twice at once, and why it re-requests
       the offline scope every time — without that scope WHOOP returns an
       access token and no replacement, and that refresh would be the last
       one that ever worked.
     '
 
-    api -> keyvault 'Reads whoop-clientsecret and the current whoop-token'
-    api -> whoop 'refresh_token grant, re-requesting the offline scope'
-    whoop -> api 'New access token, and a rotated refresh token — the old one is now dead'
-    api -> keyvault 'Writes the rotated token as a new version of whoop-token'
-    api -> whoop 'Calls the data API with the access token'
-    whoop -> api 'Answers, and the access token is cached until it nears expiry'
+    integrations -> keyvault 'Reads whoop-clientsecret and the current whoop-token'
+    integrations -> whoop 'refresh_token grant, re-requesting the offline scope'
+    whoop -> integrations 'New access token, and a rotated refresh token — the old one is now dead'
+    integrations -> keyvault 'Writes the rotated token as a new version of whoop-token'
+    integrations -> whoop 'Calls the data API with the access token'
+    whoop -> integrations 'Answers, and the access token is cached until it nears expiry'
 
     autoLayout TopBottom
   }
@@ -115,7 +117,7 @@ views {
       refresh grant can keep a token pair alive forever but cannot create
       one, so a person at the consent screen is the only source.
 
-      Every hop between the API and WHOOP goes through the browser, which is
+      Every hop between the app and WHOOP goes through the browser, which is
       why the visitor appears in the middle of a server-side flow: OAuth
       redirects are the browser following Location headers, not two servers
       talking. The client secret and the code exchange never leave Azure.
@@ -129,18 +131,18 @@ views {
       started the flow.
     '
 
-    user -> api 'Opens /api/whoop/authorize (function key)'
-    api -> keyvault 'Reads whoop-clientsecret, to sign the state with'
-    api -> user '302 to the WHOOP consent screen (client id, scopes, signed state)'
+    user -> integrations 'Opens /integrations/whoop/authorize (function key)'
+    integrations -> keyvault 'Reads whoop-clientsecret, to sign the state with'
+    integrations -> user '302 to the WHOOP consent screen (client id, scopes, signed state)'
     user -> whoop 'Signs in and grants the scopes'
-    whoop -> user '302 back to /api/whoop/callback with a code'
-    user -> api 'The browser follows the redirect (anonymous; the state is the gate)'
-    api -> whoop 'Exchanges the code (authorization_code grant, client secret)'
-    whoop -> api 'Access token, and the first refresh token'
-    api -> keyvault 'Writes whoop-token'
+    whoop -> user '302 back to /integrations/whoop/callback with a code'
+    user -> integrations 'The browser follows the redirect (anonymous; the state is the gate)'
+    integrations -> whoop 'Exchanges the code (authorization_code grant, client secret)'
+    whoop -> integrations 'Access token, and the first refresh token'
+    integrations -> keyvault 'Writes whoop-token'
 
     // Left to right and tight between ranks. Top to bottom, both browser legs
-    // to WHOOP had to cut through the two vault arrows under the API; this is
+    // to WHOOP had to cut through the two vault arrows under the app; this is
     // the layout that routes them round instead.
     autoLayout LeftRight 40 200
   }

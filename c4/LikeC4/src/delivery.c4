@@ -91,6 +91,16 @@ model {
         description 'dotnet publish -c Release, then Azure/functions-action@v1 to func-nygdev-api. A build failure stops the run before Azure is touched.'
       }
 
+      deployIntegrations = workflow 'Deploy Integrations Function App' {
+        technology 'deploy-integrations-function-app.yml — push to master on integrationsfunctionapp/**'
+        description '
+          The same two steps against func-nygdev-integrations. A second
+          workflow rather than a matrix because the path filters are what
+          decide which app a change redeploys, and one project changing should
+          not restart the other.
+        '
+      }
+
       deployFunc = workflow 'Deploy PS Function App' {
         technology 'deploy-ps-function-app.yml — push to master on psfunctionapp/**'
         description 'Save-Module bundles Az.Accounts and Az.Storage into the package, then Azure/functions-action@v1 to func-nygdev-azadmin.'
@@ -175,6 +185,7 @@ model {
   // --- pipeline to Azure -------------------------------------------------
   github.actions.deployC4 -> cdn.webSite 'Clears and re-uploads dist/ (az storage blob upload-batch)'
   github.actions.deployApi -> api 'Deploys the published worker'
+  github.actions.deployIntegrations -> integrations 'Deploys the published worker'
   github.actions.deployFunc -> azadmin 'Deploys the function package'
   // The SSH key is not a secret in the vault but its own resource beside it,
   // read with az sshkey show; the edge ends here because that is where it sits.
@@ -188,7 +199,8 @@ model {
   azurerm -> running 'Creates the nygdevrun Static Web App'
   azurerm -> gym 'Creates the nygdevgym Static Web App'
   azurerm -> gymbro 'Creates the nygdevgymbro Static Web App'
-  azurerm -> api 'Creates func-nygdev-api, id-nygdev-api, its Cosmos and blob role assignments, the CORS list naming run, gym and gymbro under both of their hostnames, the Easy Auth block, and the app settings the WHOOP code reads'
+  azurerm -> api 'Creates func-nygdev-api, id-nygdev-api, its Cosmos role assignment, the CORS list naming gym and gymbro under both of their hostnames, and the Easy Auth block that now enforces a token'
+  azurerm -> integrations 'Creates func-nygdev-integrations and its own plan — Flex allows one app per plan — plus id-nygdev-integrations, its Cosmos and blob role assignments, and the app settings the WHOOP code reads. Its Key Vault grant is the one thing here terraform cannot make: the apply identity holds no roleAssignments/write on rg-nygdev-security, so that one is granted out of band'
   azurerm -> azadmin 'Creates func-nygdev-azadmin and its blob role assignment'
   azurerm -> cosmos 'Creates the account, the database, the three containers and their indexing policies'
   azurerm -> cdn.dataContainer 'Creates the data container and uploads the two gym JSON files (the account around it is read, not owned)'

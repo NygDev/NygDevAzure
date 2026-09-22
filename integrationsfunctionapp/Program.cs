@@ -162,9 +162,9 @@ builder.Services.AddSingleton<WhoopSyncRunner>();
 //
 // Constructed with the container named here rather than injected, because this
 // is the one store in the app that does not write to db/primary. Both
-// containers are terraform's, in terraform/db.tf; the app's data-plane role
-// assignment is account-scoped, in terraform/consumption.tf, so it covers this
-// container without a grant of its own.
+// containers are terraform's, in terraform/db.tf, and each has its own
+// data-plane grant in terraform/consumption.tf — this app's identity is scoped
+// to those two by name and cannot reach db/gym.
 // ---------------------------------------------------------------------------
 builder.Services.AddSingleton(provider => new GpsFixStore(
     provider.GetRequiredService<CosmosClient>().GetContainer("db", "gps")));

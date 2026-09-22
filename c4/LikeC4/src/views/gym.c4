@@ -50,13 +50,11 @@ views {
       entra,
       entra.gymlog,
       api,
-      api.gymApi,
       cosmos,
       cdn,
       cdn.dataContainer
 
     exclude
-      user -> api,             // the one-time WHOOP consent, on the same app — see `whoopBootstrap`
       api -> entra.gymlog,     // what Easy Auth checks, and in what order — see `gymSignIn`
       gymbro -> entra.gymlog,       // identical to the logger leg, and drawn twice it only adds crossings
       gymbro -> cdn.dataContainer   // the same two files the logger fetches; two fronts to two targets always cross once
@@ -147,12 +145,12 @@ views {
     '
 
     user -> gym 'Taps "Log same again"'
-    gym -> api.gymApi 'POSTs the set, carrying the set count the page believes the exercise holds'
-    api.gymApi -> cosmos 'Patches the session — but only while the stored count still matches'
-    api.gymApi -> gym '200: recorded, and the row the page already drew is now stored'
-    gym -> api.gymApi 'The reply never arrived, so the same request again'
-    api.gymApi -> cosmos 'The count no longer matches, so the patch does not apply'
-    api.gymApi -> gym '200 alreadyRecorded: the first attempt landed, and nothing was written twice'
+    gym -> api 'POSTs the set, carrying the set count the page believes the exercise holds'
+    api -> cosmos 'Patches the session — but only while the stored count still matches'
+    api -> gym '200: recorded, and the row the page already drew is now stored'
+    gym -> api 'The reply never arrived, so the same request again'
+    api -> cosmos 'The count no longer matches, so the patch does not apply'
+    api -> gym '200 alreadyRecorded: the first attempt landed, and nothing was written twice'
 
     autoLayout TopBottom
   }

@@ -23,15 +23,34 @@ deployment {
     rgConsumption = resource-group 'rg-nygdev-consumption' {
       description 'Serverless compute, shared monitoring and deploy storage'
 
+      // One plan per app because Flex Consumption allows exactly one, not
+      // because the runtimes differ — the runtime is set on the app. So the
+      // split of func-nygdev-api into two apps was also a third plan.
       aspDotnet = service-plan 'asp-nygdev-flex-dotnet' {
         technology 'FC1 / Linux'
 
         apiApp = instanceOf api {
           title 'func-nygdev-api'
           description '
-            512 MB instances, max 1. Runs as id-nygdev-api. CORS allows run,
-            gym and gymbro, each under its custom domain and its default
-            hostname; Easy Auth validates GymLog tokens without enforcing them.
+            512 MB instances, max 1. Runs as id-nygdev-api. CORS allows gym
+            and gymbro, each under its custom domain and its default hostname.
+            Easy Auth enforces GymLog tokens: require_authentication with
+            Return401 and no exempt paths, which is what moving the anonymous
+            callers off this app bought.
+          '
+        }
+      }
+
+      aspIntegrations = service-plan 'asp-nygdev-flex-integrations' {
+        technology 'FC1 / Linux'
+
+        integrationsApp = instanceOf integrations {
+          title 'func-nygdev-integrations'
+          description '
+            512 MB instances, max 1. Runs as id-nygdev-integrations. No CORS
+            list and no Easy Auth: nothing that calls it is a browser holding
+            a token — the WHOOP callback is a top-level redirect and the rest
+            carry function keys.
           '
         }
       }
@@ -46,7 +65,7 @@ deployment {
       }
 
       funcStorage = blob-storage 'nygdevfunc' {
-        description 'Deployment packages — the azadmin-deploy and api-deploy containers'
+        description 'Deployment packages — the azadmin-deploy, api-deploy and integrations-deploy containers'
       }
 
       appInsights = monitoring 'appi-nygdev-consumption' {
@@ -191,11 +210,14 @@ deployment {
   azure.rgNetwork.pip -> azure.rgVm.rpgVm.caddyProc 'Forwards 80/443 through rpg-snet'
   azure.rgVm.rpgVm.foundryProc -> azure.rgData.foundryData 'Stores worlds, modules and media on the attached disk'
 
-  azure.rgConsumption.aspDotnet.apiApp -> azure.rgDb.cosmosDb 'HTTPS/443, gateway mode, Entra token for id-nygdev-api — one account-scoped grant covering all three containers'
-  azure.rgConsumption.aspDotnet.apiApp -> azure.rgSecurity.kv 'HTTPS/443, Entra token for id-nygdev-api'
-  azure.rgConsumption.aspDotnet.apiApp -> azure.rgWeb.cdnStorage.dataContainer 'Publishes marathonprep.json as id-nygdev-api'
-  azure.rgConsumption.aspDotnet.apiApp -> internet.whoopApi 'OAuth token grants and v2 reads'
+  azure.rgConsumption.aspDotnet.apiApp -> azure.rgDb.cosmosDb 'HTTPS/443, gateway mode, Entra token for id-nygdev-api — scoped to db/gym alone'
+
+  azure.rgConsumption.aspIntegrations.integrationsApp -> azure.rgDb.cosmosDb 'HTTPS/443, gateway mode, Entra token for id-nygdev-integrations — one grant each on db/primary and db/gps, and none on db/gym'
+  azure.rgConsumption.aspIntegrations.integrationsApp -> azure.rgSecurity.kv 'HTTPS/443, Entra token for id-nygdev-integrations'
+  azure.rgConsumption.aspIntegrations.integrationsApp -> azure.rgWeb.cdnStorage.dataContainer 'Publishes marathonprep.json as id-nygdev-integrations'
+  azure.rgConsumption.aspIntegrations.integrationsApp -> internet.whoopApi 'OAuth token grants and v2 reads'
 
   azure.rgConsumption.aspDotnet.apiApp -> azure.rgConsumption.appInsights 'Telemetry (OpenTelemetry)'
+  azure.rgConsumption.aspIntegrations.integrationsApp -> azure.rgConsumption.appInsights 'Telemetry, to the same workspace'
   azure.rgConsumption.aspPs.azadminApp -> azure.rgConsumption.appInsights 'Telemetry'
 }

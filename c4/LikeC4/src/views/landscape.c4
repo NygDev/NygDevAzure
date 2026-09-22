@@ -44,6 +44,7 @@ views {
       gym,
       gymbro,
       api,
+      integrations,
       cosmos,
       keyvault,
       cdn,
@@ -55,7 +56,7 @@ views {
     // read them once and then work off the API — so at this altitude it is a
     // detail, and it cost two arrows across the whole page to say it.
     exclude
-      user -> api,             // the one-time consent — see `whoopBootstrap`
+      user -> integrations,    // the one-time consent — see `whoopBootstrap`
       cdn.webSite -> user,     // the published diagrams — see `delivery`
       gym -> cdn,              // the shipped library and templates — see `gym`
       gymbro -> cdn
@@ -111,7 +112,7 @@ views {
     // Three legs that belong to one journey each and, drawn here, ran the
     // width of the subscription across everything between them.
     exclude
-      internet.browser -> azure.rgConsumption.aspDotnet.apiApp,  // the one-time WHOOP consent — see `whoopBootstrap`
+      internet.browser -> azure.rgConsumption.aspIntegrations.integrationsApp,  // the one-time WHOOP consent — see `whoopBootstrap`
       azure.rgWeb.cdnStorage.webContainer -> internet.browser,    // the published diagrams — see `delivery`
       azure.rgWeb.apex -> azure.rgVm.rpgVm.caddyProc              // the nygard.dev status poll — see `apex`
 

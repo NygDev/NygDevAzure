@@ -112,8 +112,9 @@ resource "azurerm_cosmosdb_sql_container" "primary" {
 # The gym logger's container: one user's training block, sessions and sets.
 # Three document types told apart by /type — user, mesocycle, session — with
 # entries and sets embedded in the session rather than stored as documents of
-# their own. GymStore in the api app is the only writer; the account-scoped
-# role assignment in terraform/consumption.tf covers it without a grant here.
+# their own. GymStore in the api app is the only writer, and the only identity
+# that can reach this container at all: api_cosmos in terraform/consumption.tf
+# is scoped to it by name, and no other grant on the account includes it.
 #
 # Partitioned on /objectId, the caller's Entra object id off the validated
 # token. That is the whole tenancy boundary — a caller who could name their own
@@ -187,8 +188,9 @@ resource "azurerm_cosmosdb_sql_container" "gym" {
 # The phone's location spool, off db/primary and on its own. Partitioned on
 # /sender: a document says which device uploaded it, and that is what Cosmos
 # routes on, so a second device lands beside this one rather than interleaved
-# with it. Written by GpsFixStore in the api app, which reaches it under the
-# account-scoped role assignment in terraform/consumption.tf.
+# with it. Written by GpsFixStore in the integrations app, which reaches it
+# under integrations_cosmos_gps in terraform/consumption.tf — one of the two
+# container-scoped grants that identity holds.
 #
 # partition_key_paths is ForceNew, as on primary: editing it destroys and
 # recreates the container with everything in it.

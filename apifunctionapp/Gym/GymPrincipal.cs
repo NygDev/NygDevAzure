@@ -31,14 +31,19 @@ namespace ApiFunctionApp.Gym;
 /// unauthenticated request arrives here with no principal rather than being
 /// bounced, and refusing it is this class's job.
 ///
-/// Those callers now live on func-nygdev-integrations, so nothing anonymous is
-/// left here and the platform gate can finally be turned on — see the Easy
-/// Auth block in terraform/consumption.tf. This check stays either way. It is
-/// not made redundant by the gate: require_authentication only establishes
-/// that a token was valid, while what this resolves is *which* user, and that
+/// Those callers now live on func-nygdev-integrations, nothing anonymous is
+/// left here, and the platform gate is on: require_authentication = true with
+/// Return401, in the Easy Auth block in terraform/consumption.tf. So an
+/// unauthenticated request no longer reaches this class at all — the platform
+/// turns it away first.
+///
+/// This check is not redundant for that. require_authentication establishes
+/// only that a token was valid; what this resolves is *which* user, and that
 /// answer is the Cosmos partition key. It is also the only thing standing
-/// between the training logs and a forged header if the auth module is ever
-/// switched off, which is a config change rather than a deploy.
+/// between the training logs and a forged header if auth_enabled is ever
+/// switched off, which is a config change rather than a deploy — and the
+/// failure mode of that change is silent, because everything keeps answering
+/// 200.
 /// </summary>
 internal static class GymPrincipal
 {

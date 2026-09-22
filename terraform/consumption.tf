@@ -153,10 +153,9 @@ resource "azurerm_user_assigned_identity" "api" {
 # in nygdev-cosmos-db / db / gym. WHOOP, the phone's GPS spool and the running
 # dashboard moved to func-nygdev-integrations further down.
 #
-# Its Cosmos access is still granted by the account-scoped role assignment
-# below, which now reaches two containers this app has no code for. Narrowing
-# it to db/gym is a follow-up rather than an omission — see the comment there
-# for why it is a destroy and a create rather than an edit.
+# Its Cosmos access is granted by the role assignment below, scoped to db/gym
+# and nothing else — so the identity cannot reach db/primary or db/gps even
+# though they sit in the same account.
 #
 # Every endpoint is at Anonymous auth level on purpose — a browser front end
 # cannot hold a function key — and gated instead by the Easy Auth block further
@@ -281,31 +280,47 @@ resource "azurerm_function_app_flex_consumption" "api" {
   # exposed scope, the redirect URIs. The gymlog_easy_auth_redirect_uri output
   # exists because of that, the same way whoop_redirect_uri does.
   #
-  # Still not enforced, and now for no reason but sequencing. This ran with
-  # require_authentication = false because the WHOOP callback, the phone's GPS
-  # upload and the dashboard trigger shared the app and could present no token:
-  # the gate would have shut the door on them in the same instant. That is what
-  # the split was for, and they are gone — every function left here is a gym
-  # endpoint a browser calls with a bearer token.
+  # Enforced, finally, and with no excluded_paths — which is what the split was
+  # for. This ran with require_authentication = false for as long as the WHOOP
+  # callback, the phone's GPS upload and the dashboard trigger shared the app:
+  # none of them can present a token, so the gate would have shut the door on
+  # them in the same instant. Exempting them by path was the alternative, and a
+  # poor one, because excluded_paths is documented against the login redirect
+  # rather than a 401 — relying on it would have meant proving by experiment
+  # that it does anything at all here. Moving them to func-nygdev-integrations
+  # left nothing to exempt.
   #
-  # So the remaining change is require_authentication = true with
-  # unauthenticated_action "Return401", and no excluded_paths, which was the
-  # point of moving the code rather than exempting it: excluded_paths is
-  # documented against the login redirect rather than a 401, so relying on it
-  # here would have meant proving it by experiment.
+  # Return401 rather than RedirectToLoginPage because every caller is a fetch
+  # from a front end that already holds a token. A redirect would arrive at the
+  # browser as an opaque failure on an XHR; a 401 is something the client can
+  # act on, and it matches what GymEndpoint already answers.
   #
-  # One thing to test before flipping it, on a throwaway app rather than here:
-  # a browser sends the CORS preflight with no Authorization header, so if the
-  # auth module answers 401 to OPTIONS, both front ends break at once and it
-  # will read as a CORS fault rather than an auth one.
+  # The one thing to watch after applying this is the CORS preflight. A browser
+  # sends OPTIONS with no Authorization header, so if the auth module answers
+  # 401 to it, both front ends stop working at once and it reads as a CORS
+  # fault rather than an auth one. Test it directly rather than through the
+  # site, because the browser will not tell you which of the two it was:
   #
-  # The code-side check in GymPrincipal stays either way. The gate establishes
-  # that a token was valid; that check establishes which user, which is the
-  # partition key.
+  #   curl -i -X OPTIONS \
+  #     https://func-nygdev-api.azurewebsites.net/api/gym/workouts \
+  #     -H 'Origin: https://gym.nygard.dev' \
+  #     -H 'Access-Control-Request-Method: GET' \
+  #     -H 'Access-Control-Request-Headers: authorization'
+  #
+  # A 200 or 204 carrying Access-Control-Allow-Origin is what it should be. A
+  # 401 means the module is gating preflight, and the fix is to put these two
+  # arguments back the way they were — the code-side gate is unaffected either
+  # way, so reverting costs nothing but the platform's belt on top of it.
+  #
+  # Because that is the point worth keeping hold of: GymPrincipal is not made
+  # redundant by this. The gate establishes that a token was valid. That check
+  # establishes which user it was for, which is the Cosmos partition key, and
+  # it is still the only thing between the training logs and a forged header if
+  # auth_enabled is ever turned off — a config change rather than a deploy.
   auth_settings_v2 {
     auth_enabled           = true
-    require_authentication = false
-    unauthenticated_action = "AllowAnonymous"
+    require_authentication = true
+    unauthenticated_action = "Return401"
     require_https          = true
 
     active_directory_v2 {
@@ -383,30 +398,44 @@ resource "azurerm_function_app_flex_consumption" "api" {
 # only way in — there are no keys to fall back on. Cosmos DB Built-in Data
 # Contributor (…0002) is the read/write built-in role.
 #
-# Scoped to the account rather than to a container. This was two per-container
-# assignments, one for primary and one for gps, and the narrow scope bought
-# little for what it cost: the app is the only writer on nygdev-cosmos-db and
-# will reach the containers that land there as they arrive, while a
-# per-container grant has to be applied before the code that needs it or every
-# write answers 403 — an ordering trap paid again on each new container.
+# Scoped to db/gym, which is every container this app has code for. It was
+# account-scoped while this app also ran WHOOP, the GPS spool and the dashboard
+# — three containers and an argument that the app was the only writer on the
+# account anyway. That stopped being true when the integrations app got its own
+# identity, and an account-scoped grant now means each app's identity can read
+# the other's data. For this one that is the training logs, which is the thing
+# the whole tenancy boundary exists to protect.
 #
-# What the narrow scope did buy was a boundary against something that is not
-# this app landing in the account. If that happens, this goes back to one
-# assignment per container the app actually writes to.
-#
-# Replacing this with a narrower one is a destroy and a create, and terraform
-# does not order them: an apply can briefly leave the app with no Cosmos access
-# at all. That used to be cheap — a WHOOP sync ran again on its timer, the
-# phone kept its spool and resent. It is not any more. Everything on this app
-# is now a person tapping a set between exercises, so the window is a failed
-# write in front of somebody, and narrowing the scope to db/gym is worth doing
-# deliberately rather than as a rider on another change.
+# The cost of the narrow scope is the ordering trap it always had: a new
+# container needs its grant applied before the code that writes it, or every
+# write answers 403. That is the right trade here — this app has had exactly
+# one container for its whole life as a gym logger.
 resource "azurerm_cosmosdb_sql_role_assignment" "api_cosmos" {
   resource_group_name = azurerm_resource_group.databases.name
   account_name        = azurerm_cosmosdb_account.db.name
   role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
   principal_id        = azurerm_user_assigned_identity.api.principal_id
-  scope               = azurerm_cosmosdb_account.db.id
+
+  # Account id plus the data-plane path. Not the container's ARM id, which
+  # spells the same containment as /sqlDatabases/db/containers/gym and is not
+  # what this API accepts. Built from the resources rather than typed so a
+  # rename cannot leave a grant pointing at a container that is gone.
+  scope = "${azurerm_cosmosdb_account.db.id}/dbs/${azurerm_cosmosdb_sql_database.db.name}/colls/${azurerm_cosmosdb_sql_container.gym.name}"
+
+  lifecycle {
+    # Scope is ForceNew, so narrowing this is a replacement. Without this the
+    # order is terraform's to choose and the app can be left with no access at
+    # all in between; with it the narrow grant is created before the broad one
+    # is destroyed, and the overlap is two valid grants rather than none.
+    #
+    # It does not close the window completely, and nothing in terraform can: a
+    # data-plane assignment takes a few minutes to become effective, while a
+    # revocation is immediate. So the new grant may still be propagating when
+    # the old one goes. Apply this when nobody is mid-session — the failure
+    # looks like a 403 on a logged set, and the client's answer to that is to
+    # show it rather than to retry.
+    create_before_destroy = true
+  }
 }
 
 # Write access on the data container for the api app, and on nothing else in
@@ -458,22 +487,19 @@ resource "azurerm_role_assignment" "api_cdn_data" {
 # ---------------------------------------------------------------------------
 # The integrations app — the other half of func-nygdev-api, pre-created.
 #
-# Nothing is deployed here yet, and nothing routes here. It exists so that
-# splitting the api app in two is later a code move and a workflow change
-# rather than an infrastructure change: WHOOP, GPS and the running dashboard
-# move to this app, the gym logger stays where it is, and the two halves stop
-# having to share one answer to "must a caller be signed in".
+# WHOOP, the phone's GPS spool and the running dashboard, split off from
+# func-nygdev-api so the two halves stop having to share one answer to "must a
+# caller be signed in".
 #
-# Sharing that answer is the whole problem. Easy Auth on func-nygdev-api runs
-# with require_authentication = false because the WHOOP callback has to be
-# reachable by WHOOP, and the GPS upload by a phone holding a function key —
-# and the platform gate cannot be turned on for the gym endpoints without
-# shutting the door on both in the same instant. Once those callers live here,
-# that app has nothing anonymous left on it and the gate can go on with no
-# exclusions at all: no excludedPaths list, whose documented behaviour covers
-# the login redirect rather than a 401 and would have to be verified by
-# experiment, and no exempt path for a future endpoint to be written into by
-# accident.
+# Sharing that answer was the whole problem. Easy Auth on the api app ran with
+# require_authentication = false because the WHOOP callback has to be reachable
+# by WHOOP, and the GPS upload by a phone holding a function key — so the
+# platform gate could not be turned on for the gym endpoints without shutting
+# the door on both in the same instant. With those callers here, that app has
+# nothing anonymous left and its gate is on, with no exclusions at all: no
+# excludedPaths list, whose documented behaviour covers the login redirect
+# rather than a 401 and would have had to be verified by experiment, and no
+# exempt path for a future endpoint to be written into by accident.
 #
 # The code has moved and so have the callers: the WHOOP developer dashboard's
 # redirect URL and the phone's GPS upload URL both name this app now, and
@@ -610,20 +636,35 @@ resource "azurerm_function_app_flex_consumption" "integrations" {
   }
 }
 
-# Cosmos data-plane read/write for the integrations app, account-scoped on the
-# same reasoning as api_cosmos above: db holds this project's data and nothing
-# else, and container-scoped assignments turn every future container into a
-# terraform change that can briefly leave the app with no access at all.
+# Cosmos data-plane read/write for the integrations app: one assignment per
+# container it writes, on the same reasoning as api_cosmos above. This was a
+# single account-scoped grant, which meant this identity could read db/gym —
+# every user's training log — to run a WHOOP sync. Nothing here has ever had
+# code for that container.
 #
-# It is granted before anything is deployed here on purpose. A data-plane
-# assignment takes a few minutes to propagate, and finding that out on the
-# first sync after the split is worse than finding it out now.
-resource "azurerm_cosmosdb_sql_role_assignment" "integrations_cosmos" {
+# Two resources rather than one because the scope is a single path and this app
+# genuinely writes two containers: db/primary for the WHOOP collections and the
+# running workouts built from them, db/gps for the phone's location spool.
+#
+# No create_before_destroy on these, unlike api_cosmos. Replacing one resource
+# with two is not a replacement terraform can overlap — the old address is
+# going away — so there is a window, and it is cheap here in a way it is not
+# there: a WHOOP sync runs again on its timer and the phone keeps its spool and
+# resends.
+resource "azurerm_cosmosdb_sql_role_assignment" "integrations_cosmos_primary" {
   resource_group_name = azurerm_resource_group.databases.name
   account_name        = azurerm_cosmosdb_account.db.name
   role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
   principal_id        = azurerm_user_assigned_identity.integrations.principal_id
-  scope               = azurerm_cosmosdb_account.db.id
+  scope               = "${azurerm_cosmosdb_account.db.id}/dbs/${azurerm_cosmosdb_sql_database.db.name}/colls/${azurerm_cosmosdb_sql_container.primary.name}"
+}
+
+resource "azurerm_cosmosdb_sql_role_assignment" "integrations_cosmos_gps" {
+  resource_group_name = azurerm_resource_group.databases.name
+  account_name        = azurerm_cosmosdb_account.db.name
+  role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
+  principal_id        = azurerm_user_assigned_identity.integrations.principal_id
+  scope               = "${azurerm_cosmosdb_account.db.id}/dbs/${azurerm_cosmosdb_sql_database.db.name}/colls/${azurerm_cosmosdb_sql_container.gps.name}"
 }
 
 # Write access on the CDN data container, for the dashboard blob the running

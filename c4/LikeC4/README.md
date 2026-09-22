@@ -55,11 +55,12 @@ A view overrides colour only when it is making a point.
 Each workflow is a single element. What a run does step by step lives in the
 element's `description`, not in child elements — steps churn much faster than the
 shape of the pipeline, and a diagram of `actions/checkout` teaches nobody anything.
-The same rule is broken exactly once, inside `func-nygdev-api`, which is drawn as
-three: two timers that fire on different schedules and fail for unrelated reasons,
-and the gym routes, which run when somebody taps, write a different Cosmos
-container and are the only thing in the estate with a caller to authenticate. One
-box would hide all of that.
+The same rule is broken exactly once, inside `func-nygdev-integrations`, which is
+drawn as two: timers that fire on different schedules and fail for unrelated
+reasons, so one box would report either failure as the other. `func-nygdev-api`
+used to be drawn as three for the same reason, with the gym routes beside those
+timers; the split moved the timers out, and an app with one job in it is just the
+app.
 
 `terraform-apply-gymbro.yml` has no element of its own: it is the same
 configuration under `-target`, so it can touch nothing `Terraform Apply` cannot, and
@@ -83,7 +84,7 @@ what is worth knowing about it is on that element instead.
 
 | View | What it answers |
 | --- | --- |
-| `running` | The dashboard and everything that feeds it: the two API jobs, WHOOP, the vault, Cosmos and the published blob |
+| `running` | The dashboard and everything that feeds it: the two Integrations jobs, WHOOP, the vault, Cosmos and the published blob |
 | `runningPipeline` | The same chain as a sequence, in the order it happens |
 | `whoopRefresh` | Spending and replacing the rotating refresh token |
 | `whoopBootstrap` | The one-time OAuth consent that creates the first token |
