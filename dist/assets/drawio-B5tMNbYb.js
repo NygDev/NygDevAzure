@@ -1,0 +1,1 @@
+import{t as e}from"./main-T_zxazPR.js";var t={"nygdev-azure":async()=>await e(()=>import(`./drawio-Cbvd0f42.js`),[])};async function n(e){let n=t[e];if(!n){let n=Object.keys(t);throw console.error(`Unknown projectId: `+e+` (available: `+n+`)`),Error(`Project does not enable drawio export: `+e)}return await n()}export{n as loadDrawioSources};
