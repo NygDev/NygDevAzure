@@ -44,22 +44,22 @@ output "sql_server_fqdn" {
 }
 
 output "api_function_app_hostname" {
-  description = "Default hostname of the api function app. The run.nygard.dev site hardcodes this origin in main.js (SPOT_URL) and in the connect-src of its staticwebapp.config.json; both have to match it, and it has to appear in the app's CORS allowed origins."
+  description = "Default hostname of the api function app, which serves the gym logger and nothing else since the split. Both front ends hold it as API_BASE in sites/gym/src/lib/config.ts, and it has to appear in the app's CORS allowed origins for a browser to read a response from it. It is not what run.nygard.dev reads — that page fetches marathonprep.json off the CDN and calls no function."
   value       = azurerm_function_app_flex_consumption.api.default_hostname
 }
 
 output "whoop_redirect_uri" {
-  description = "Register this exactly as a redirect URL on the WHOOP application in the developer dashboard. WHOOP compares it on both legs of the authorization code grant, so a trailing slash or a different host is a rejected flow rather than a warning. The app derives the same string from WEBSITE_HOSTNAME at run time."
-  value       = "https://${azurerm_function_app_flex_consumption.api.default_hostname}/api/whoop/callback"
+  description = "Register this exactly as a redirect URL on the WHOOP application in the developer dashboard. WHOOP compares it on both legs of the authorization code grant, so a trailing slash or a different host is a rejected flow rather than a warning. The app derives the same string from WEBSITE_HOSTNAME at run time. It names func-nygdev-integrations since the split; only a fresh authorization needs it to match, because the refresh_token grant sends no redirect_uri at all."
+  value       = "https://${azurerm_function_app_flex_consumption.integrations.default_hostname}/api/whoop/callback"
 }
 
 output "whoop_authorize_url" {
-  description = "Open this once, in a browser, to grant the app access to a WHOOP account and seed the whoop-token secret. Needs ?code=<function key> appended — the endpoint is at Function auth level."
-  value       = "https://${azurerm_function_app_flex_consumption.api.default_hostname}/api/whoop/authorize"
+  description = "Open this once, in a browser, to grant the app access to a WHOOP account and seed the whoop-token secret. Needs ?code=<function key> appended — the endpoint is at Function auth level, and keys are per app, so this wants one minted on func-nygdev-integrations rather than whatever was used before the split."
+  value       = "https://${azurerm_function_app_flex_consumption.integrations.default_hostname}/api/whoop/authorize"
 }
 
 output "running_dashboard_url" {
-  description = "Where the running dashboard JSON is published. This is the URL the run.nygard.dev page fetches; it is anonymous-read, so no key or function call is involved. Rewritten by the API on its own timer, a quarter of an hour behind each six-hourly WHOOP sync."
+  description = "Where the running dashboard JSON is published. This is the URL the run.nygard.dev page fetches; it is anonymous-read, so no key or function call is involved. Rewritten by func-nygdev-integrations on its own timer, a quarter of an hour behind each six-hourly WHOOP sync."
   value       = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${azurerm_storage_container.data.name}/marathonprep.json"
 }
 
@@ -103,16 +103,11 @@ output "gymlog_spa_redirect_uri" {
 }
 
 output "integrations_function_app_hostname" {
-  description = "Default hostname of the integrations function app, pre-created for the split of func-nygdev-api. Nothing is deployed to it yet, so nothing calls this host today; it is here because everything that has to be re-pointed when WHOOP, GPS and the running dashboard move is derived from it."
+  description = "Default hostname of the integrations function app: WHOOP, the phone's GPS spool and the running dashboard since the split. No CORS list and no Easy Auth, because nothing that calls it is a browser holding a token — the WHOOP callback is a top-level redirect and the rest carry function keys."
   value       = azurerm_function_app_flex_consumption.integrations.default_hostname
 }
 
-output "integrations_whoop_redirect_uri" {
-  description = "What the WHOOP developer dashboard's redirect URL becomes when the WHOOP code moves to the integrations app — not before. WHOOP compares it on both legs of the authorization code grant and permits one value, so this is a cutover rather than an addition: change it and the flow on func-nygdev-api stops working the same minute. Doing it in the other order is the safer half-hour, since a WHOOP sync failing is a retry on the next timer."
-  value       = "https://${azurerm_function_app_flex_consumption.integrations.default_hostname}/api/whoop/callback"
-}
-
 output "integrations_gps_endpoint" {
-  description = "Where the phone's location spool posts once the GPS code moves to the integrations app. Needs ?code=<function key> appended, as it does today — the endpoint is at Function auth level, and the key is minted per app, so the phone needs this app's key rather than the one it holds for func-nygdev-api."
+  description = "Where the phone's location spool posts. Needs ?code=<function key> appended — the endpoint is at Function auth level, and keys are per app, so this wants one minted on func-nygdev-integrations rather than the key the phone held before the split."
   value       = "https://${azurerm_function_app_flex_consumption.integrations.default_hostname}/api/gps/locations"
 }

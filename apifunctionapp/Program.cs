@@ -1,12 +1,7 @@
-using ApiFunctionApp.Gps;
 using ApiFunctionApp.Gym;
-using ApiFunctionApp.Running;
-using ApiFunctionApp.Whoop;
 using Azure.Core;
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.Exporter;
-using Azure.Storage.Blobs;
-using Azure.Security.KeyVault.Secrets;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
@@ -96,123 +91,26 @@ builder.Services.AddSingleton(provider =>
     return new CosmosClient(endpoint, provider.GetRequiredService<TokenCredential>(), options);
 });
 
-// The container everything but the GPS spool uses, resolved once. GetContainer
-// builds a fresh proxy on every call and a backfill would ask for one per
-// record written, so the names live here — the single place that knows them —
-// rather than in each store that needs one. Both are fixed by terraform, in
-// terraform/db.tf.
-//
-// Registered unkeyed because it is what every store but GpsFixStore takes.
-// db/gps is handed to that one by hand further down instead of being
-// registered as a second Container, which would leave two registrations of one
-// type to be told apart by resolution order.
-builder.Services.AddSingleton(provider =>
-    provider.GetRequiredService<CosmosClient>().GetContainer("db", "primary"));
-
 // ---------------------------------------------------------------------------
-// WHOOP
+// Gym logger — the whole of this app, since WHOOP, the GPS spool and the
+// running dashboard moved to func-nygdev-integrations.
 //
-// Every registration below is a singleton resolved lazily, on the first WHOOP
-// request. That matters: WHOOP_CLIENT_ID and friends are missing in a local
-// checkout without them, and eager construction would take the whole worker
-// down rather than failing the endpoints that need the configuration.
-// ---------------------------------------------------------------------------
-builder.Services.AddSingleton(_ => WhoopOptions.FromEnvironment());
-
-builder.Services.AddSingleton(provider => new SecretClient(
-    provider.GetRequiredService<WhoopOptions>().KeyVaultUri,
-    provider.GetRequiredService<TokenCredential>()));
-
-builder.Services.AddSingleton<WhoopSecretStore>();
-
-// Cosmos-side WHOOP storage and the sync loop over it. Neither reads the WHOOP
-// app settings, so unlike the client below they are safe to construct eagerly.
-builder.Services.AddSingleton<WhoopStore>();
-builder.Services.AddSingleton<WhoopSyncRunner>();
-
-// ---------------------------------------------------------------------------
-// GPS
+// db/gym holds one user's training block, sessions and sets, partitioned on
+// /objectId — the caller's Entra object id off the token Easy Auth validated.
 //
-// The phone's location spool, written into db/gps — a container of its own,
-// partitioned on /sender, rather than a partition of db/primary. Nothing but
-// the Cosmos container behind it, so there is no configuration to be missing
-// and nothing to defer — see the endpoint, GpsLocations, for the upload
-// contract it is holding up.
-//
-// Constructed with the container named here rather than injected, because this
-// is the one store in the app that does not write to db/primary. Both
-// containers are terraform's, in terraform/db.tf; the app's data-plane role
-// assignment is account-scoped, in terraform/consumption.tf, so it covers this
-// container without a grant of its own.
-// ---------------------------------------------------------------------------
-builder.Services.AddSingleton(provider => new GpsFixStore(
-    provider.GetRequiredService<CosmosClient>().GetContainer("db", "gps")));
-
-// ---------------------------------------------------------------------------
-// Gym logger
-//
-// The third container, db/gym, holding one user's training block, sessions and
-// sets — partitioned on /objectId, which is the caller's Entra object id off
-// the token Easy Auth validated. Handed its container by hand for the same
-// reason GpsFixStore is: registering a second Container would leave two
-// registrations of one type to be told apart by resolution order, and the
-// unkeyed one is db/primary, which every other store takes.
+// Handed its container explicitly rather than through an unkeyed Container
+// registration. There is only one store left to serve, so a registration would
+// work, but naming the container at the one place that uses it is what keeps
+// db/primary and db/gps — still in this account, no longer this app's — from
+// being one resolution-order mistake away.
 //
 // Nothing to configure and nothing to defer. Both the container and the
 // account-scoped data-plane role assignment that reaches it are terraform's,
-// in terraform/db.tf and terraform/consumption.tf.
+// in terraform/db.tf and terraform/consumption.tf. That grant still covers all
+// three containers; narrowing it to db/gym is a follow-up, and a destroy and
+// create rather than an edit.
 // ---------------------------------------------------------------------------
 builder.Services.AddSingleton(provider => new GymStore(
     provider.GetRequiredService<CosmosClient>().GetContainer("db", "gym")));
-
-// ---------------------------------------------------------------------------
-// Running analytics
-//
-// Reads the workouts the sync stored out of Cosmos, and publishes the charts
-// built from them as a JSON blob on the CDN account. No WHOOP credentials
-// anywhere in it, so nothing here needs the lazy treatment the WHOOP client
-// gets — and a factory registration is only run on first resolve anyway, so a
-// checkout without DASHBOARD_BLOB_URL fails the dashboard rather than the
-// worker.
-// ---------------------------------------------------------------------------
-builder.Services.AddSingleton(provider =>
-{
-    var url = Environment.GetEnvironmentVariable("DASHBOARD_BLOB_URL")
-        ?? throw new InvalidOperationException(
-            "DASHBOARD_BLOB_URL is not configured; terraform sets it on the function app.");
-
-    // The whole blob URI in one setting, so the account, container and file
-    // name are terraform's to decide and this knows only where to put the
-    // file. Authenticated with the same managed identity as everything else —
-    // the app holds no storage key, and its role assignment is scoped to that
-    // one container.
-    return new BlobClient(new Uri(url), provider.GetRequiredService<TokenCredential>());
-});
-
-builder.Services.AddSingleton<RunningWorkoutStore>();
-builder.Services.AddSingleton<RunningDashboardStore>();
-builder.Services.AddSingleton<RunningDashboardBuilder>();
-
-// Lazy, and injected as Lazy into the endpoints. Constructing the client reads
-// the app settings, and the worker builds a function's constructor arguments
-// before it invokes the function — so a configuration error thrown here would
-// land where no catch of ours can reach it and go out as a 500 with an empty
-// body. Deferring it to the first .Value inside the endpoint is what lets
-// WhoopEndpoint answer with the name of the missing setting instead.
-builder.Services.AddSingleton(provider => new Lazy<WhoopClient>(() => new WhoopClient(
-    // One HttpClient for the app's lifetime, so connections to WHOOP are
-    // reused across invocations. PooledConnectionLifetime is what keeps that
-    // from pinning a stale DNS answer forever — the connection is retired on a
-    // timer and the next one re-resolves.
-    new HttpClient(new SocketsHttpHandler
-    {
-        PooledConnectionLifetime = TimeSpan.FromMinutes(15),
-    })
-    {
-        Timeout = TimeSpan.FromSeconds(30),
-    },
-    provider.GetRequiredService<WhoopOptions>(),
-    provider.GetRequiredService<WhoopSecretStore>(),
-    provider.GetRequiredService<ILogger<WhoopClient>>())));
 
 builder.Build().Run();
