@@ -118,23 +118,51 @@ model {
   api = function-app 'API' {
     technology '.NET 10 isolated — Flex Consumption'
     description '
-      func-nygdev-api. Runs as the user-assigned identity id-nygdev-api,
-      which is how it reaches Cosmos, the vault and the CDN account without
-      holding a key or a connection string.
+      func-nygdev-api. The training log and nothing else since the split:
+      blocks, sessions, sets and saved day templates, read and written a tap
+      at a time by the two gym front ends. Runs as id-nygdev-api, which is how
+      it reaches Cosmos without holding a key or a connection string.
 
-      Three things live in it, drawn apart on purpose. Two are jobs on
-      schedules a quarter of an hour apart: one talks to WHOOP, the other to
-      Cosmos and blob storage, so neither failure is reported as the other.
-      The third is the training log, which runs when somebody taps rather than
-      when a clock fires.
+      It used to carry the WHOOP sync and the dashboard build as well, and
+      losing them is what let Easy Auth be enforced here. Those two can
+      present no token — WHOOP redirects a browser to a callback, the phone
+      holds a function key — so while they shared this app the platform gate
+      had to stay off and every gym route refused unauthenticated callers for
+      itself. They are on Integrations now, and the gate is on:
+      require_authentication with Return401, no exempt paths.
 
-      Easy Auth sits in front of all of them and is the reason the third can
-      exist at all: the platform validates a bearer token before any function
-      runs and hands the code the claims. It is turned on without being
-      enforced — a request that carries no token is passed through rather than
-      bounced to a login, which is what keeps the WHOOP callback and the GPS
-      upload working — so refusing an unauthenticated caller is each gym
-      route doing it for itself.
+      The route-level check stays regardless, because the two answer different
+      questions. The gate establishes that a token was valid. The check
+      establishes which user it named, and that answer is the Cosmos partition
+      key — read from the platform headers and never from a route, a query
+      string or a body, because it is the whole tenancy boundary.
+
+      Every write carries the count the client believes the session already
+      holds and applies only while that is still true. So a request whose
+      reply was lost is safe to send again — it answers "already recorded"
+      rather than logging the set twice, which is what makes a one-tap button
+      safe to hammer on gym wifi and what lets the page draw the row before
+      the call returns.
+    '
+  }
+
+  integrations = function-app 'Integrations' {
+    technology '.NET 10 isolated — Flex Consumption'
+    description '
+      func-nygdev-integrations. Everything that feeds the estate from outside
+      it, split off from the API so that app could have its gate turned on.
+      Runs as id-nygdev-integrations, which reaches Cosmos, the vault and the
+      CDN account without holding a key or a connection string.
+
+      Two jobs on schedules a quarter of an hour apart, drawn apart on
+      purpose: one talks to WHOOP, the other to Cosmos and blob storage, so
+      neither failure is reported as the other. Beside them sits the phone
+      location spool — /api/gps/locations, a push rather than a schedule,
+      writing db/gps.
+
+      No Easy Auth here, and that is the point of the app rather than an
+      omission. The WHOOP callback has to be reachable by WHOOP, and the rest
+      carry function keys, so there is no token for a gate to validate.
     '
 
     sync = job 'WHOOP sync' {
@@ -172,33 +200,6 @@ model {
         change to the arithmetic, which reshapes the whole history.
       '
     }
-
-    gymApi = job 'Gym API' {
-      technology 'HTTP triggers, anonymous at the platform and gated on a validated principal'
-      description '
-        The training log: blocks, sessions, sets and saved day templates, read
-        and written a tap at a time by the two gym front ends.
-
-        Drawn beside the timers rather than folded into the app for the same
-        reason they are drawn apart from each other. It runs when a person
-        taps, it writes a different Cosmos container, and it is the only thing
-        in the estate with a caller of its own to authenticate.
-
-        The functions are at Anonymous auth level because a browser cannot
-        keep a function key secret, so what guards them is the principal Easy
-        Auth builds and an explicit check in every route. The Entra object id
-        off that principal is the Cosmos partition key and therefore the whole
-        tenancy boundary, which is why it is read from the platform headers
-        and never from a route, a query string or a body.
-
-        Every write carries the count the client believes the session already
-        holds and applies only while that is still true. So a request whose
-        reply was lost is safe to send again — it answers "already recorded"
-        rather than logging the set twice, which is what makes a one-tap
-        button safe to hammer on gym wifi and what lets the page draw the row
-        before the call returns.
-      '
-    }
   }
 
   azadmin = function-app 'Admin Automation' {
@@ -211,7 +212,10 @@ model {
     description '
       nygdev-cosmos-db / db, one account holding three containers that share
       nothing but the throughput. Local auth is off, so the account-scoped
-      Entra role assignment for id-nygdev-api is the only way in.
+      Entra role assignments — one for id-nygdev-api, one for
+      id-nygdev-integrations — are the only way in. Both are account-scoped
+      rather than per-container, so each app can currently reach containers it
+      has no code for; narrowing them is a job of its own.
 
       `primary` is the WHOOP store, partitioned on /type. `gym` is the
       training log, partitioned on /objectId — the signed-in caller, which is
@@ -262,8 +266,8 @@ model {
       description '
         Three files, published by two different things.
 
-        marathonprep.json is the built running dashboard, written by the API
-        and rewritten in place on every build, carrying a five-minute
+        marathonprep.json is the built running dashboard, written by the
+        Integrations app and rewritten in place on every build, carrying a five-minute
         Cache-Control so each rebuild reaches the page well before the next
         one runs.
 
@@ -351,20 +355,20 @@ model {
 
   // The refresh token is read, spent and rewritten on the same call, which is
   // why the identity holds Secrets Officer here rather than a reader role.
-  api.sync -> keyvault 'Reads whoop-clientsecret; reads and rewrites the rotating whoop-token' #managed-identity
-  api.sync -> whoop 'Refreshes the access token, then pages cycles, sleep, workouts and recovery' #scheduled
+  integrations.sync -> keyvault 'Reads whoop-clientsecret; reads and rewrites the rotating whoop-token' #managed-identity
+  integrations.sync -> whoop 'Refreshes the access token, then pages cycles, sleep, workouts and recovery' #scheduled
 
   // Upserting by WHOOP own id is what makes a re-sync idempotent: a record
   // WHOOP rescored overwrites its earlier self rather than landing beside it.
   // The cursors live in the same container, one document per collection.
-  api.sync -> cosmos 'Upserts each record on its WHOOP id, and one sync cursor per collection' #managed-identity
+  integrations.sync -> cosmos 'Upserts each record on its WHOOP id, and one sync cursor per collection' #managed-identity
 
-  api.dashboard -> cosmos 'Queries the scored running workouts back out (the only query in the model)' #managed-identity
-  api.dashboard -> cdn.dataContainer 'Publishes marathonprep.json (PUT, in place)' #managed-identity
+  integrations.dashboard -> cosmos 'Queries the scored running workouts back out (the only query in the model)' #managed-identity
+  integrations.dashboard -> cdn.dataContainer 'Publishes marathonprep.json (PUT, in place)' #managed-identity
 
   // Once, by hand. The refresh grant can keep a token pair alive forever but
   // cannot create one — only a person at the consent screen can do that.
-  user -> api 'Grants WHOOP access, once (GET /api/whoop/authorize)'
+  user -> integrations 'Grants WHOOP access, once (GET /api/whoop/authorize)'
 
   // =======================================================================
   // Journey 3 — rpg.nygard.dev
@@ -398,17 +402,18 @@ model {
   // Cross-origin, which is why both origins are in the CORS list on the
   // function app. The token is what decides whose log is read: nothing in
   // these calls names a user.
-  gym -> api.gymApi 'Reads and writes the training log, one tap at a time' #signed-in
-  gymbro -> api.gymApi 'Reads and writes the same routes, a whole block at a time' #signed-in
+  gym -> api 'Reads and writes the training log, one tap at a time' #signed-in
+  gymbro -> api 'Reads and writes the same routes, a whole block at a time' #signed-in
 
   // No token on these two, deliberately: an Authorization header would turn a
   // simple cross-origin GET into a preflight the blob endpoint has no rule for.
   gym -> cdn.dataContainer 'Fetches the exercise library and the built-in day templates, once, and caches them'
   gymbro -> cdn.dataContainer 'Fetches the same two files'
 
-  // Easy Auth on the app, in front of every function in it — which is why this
-  // edge starts at the app rather than at the gym routes inside it.
-  api -> entra.gymlog 'Validates the bearer token against this registration before any function runs'
+  // Easy Auth in front of every function in the app, and since the split it
+  // refuses the request outright rather than passing it through unauthenticated
+  // — there is nothing left here that could not present a token.
+  api -> entra.gymlog 'Validates the bearer token against this registration, and refuses the request if it does not hold one'
 
-  api.gymApi -> cosmos 'Reads and writes the blocks, sessions and saved templates in db/gym, under the object id off the token' #managed-identity
+  api -> cosmos 'Reads and writes the blocks, sessions and saved templates in db/gym, under the object id off the token' #managed-identity
 }

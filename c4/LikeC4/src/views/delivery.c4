@@ -41,6 +41,7 @@ views {
       tfstate,
       keyvault,
       api,
+      integrations,
       azadmin,
       cdn,
       cdn.webSite
@@ -48,16 +49,17 @@ views {
     exclude
       entra.ghOidc -> github.actions,   // return leg of the token exchange
       azurerm -> api,                   // what an apply builds — see the journey views
+      azurerm -> integrations,
       azurerm -> azadmin,
       azurerm -> cdn,
       azurerm -> keyvault,
-      api -> keyvault,                  // runtime, not delivery — see `running`
+      integrations -> keyvault,         // runtime, not delivery — see `running`
       dev -> cdn.webSite,               // reading the published site is not delivery
       cdn.webSite -> user
 
     autoLayout LeftRight 170 100
 
-    style azurerm, tfstate, keyvault, api, azadmin, cdn, cdn.webSite {
+    style azurerm, tfstate, keyvault, api, integrations, azadmin, cdn, cdn.webSite {
       color primary
     }
   }
