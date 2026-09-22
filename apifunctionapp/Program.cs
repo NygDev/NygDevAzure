@@ -105,10 +105,10 @@ builder.Services.AddSingleton(provider =>
 // being one resolution-order mistake away.
 //
 // Nothing to configure and nothing to defer. Both the container and the
-// account-scoped data-plane role assignment that reaches it are terraform's,
-// in terraform/db.tf and terraform/consumption.tf. That grant still covers all
-// three containers; narrowing it to db/gym is a follow-up, and a destroy and
-// create rather than an edit.
+// data-plane role assignment that reaches it are terraform's, in
+// terraform/db.tf and terraform/consumption.tf — and that grant names this
+// container, so the identity cannot reach db/primary or db/gps even by
+// mistake.
 // ---------------------------------------------------------------------------
 builder.Services.AddSingleton(provider => new GymStore(
     provider.GetRequiredService<CosmosClient>().GetContainer("db", "gym")));

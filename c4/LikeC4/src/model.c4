@@ -211,11 +211,12 @@ model {
     technology 'Azure Cosmos DB (NoSQL) — free tier'
     description '
       nygdev-cosmos-db / db, one account holding three containers that share
-      nothing but the throughput. Local auth is off, so the account-scoped
-      Entra role assignments — one for id-nygdev-api, one for
-      id-nygdev-integrations — are the only way in. Both are account-scoped
-      rather than per-container, so each app can currently reach containers it
-      has no code for; narrowing them is a job of its own.
+      nothing but the throughput. Local auth is off, so Entra role assignments
+      are the only way in, and each is scoped to a single container rather than
+      to the account: id-nygdev-api reaches `gym` alone, id-nygdev-integrations
+      reaches `primary` and `gps`. So neither app can read what the other
+      writes, which matters most in one direction — `gym` is partitioned per
+      user and is the tenancy boundary.
 
       `primary` is the WHOOP store, partitioned on /type. `gym` is the
       training log, partitioned on /objectId — the signed-in caller, which is

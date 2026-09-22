@@ -153,10 +153,9 @@ resource "azurerm_user_assigned_identity" "api" {
 # in nygdev-cosmos-db / db / gym. WHOOP, the phone's GPS spool and the running
 # dashboard moved to func-nygdev-integrations further down.
 #
-# Its Cosmos access is still granted by the account-scoped role assignment
-# below, which now reaches two containers this app has no code for. Narrowing
-# it to db/gym is a follow-up rather than an omission — see the comment there
-# for why it is a destroy and a create rather than an edit.
+# Its Cosmos access is granted by the role assignment below, scoped to db/gym
+# and nothing else — so the identity cannot reach db/primary or db/gps even
+# though they sit in the same account.
 #
 # Every endpoint is at Anonymous auth level on purpose — a browser front end
 # cannot hold a function key — and gated instead by the Easy Auth block further
@@ -399,30 +398,44 @@ resource "azurerm_function_app_flex_consumption" "api" {
 # only way in — there are no keys to fall back on. Cosmos DB Built-in Data
 # Contributor (…0002) is the read/write built-in role.
 #
-# Scoped to the account rather than to a container. This was two per-container
-# assignments, one for primary and one for gps, and the narrow scope bought
-# little for what it cost: the app is the only writer on nygdev-cosmos-db and
-# will reach the containers that land there as they arrive, while a
-# per-container grant has to be applied before the code that needs it or every
-# write answers 403 — an ordering trap paid again on each new container.
+# Scoped to db/gym, which is every container this app has code for. It was
+# account-scoped while this app also ran WHOOP, the GPS spool and the dashboard
+# — three containers and an argument that the app was the only writer on the
+# account anyway. That stopped being true when the integrations app got its own
+# identity, and an account-scoped grant now means each app's identity can read
+# the other's data. For this one that is the training logs, which is the thing
+# the whole tenancy boundary exists to protect.
 #
-# What the narrow scope did buy was a boundary against something that is not
-# this app landing in the account. If that happens, this goes back to one
-# assignment per container the app actually writes to.
-#
-# Replacing this with a narrower one is a destroy and a create, and terraform
-# does not order them: an apply can briefly leave the app with no Cosmos access
-# at all. That used to be cheap — a WHOOP sync ran again on its timer, the
-# phone kept its spool and resent. It is not any more. Everything on this app
-# is now a person tapping a set between exercises, so the window is a failed
-# write in front of somebody, and narrowing the scope to db/gym is worth doing
-# deliberately rather than as a rider on another change.
+# The cost of the narrow scope is the ordering trap it always had: a new
+# container needs its grant applied before the code that writes it, or every
+# write answers 403. That is the right trade here — this app has had exactly
+# one container for its whole life as a gym logger.
 resource "azurerm_cosmosdb_sql_role_assignment" "api_cosmos" {
   resource_group_name = azurerm_resource_group.databases.name
   account_name        = azurerm_cosmosdb_account.db.name
   role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
   principal_id        = azurerm_user_assigned_identity.api.principal_id
-  scope               = azurerm_cosmosdb_account.db.id
+
+  # Account id plus the data-plane path. Not the container's ARM id, which
+  # spells the same containment as /sqlDatabases/db/containers/gym and is not
+  # what this API accepts. Built from the resources rather than typed so a
+  # rename cannot leave a grant pointing at a container that is gone.
+  scope = "${azurerm_cosmosdb_account.db.id}/dbs/${azurerm_cosmosdb_sql_database.db.name}/colls/${azurerm_cosmosdb_sql_container.gym.name}"
+
+  lifecycle {
+    # Scope is ForceNew, so narrowing this is a replacement. Without this the
+    # order is terraform's to choose and the app can be left with no access at
+    # all in between; with it the narrow grant is created before the broad one
+    # is destroyed, and the overlap is two valid grants rather than none.
+    #
+    # It does not close the window completely, and nothing in terraform can: a
+    # data-plane assignment takes a few minutes to become effective, while a
+    # revocation is immediate. So the new grant may still be propagating when
+    # the old one goes. Apply this when nobody is mid-session — the failure
+    # looks like a 403 on a logged set, and the client's answer to that is to
+    # show it rather than to retry.
+    create_before_destroy = true
+  }
 }
 
 # Write access on the data container for the api app, and on nothing else in
@@ -623,20 +636,35 @@ resource "azurerm_function_app_flex_consumption" "integrations" {
   }
 }
 
-# Cosmos data-plane read/write for the integrations app, account-scoped on the
-# same reasoning as api_cosmos above: db holds this project's data and nothing
-# else, and container-scoped assignments turn every future container into a
-# terraform change that can briefly leave the app with no access at all.
+# Cosmos data-plane read/write for the integrations app: one assignment per
+# container it writes, on the same reasoning as api_cosmos above. This was a
+# single account-scoped grant, which meant this identity could read db/gym —
+# every user's training log — to run a WHOOP sync. Nothing here has ever had
+# code for that container.
 #
-# It is granted before anything is deployed here on purpose. A data-plane
-# assignment takes a few minutes to propagate, and finding that out on the
-# first sync after the split is worse than finding it out now.
-resource "azurerm_cosmosdb_sql_role_assignment" "integrations_cosmos" {
+# Two resources rather than one because the scope is a single path and this app
+# genuinely writes two containers: db/primary for the WHOOP collections and the
+# running workouts built from them, db/gps for the phone's location spool.
+#
+# No create_before_destroy on these, unlike api_cosmos. Replacing one resource
+# with two is not a replacement terraform can overlap — the old address is
+# going away — so there is a window, and it is cheap here in a way it is not
+# there: a WHOOP sync runs again on its timer and the phone keeps its spool and
+# resends.
+resource "azurerm_cosmosdb_sql_role_assignment" "integrations_cosmos_primary" {
   resource_group_name = azurerm_resource_group.databases.name
   account_name        = azurerm_cosmosdb_account.db.name
   role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
   principal_id        = azurerm_user_assigned_identity.integrations.principal_id
-  scope               = azurerm_cosmosdb_account.db.id
+  scope               = "${azurerm_cosmosdb_account.db.id}/dbs/${azurerm_cosmosdb_sql_database.db.name}/colls/${azurerm_cosmosdb_sql_container.primary.name}"
+}
+
+resource "azurerm_cosmosdb_sql_role_assignment" "integrations_cosmos_gps" {
+  resource_group_name = azurerm_resource_group.databases.name
+  account_name        = azurerm_cosmosdb_account.db.name
+  role_definition_id  = "${azurerm_cosmosdb_account.db.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
+  principal_id        = azurerm_user_assigned_identity.integrations.principal_id
+  scope               = "${azurerm_cosmosdb_account.db.id}/dbs/${azurerm_cosmosdb_sql_database.db.name}/colls/${azurerm_cosmosdb_sql_container.gps.name}"
 }
 
 # Write access on the CDN data container, for the dashboard blob the running

@@ -210,9 +210,9 @@ deployment {
   azure.rgNetwork.pip -> azure.rgVm.rpgVm.caddyProc 'Forwards 80/443 through rpg-snet'
   azure.rgVm.rpgVm.foundryProc -> azure.rgData.foundryData 'Stores worlds, modules and media on the attached disk'
 
-  azure.rgConsumption.aspDotnet.apiApp -> azure.rgDb.cosmosDb 'HTTPS/443, gateway mode, Entra token for id-nygdev-api — an account-scoped grant, though only db/gym is read now'
+  azure.rgConsumption.aspDotnet.apiApp -> azure.rgDb.cosmosDb 'HTTPS/443, gateway mode, Entra token for id-nygdev-api — scoped to db/gym alone'
 
-  azure.rgConsumption.aspIntegrations.integrationsApp -> azure.rgDb.cosmosDb 'HTTPS/443, gateway mode, Entra token for id-nygdev-integrations — db/primary and db/gps'
+  azure.rgConsumption.aspIntegrations.integrationsApp -> azure.rgDb.cosmosDb 'HTTPS/443, gateway mode, Entra token for id-nygdev-integrations — one grant each on db/primary and db/gps, and none on db/gym'
   azure.rgConsumption.aspIntegrations.integrationsApp -> azure.rgSecurity.kv 'HTTPS/443, Entra token for id-nygdev-integrations'
   azure.rgConsumption.aspIntegrations.integrationsApp -> azure.rgWeb.cdnStorage.dataContainer 'Publishes marathonprep.json as id-nygdev-integrations'
   azure.rgConsumption.aspIntegrations.integrationsApp -> internet.whoopApi 'OAuth token grants and v2 reads'
