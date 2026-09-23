@@ -62,10 +62,6 @@ used to be drawn as three for the same reason, with the gym routes beside those
 timers; the split moved the timers out, and an app with one job in it is just the
 app.
 
-`terraform-apply-gymbro.yml` has no element of its own: it is the same
-configuration under `-target`, so it can touch nothing `Terraform Apply` cannot, and
-what is worth knowing about it is on that element instead.
-
 ## Views
 
 ### Start here
