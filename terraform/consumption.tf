@@ -460,8 +460,7 @@ resource "azurerm_cosmosdb_sql_role_assignment" "api_cosmos" {
 # cannot delete this one either, in the middle of an apply, is a worse way to
 # find out than choosing when to.
 #
-# So it is revoked out of band, then removed from here and from the import
-# step in .github/workflows/terraform-import.yml that adopts it:
+# So it is revoked out of band, then removed from here:
 #
 #   az role assignment delete \
 #     --assignee $(az identity show \

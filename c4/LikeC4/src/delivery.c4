@@ -4,20 +4,10 @@
 // modelled — steps churn far faster than the shape of the pipeline, and a
 // diagram of actions/checkout teaches nobody anything.
 //
-// terraform-import.yml is deliberately absent: it is a one-shot migration that
-// adopts three hand-made resources into state — the `data` container, the
-// blob role on it for id-nygdev-api, and the nygdevgym Static Web App — and is
-// meant to be deleted once it has run, not a pipeline.
-//
-// terraform-apply-gymbro.yml is absent for a different reason: it is the same
-// configuration under -target, so it can touch nothing Terraform Apply cannot
-// and a box for it would answer the same question twice. What is worth knowing
-// about it — that the narrower blast radius is the whole point, and what
-// -target leaves out — is on tfApply below.
-//
-// So is the nygdevweb repository. The four sites are provisioned empty here and
-// their content is deployed from there, on pipelines of their own; this file is
-// about what turns text in *this* repository into Azure.
+// The nygdevweb repository is deliberately absent. The four sites are
+// provisioned empty here and their content is deployed from there, on
+// pipelines of their own; this file is about what turns text in *this*
+// repository into Azure.
 model {
 
   github = external-system 'GitHub' {
@@ -122,15 +112,6 @@ model {
           It also uploads the two gym JSON files, which is why editing an
           exercise is an apply rather than a deploy: the provider notices the
           checksum change and reuploads the blob.
-
-          terraform-apply-gymbro.yml is the same configuration run under
-          -target for the planner Static Web App and the API app alone, so a
-          front-end change need not put the VM and the SQL server in its blast
-          radius. It plans before it applies, and it is narrower rather than
-          different — the caveat is that -target excludes dependents, so the
-          two role assignments hanging off the API app are not in its graph.
-          A plan there showing the app or its identity being replaced is the
-          signal to run this one instead.
         '
       }
     }
