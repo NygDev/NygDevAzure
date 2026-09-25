@@ -10,15 +10,13 @@ namespace ApiFunctionApp.Gym;
 /// <summary>
 /// The gate and the failure handling every gym endpoint shares.
 ///
-/// Two things are true of all of them and of nothing else in this app: the
-/// caller has to be signed in before a line of the body runs, and the client is
-/// a browser. The first is why every endpoint goes through
-/// <see cref="RunAsync"/> rather than reading the principal itself — one gate
-/// in one place, so a new endpoint cannot be written that quietly skips it. The
-/// second is why failures here are JSON with a machine-readable code rather
-/// than the prose the GPS and WHOOP endpoints answer with: those are read by a
-/// person during setup, these by a front end deciding whether to retry, resync
-/// or show a message.
+/// Two things are true of every one of them: the caller has to be signed in
+/// before a line of the body runs, and the client is a browser. The first is
+/// why every endpoint goes through <see cref="RunAsync"/> rather than reading
+/// the principal itself — one gate in one place, so a new endpoint cannot be
+/// written that quietly skips it. The second is why failures here are JSON with
+/// a machine-readable code rather than prose: they are read by a front end
+/// deciding whether to retry, resync or show a message.
 /// </summary>
 internal static class GymEndpoint
 {
@@ -79,9 +77,9 @@ internal static class GymEndpoint
             var hint = ex.StatusCode switch
             {
                 HttpStatusCode.Forbidden =>
-                    "id-nygdev-api needs data-plane read/write on nygdev-cosmos-db. Terraform grants it "
-                    + "across the account in terraform/consumption.tf, so a 403 here means the assignment "
-                    + "is missing rather than too narrow.",
+                    "id-nygdev-api needs data-plane read/write on db/gym in nygdev-cosmos-db. Terraform "
+                    + "grants it on exactly that container in terraform/consumption.tf, so a 403 here "
+                    + "means the assignment is missing.",
                 HttpStatusCode.NotFound =>
                     "db/gym is missing on nygdev-cosmos-db. Terraform holds the container in "
                     + "terraform/db.tf.",
@@ -113,14 +111,18 @@ internal static class GymEndpoint
     }
 
     /// <summary>
-    /// Parses the request body, or answers 400 with what is wrong with it.
+    /// Parses the request body and hands its root object to
+    /// <paramref name="handle"/>, or answers 400 with what is wrong with it.
     ///
-    /// Returns the document to the caller to dispose. A null document with a
-    /// non-null result is the failure case; the two are never both set.
+    /// The document is disposed when <paramref name="handle"/> finishes, and a
+    /// JsonElement is a view onto it — so everything wanted from the body is
+    /// read inside the callback, which is where the request readers already do
+    /// it.
     /// </summary>
-    public static async Task<(JsonDocument? Body, IActionResult? Rejection)> ReadBodyAsync(
+    public static async Task<IActionResult> WithBodyAsync(
         HttpRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<JsonElement, Task<IActionResult>> handle)
     {
         JsonDocument document;
 
@@ -130,24 +132,24 @@ internal static class GymEndpoint
         }
         catch (JsonException ex)
         {
-            return (null, Failure(
+            return Failure(
                 HttpStatusCode.BadRequest,
                 "invalid_json",
-                $"The body is not valid JSON. {ex.Message}"));
+                $"The body is not valid JSON. {ex.Message}");
         }
 
-        if (document.RootElement.ValueKind != JsonValueKind.Object)
+        using (document)
         {
-            var kind = document.RootElement.ValueKind;
-            document.Dispose();
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return Failure(
+                    HttpStatusCode.BadRequest,
+                    "invalid_json",
+                    $"The body is {document.RootElement.ValueKind}, not a JSON object.");
+            }
 
-            return (null, Failure(
-                HttpStatusCode.BadRequest,
-                "invalid_json",
-                $"The body is {kind}, not a JSON object."));
+            return await handle(document.RootElement);
         }
-
-        return (document, null);
     }
 
     /// <summary>A rejected request, in a shape a front end can branch on.</summary>

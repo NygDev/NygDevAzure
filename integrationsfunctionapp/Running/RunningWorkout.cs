@@ -151,7 +151,7 @@ public sealed record RunningWorkout
         AverageHeartRate is > 0 and var bpm ? MetresPerMinute / bpm : null;
 
     /// <summary>
-    /// Reads one document as projected by <see cref="RunningStore"/>, or
+    /// Reads one document as projected by <see cref="RunningWorkoutStore"/>, or
     /// explains why it cannot be used.
     ///
     /// Nothing here throws. A workout that arrived mid-scoring, or that WHOOP

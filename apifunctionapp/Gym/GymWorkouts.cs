@@ -38,19 +38,11 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
     public Task<IActionResult> Start(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "gym/workouts")] HttpRequest request,
         CancellationToken cancellationToken) =>
-        GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
-        {
-            var (body, rejection) = await GymEndpoint.ReadBodyAsync(request, token);
-
-            if (body is null)
-            {
-                return rejection!;
-            }
-
-            using (body)
+        GymEndpoint.RunAsync(request, logger, cancellationToken, (objectId, token) =>
+            GymEndpoint.WithBodyAsync(request, token, async body =>
             {
                 if (!GymRequests.TryReadWorkoutStart(
-                        body.RootElement,
+                        body,
                         out var date,
                         out var week,
                         out var dayIndex,
@@ -147,8 +139,7 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
                 {
                     StatusCode = (int)(creation.Resumed ? HttpStatusCode.OK : HttpStatusCode.Created),
                 };
-            }
-        });
+            }));
 
     /// <summary>
     /// One workout in full — entries, sets and derived totals.
