@@ -27,6 +27,12 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
     /// app open and every tab switch, which is why the first of those is a
     /// point read on an id built from the principal rather than a query.
     ///
+    /// The second and third are issued together. Both need only the pointer,
+    /// and neither reads what the other writes, so waiting for the block before
+    /// asking for its sessions was a round trip bought for nothing on the one
+    /// call every sign-in and every submitted workout pays for. Same shape as
+    /// <see cref="GymStore.ListMesocyclesAsync"/>, for the same reason.
+    ///
     /// A null mesocycle is a first run rather than an error: nobody has planned
     /// a block yet, and the Plan tab is where they do. Answering 404 for it
     /// would make the app's opening screen an error path.
@@ -44,7 +50,14 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
                 return new OkObjectResult(new { ok = true, mesocycle = (object?)null, sessions = Array.Empty<object>() });
             }
 
-            var meso = await store.ReadMesocycleAsync(objectId, mesoId, token);
+            var reading = store.ReadMesocycleAsync(objectId, mesoId, token);
+            var listing = store.ListSessionsAsync(objectId, mesoId, token);
+
+            // WhenAll rather than two awaits, so a failure in one does not
+            // leave the other's exception unobserved.
+            await Task.WhenAll(reading, listing);
+
+            var meso = await reading;
 
             if (meso is null)
             {
@@ -65,7 +78,7 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
                     + "the mesocycle was removed by something other than this API.");
             }
 
-            var sessions = await store.ListSessionsAsync(objectId, mesoId, token);
+            var sessions = await listing;
 
             return new OkObjectResult(new
             {
