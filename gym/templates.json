@@ -1,5 +1,5 @@
 {
-  "version": "2026-09-04",
+  "version": "2026-09-26",
   "templates": [
     {
       "id": "builtin_upper-a",
@@ -100,6 +100,45 @@
         { "exerciseName": "Incline Bench Press", "sets": 3 },
         { "exerciseName": "Lat Pulldown", "sets": 3 },
         { "exerciseName": "Leg Press", "sets": 3 },
+        { "exerciseName": "Bicep Curl", "sets": 2 }
+      ]
+    },
+    {
+      "id": "builtin_full-body-30",
+      "name": "Full Body 30 min",
+      "plan": [
+        { "exerciseName": "Squat", "sets": 3 },
+        { "exerciseName": "Bench Press", "sets": 3 },
+        { "exerciseName": "Romanian Deadlift", "sets": 2 },
+        { "exerciseName": "Lat Pulldown", "sets": 2 }
+      ]
+    },
+    {
+      "id": "builtin_full-body-60",
+      "name": "Full Body 60 min",
+      "plan": [
+        { "exerciseName": "Squat", "sets": 4 },
+        { "exerciseName": "Bench Press", "sets": 3 },
+        { "exerciseName": "Romanian Deadlift", "sets": 3 },
+        { "exerciseName": "Barbell Row", "sets": 3 },
+        { "exerciseName": "Overhead Press", "sets": 3 },
+        { "exerciseName": "Lat Pulldown", "sets": 2 },
+        { "exerciseName": "Leg Curl", "sets": 2 }
+      ]
+    },
+    {
+      "id": "builtin_full-body-90",
+      "name": "Full Body 90 min",
+      "plan": [
+        { "exerciseName": "Squat", "sets": 4 },
+        { "exerciseName": "Bench Press", "sets": 4 },
+        { "exerciseName": "Romanian Deadlift", "sets": 3 },
+        { "exerciseName": "Barbell Row", "sets": 4 },
+        { "exerciseName": "Overhead Press", "sets": 3 },
+        { "exerciseName": "Pull-up", "sets": 3 },
+        { "exerciseName": "Leg Press", "sets": 3 },
+        { "exerciseName": "Leg Curl", "sets": 2 },
+        { "exerciseName": "Lateral Raise", "sets": 2 },
         { "exerciseName": "Bicep Curl", "sets": 2 }
       ]
     },

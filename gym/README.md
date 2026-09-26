@@ -38,6 +38,12 @@ Two rules to keep when editing it:
   tells a shipped template from one the user saved (`template_…`, minted by the
   API), and it is what decides whether a row can be deleted.
 
+The timed full-body templates — `Full Body 30 min`, `60 min` and `90 min` — are
+sized by working sets, since sets are all a plan can say: about two and a half
+minutes a set with its rest, and the remainder of the hour or half hour left
+for warming up. That is ten, twenty and thirty sets. The minutes are only in
+the name, so change the sets and the name stops being true.
+
 The user's *own* saved templates are not here and cannot be: they are per
 account, so they are `type = "template"` documents in `db/gym`, alongside that
 user's blocks and sessions. Applying either kind copies the exercises into the
