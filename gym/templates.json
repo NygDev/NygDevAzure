@@ -143,6 +143,45 @@
       ]
     },
     {
+      "id": "builtin_upper-body-30",
+      "name": "Upper Body 30 min",
+      "plan": [
+        { "exerciseName": "Bench Press", "sets": 3 },
+        { "exerciseName": "Barbell Row", "sets": 3 },
+        { "exerciseName": "Overhead Press", "sets": 2 },
+        { "exerciseName": "Lat Pulldown", "sets": 2 }
+      ]
+    },
+    {
+      "id": "builtin_upper-body-60",
+      "name": "Upper Body 60 min",
+      "plan": [
+        { "exerciseName": "Bench Press", "sets": 4 },
+        { "exerciseName": "Barbell Row", "sets": 4 },
+        { "exerciseName": "Overhead Press", "sets": 3 },
+        { "exerciseName": "Lat Pulldown", "sets": 3 },
+        { "exerciseName": "Lateral Raise", "sets": 2 },
+        { "exerciseName": "Bicep Curl", "sets": 2 },
+        { "exerciseName": "Triceps Pushdown", "sets": 2 }
+      ]
+    },
+    {
+      "id": "builtin_upper-body-90",
+      "name": "Upper Body 90 min",
+      "plan": [
+        { "exerciseName": "Bench Press", "sets": 4 },
+        { "exerciseName": "Barbell Row", "sets": 4 },
+        { "exerciseName": "Overhead Press", "sets": 3 },
+        { "exerciseName": "Pull-up", "sets": 3 },
+        { "exerciseName": "Incline Bench Press", "sets": 3 },
+        { "exerciseName": "Seated Row", "sets": 3 },
+        { "exerciseName": "Lateral Raise", "sets": 3 },
+        { "exerciseName": "Cable Fly", "sets": 2 },
+        { "exerciseName": "Bicep Curl", "sets": 3 },
+        { "exerciseName": "Triceps Pushdown", "sets": 2 }
+      ]
+    },
+    {
       "id": "builtin_arms-shoulders",
       "name": "Arms & Shoulders",
       "plan": [
