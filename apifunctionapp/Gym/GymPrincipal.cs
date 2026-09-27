@@ -111,8 +111,10 @@ internal static class GymPrincipal
 
                 The gym endpoints are anonymous at the Functions level on purpose — a browser
                 cannot keep a function key secret — and are gated instead on the principal Easy
-                Auth builds from a validated bearer token. So a call with no Authorization header,
-                or one whose token the platform rejected, arrives here looking exactly like this.
+                Auth builds from a validated bearer token. Easy Auth also turns away a call with no
+                token, or a token it rejects, before it reaches any function — so arriving here
+                means no principal was built at all: a local func start without
+                GYM_LOCAL_OBJECT_ID set, or Easy Auth switched off on the app.
 
                 Send an access token for the GymLog registration. It has to be minted for that
                 registration and obtained by it: Easy Auth checks both the aud and the appid

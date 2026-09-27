@@ -7,10 +7,13 @@
 # either here would mean putting a secret in state and having terraform
 # overwrite a value the app owns.
 #
-# The Key Vault Secrets Officer assignment for id-nygdev-api was granted
-# out of band and is not declared here — azurerm_role_assignment fails on an
-# assignment that already exists, so adopting it means a terraform import
-# rather than an add.
+# The Key Vault Secrets Officer assignments are granted out of band and are not
+# declared here. id-nygdev-integrations holds the one in use — see the end of
+# consumption.tf for the command and why terraform cannot make it. The one
+# id-nygdev-api still holds is left over from before the split: it pre-existed,
+# azurerm_role_assignment fails on an assignment that already exists, and
+# nothing on that app reads the vault any more, so it is due to be revoked
+# rather than adopted.
 
 resource "azurerm_key_vault" "nygdev" {
   name                       = "nygdev"
@@ -21,9 +24,9 @@ resource "azurerm_key_vault" "nygdev" {
   soft_delete_retention_days = 7
 
   # Declared, not merely inherited. The vault's data plane is governed by Azure
-  # RBAC — id-nygdev-api holds Key Vault Secrets Officer on it, which is what
-  # lets func-nygdev-api read whoop-clientsecret and write the rotated
-  # whoop-token back. This argument defaults to false, so leaving it out would
+  # RBAC — id-nygdev-integrations holds Key Vault Secrets Officer on it, which
+  # is what lets func-nygdev-integrations read whoop-clientsecret and write the
+  # rotated whoop-token back. This argument defaults to false, so leaving it out would
   # have terraform hand the vault back to access policies on the next apply and
   # cut off every role assignment against it.
   rbac_authorization_enabled = true

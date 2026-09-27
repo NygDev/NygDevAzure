@@ -44,8 +44,10 @@ internal static class GymEndpoint
     {
         if (!GymPrincipal.TryResolve(request, out var objectId, out var problem))
         {
-            // Warning rather than error: an expired token is the ordinary way
-            // this happens, and it is the client's to fix by signing in again.
+            // Warning rather than error, because locally — func start with no
+            // GYM_LOCAL_OBJECT_ID — it is ordinary. In Azure an expired token
+            // never gets here: Easy Auth answers it with its own 401 first, so
+            // seeing this there means the platform gate is off.
             logger.LogWarning("A gym request arrived without a usable principal.");
 
             return Failure(HttpStatusCode.Unauthorized, "not_signed_in", problem);

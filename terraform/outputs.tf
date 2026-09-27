@@ -89,7 +89,7 @@ output "gym_template_library_url" {
 }
 
 output "gymlog_spa_redirect_uri" {
-  description = "Register all of these as Single-page application redirect URIs on the GymLog app registration. Both front ends sign in as that registration — Easy Auth on the api app checks the appid claim and turns away a token minted by any other client — so this is what has to be there before the first sign-in works. Two entries per origin, and both are load-bearing: since MSAL v5 every authorization response comes back through /auth.html, including the one the hidden renewal iframe waits ten seconds for, while sign-out lands on the origin root and Entra validates that against the same reply-URL list. Matched as strings, trailing slash included. Manual, like everything else on the Entra side; the registration is not managed by this configuration."
+  description = "Register all of these as Single-page application redirect URIs on the GymLog app registration. Both front ends sign in as that registration — Easy Auth on the api app checks the appid claim and turns away a token minted by any other client — so this is what has to be there before the first sign-in works. Two entries per origin, and both are load-bearing: since MSAL v5 every authorization response — each sign-in and each renewal redirect — comes back through /auth.html, while sign-out lands on the origin root and Entra validates that against the same reply-URL list. Matched as strings, trailing slash included. Manual, like everything else on the Entra side; the registration is not managed by this configuration."
   value = [
     "https://gym.nygard.dev/auth.html",
     "https://gym.nygard.dev/",

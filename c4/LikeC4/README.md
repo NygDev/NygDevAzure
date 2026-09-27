@@ -34,7 +34,7 @@ comment on the exclusion saying where it went.
 src/
   _spec.c4              element kinds, their colours, and the tags
   model.c4              what runs, and what talks to what
-  delivery.c4           the repo, the four workflows, and the OIDC identity
+  delivery.c4           the repo, the five workflows, and the OIDC identity
   views/
     landscape.c4        the whole estate — logical, then deployed
     apex.c4             journey 1 — nygard.dev
@@ -105,5 +105,5 @@ app.
 
 | View | What it answers |
 | --- | --- |
-| `delivery` | Which workflow can touch what, and the secretless identity all four go through |
+| `delivery` | Which workflow can touch what, and the secretless identity all five go through |
 | `azureDeployment` | Every resource group and what is in it |

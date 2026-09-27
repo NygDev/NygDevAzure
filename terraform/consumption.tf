@@ -224,8 +224,8 @@ resource "azurerm_function_app_flex_consumption" "api" {
     # still expects the setting.
     #
     # The WHOOP_REDIRECT_URI and WEBSITE_TIME_ZONE notes that used to sit here
-    # went with those functions; they are on the integrations app now, which is
-    # where the reasoning applies.
+    # went with those functions; they are on the integrations app's settings
+    # now, which is where the reasoning applies.
   }
 
   site_config {
@@ -446,8 +446,8 @@ resource "azurerm_cosmosdb_sql_role_assignment" "api_cosmos" {
 # which is this app's business. Contributor rather than a reader role because
 # the dashboard blob is rewritten in place on every build.
 #
-# Granted by hand and adopted by the Terraform Import workflow, like the
-# container it is scoped to. azurerm_role_assignment fails on an assignment
+# Granted by hand and adopted into state by a one-off terraform import, like
+# the container it is scoped to. azurerm_role_assignment fails on an assignment
 # that already exists rather than adopting it, so an apply could never have
 # been the thing that first put this in state.
 #
@@ -484,7 +484,7 @@ resource "azurerm_role_assignment" "api_cdn_data" {
 }
 
 # ---------------------------------------------------------------------------
-# The integrations app — the other half of func-nygdev-api, pre-created.
+# The integrations app — the other half of what was func-nygdev-api.
 #
 # WHOOP, the phone's GPS spool and the running dashboard, split off from
 # func-nygdev-api so the two halves stop having to share one answer to "must a
@@ -506,8 +506,9 @@ resource "azurerm_role_assignment" "api_cdn_data" {
 # Officer for id-nygdev-integrations was granted out of band — see the note at
 # the end of this block for the command and why it is not a resource here.
 #
-# What is left is on the api app rather than this one: turning its Easy Auth
-# gate on, and revoking the two grants id-nygdev-api no longer needs.
+# What is left is on the api app rather than this one: revoking the two grants
+# id-nygdev-api no longer needs — api_cdn_data above, and its Key Vault Secrets
+# Officer (security.tf).
 # ---------------------------------------------------------------------------
 
 # A third plan for a third app, and not by preference: Flex Consumption permits
@@ -550,19 +551,18 @@ resource "azurerm_user_assigned_identity" "integrations" {
   tags                = local.common_tags
 }
 
-# WHOOP, GPS and the running dashboard, once they move. .NET 10 isolated on
-# Flex Consumption, same as the app it is splitting from — the code is the same
-# code, so the runtime has to be.
+# WHOOP, GPS and the running dashboard. .NET 10 isolated on Flex Consumption,
+# same as the app it was split from — the code is the same code, so the runtime
+# has to be.
 #
 # No auth_settings_v2 block, and that is the point of this app rather than an
-# omission: everything destined for it authenticates as something other than an
-# Entra user. The WHOOP callback is anonymous because WHOOP redirects a browser
+# omission: everything on it authenticates as something other than an Entra
+# user. The WHOOP callback is anonymous because WHOOP redirects a browser
 # to it with a code; the rest are at Function auth level and carry a key. Easy
 # Auth knows nothing about function keys, so turning it on here would 401 them
 # all before the host ever checked one.
 #
-# No CORS block either. Nothing that moves here is called from a browser by
-# XHR: the phone posts to /api/gps/locations directly, the WHOOP callback is a
+# No CORS block either. Nothing here is called from a browser by XHR: the phone posts to /api/gps/locations directly, the WHOOP callback is a
 # top-level navigation, and run.nygard.dev reads the dashboard as a blob off
 # the CDN rather than through the function. A cors block would be a list of
 # origins that never send a preflight.
@@ -597,11 +597,11 @@ resource "azurerm_function_app_flex_consumption" "integrations" {
   app_settings = {
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.consumption.connection_string
 
-    # The same account, the same containers, the same vault as the api app
-    # reads today — what changes at the split is which app holds them, not
-    # where anything lives. See the api app above for why each is a bare
-    # endpoint rather than a connection string: local auth is off on Cosmos and
-    # the secrets never leave the vault.
+    # The same account, containers and vault the api app read before the split
+    # — what changed is which app holds them, not where anything lives. Each is
+    # a bare endpoint rather than a connection string for the reason the api
+    # app gives for COSMOS_ENDPOINT: local auth is off on Cosmos, and the
+    # secrets never leave the vault.
     COSMOS_ENDPOINT    = azurerm_cosmosdb_account.db.endpoint
     DASHBOARD_BLOB_URL = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${azurerm_storage_container.data.name}/marathonprep.json"
     KEY_VAULT_URI      = azurerm_key_vault.nygdev.vault_uri
@@ -614,9 +614,17 @@ resource "azurerm_function_app_flex_consumption" "integrations" {
     # WEBSITE_AUTH_AAD_ALLOWED_TENANTS is deliberately absent, unlike on the
     # api app: it is an Easy Auth control, and there is no Easy Auth here.
     #
-    # WHOOP_REDIRECT_URI is absent for the reason it is absent there — it would
-    # name this app's own hostname, which is a dependency cycle. The code reads
-    # WEBSITE_HOSTNAME at run time instead.
+    # WHOOP_REDIRECT_URI is deliberately not set. It would have to contain this
+    # app's own default_hostname, and an app setting on the app that reads that
+    # attribute is a dependency cycle. The app builds the URL from the
+    # platform's WEBSITE_HOSTNAME instead; the whoop_redirect_uri output is the
+    # same string, for pasting into the developer dashboard.
+    #
+    # WEBSITE_TIME_ZONE is deliberately not set either, and should not be. It
+    # is what would let the two timers write their NCRONTAB schedules in local
+    # time rather than UTC, but Microsoft does not support it on Linux under
+    # Flex Consumption — setting it there causes TLS errors and stops the app's
+    # metrics. The timers run on UTC instead.
   }
 
   site_config {}
@@ -691,8 +699,8 @@ resource "azurerm_role_assignment" "integrations_cdn_data" {
 # assignment is worth, and the same trade was already made and declined for
 # id-nygdev-api.
 #
-# What has to be run once, by someone who does hold it, before WHOOP moves to
-# this app — until then the app has no code and nothing asks for a secret:
+# What was run once, by someone who does hold it, before WHOOP moved here — and
+# what to run again if id-nygdev-integrations is ever recreated:
 #
 #   az role assignment create \
 #     --assignee-object-id $(az identity show \

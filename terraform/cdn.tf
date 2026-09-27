@@ -3,18 +3,18 @@ data "azurerm_storage_account" "nygdevcdn" {
   resource_group_name = var.cdn_resource_group
 }
 
-# Where the API publishes the running dashboard: one JSON blob, rewritten in
-# place after every sync, served at
+# Where func-nygdev-integrations publishes the running dashboard: one JSON blob,
+# rewritten in place after every sync, served at
 # https://nygdevcdn.blob.core.windows.net/data/marathonprep.json
 #
 # A third thing out of an account that already serves two — Foundry media in
 # `foundry`, the LikeC4 site in `$web`. It belongs here rather than in the
-# API's own storage account because a browser on run.nygard.dev is what reads
-# it, and this is the account that is already public and already fronted by the
-# CDN.
+# function apps' own storage account because a browser on run.nygard.dev is
+# what reads it, and this is the account that is already public and already
+# fronted by the CDN.
 #
-# The container was created by hand and adopted into state by the Terraform
-# Import workflow, not created by an apply — terraform creates rather than
+# The container was created by hand and adopted into state by a one-off
+# terraform import, not created by an apply — terraform creates rather than
 # adopts, and would have failed on one that already exists. The account around
 # it stays unmanaged, as the data source above.
 #

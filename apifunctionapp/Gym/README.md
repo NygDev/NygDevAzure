@@ -24,8 +24,12 @@ both that the token was minted *for* that registration and that it was obtained
 until that client id is added to `allowed_applications` in
 `terraform/consumption.tf`.
 
-A call with no token, or one the platform rejected, gets **401
-`not_signed_in`** from this API rather than a redirect.
+A call with no token, or one the platform rejected, gets a **401 with an empty
+body** and `WWW-Authenticate: Bearer` rather than a redirect — Easy Auth
+enforces the sign-in (`require_authentication` with `Return401`) and answers
+before any function runs, so that 401 is not JSON. Treat any 401 as "sign in
+again", whatever its body. The CORS headers are on it, so a browser can read
+the status.
 
 **The user is the token.** Nothing takes a user id — the Entra object id off the
 validated principal is the Cosmos partition key, and it is never read from a
@@ -640,7 +644,8 @@ Removes a workout — the answer to the duplicate a cell can now collect.
 | Status | `error` | Meaning |
 | --- | --- | --- |
 | 400 | `invalid_json`, `invalid_request` | The body, or a route or query value. `message` names the field, what arrived and what was expected. |
-| 401 | `not_signed_in` | No validated principal. Sign in again. |
+| 401 | *(empty body)* | Easy Auth turned the token away — none, expired, or for another audience. Sign in again. |
+| 401 | `not_signed_in` | No validated principal reached the code. With the gate on this is `func start` without `GYM_LOCAL_OBJECT_ID`, or Easy Auth switched off. |
 | 404 | `no_such_workout`, `no_such_mesocycle`, `no_such_template` | Not in this user's log. |
 | 409 | `count_mismatch` | Stale client state. Carries `expected` and `actual`; re-read and retry. Nothing was written. |
 | 409 | `no_such_entry` | The entry index is not in the session. |

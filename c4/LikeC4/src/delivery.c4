@@ -29,7 +29,12 @@ model {
 
       srcApi = source-files 'apifunctionapp/**' {
         technology 'C# / .NET 10 isolated worker'
-        description 'The WHOOP endpoints, the two timers, the running dashboard build, the gym routes and the GPS upload'
+        description 'The gym routes — blocks, sessions, sets and saved day templates — and nothing else since the split'
+      }
+
+      srcIntegrations = source-files 'integrationsfunctionapp/**' {
+        technology 'C# / .NET 10 isolated worker'
+        description 'The WHOOP endpoints, the two timers, the running dashboard build and the GPS upload'
       }
 
       // Not code, and not deployed by a code pipeline: two JSON files that
@@ -152,6 +157,7 @@ model {
 
   github.repo.srcC4 -> github.actions.deployC4 'Change here runs' #ci
   github.repo.srcApi -> github.actions.deployApi 'Change here runs' #ci
+  github.repo.srcIntegrations -> github.actions.deployIntegrations 'Change here runs' #ci
   github.repo.srcPs -> github.actions.deployFunc 'Change here runs' #ci
   github.repo.srcTf -> github.actions.tfApply 'Change here is applied by' #ci
   github.repo.srcGym -> github.actions.tfApply 'Change here is uploaded by' #ci

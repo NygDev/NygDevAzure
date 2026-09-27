@@ -1,23 +1,23 @@
 # The integrations app
 
 WHOOP, the phone's GPS spool and the running dashboard, on
-`func-nygdev-integrations`. Everything here is a copy of code that is still
-live on `func-nygdev-api`, and will be until the cutover below.
+`func-nygdev-integrations`. This code used to live on `func-nygdev-api` and
+moved here whole; the api app now holds the gym logger and nothing else.
 
 ## Why this exists
 
-`func-nygdev-api` serves two kinds of caller that want opposite things from the
-platform. The gym logger is a browser holding an Entra token. WHOOP's callback,
-the phone's GPS upload and the manual dashboard trigger hold either nothing or
-a function key — none of them can present a token, and Easy Auth knows nothing
-about function keys, so requiring authentication in front of them would answer
-401 before the host checked a single key.
+`func-nygdev-api` used to serve two kinds of caller that want opposite things
+from the platform. The gym logger is a browser holding an Entra token. WHOOP's
+callback, the phone's GPS upload and the manual dashboard trigger hold either
+nothing or a function key — none of them can present a token, and Easy Auth
+knows nothing about function keys, so requiring authentication in front of them
+would answer 401 before the host checked a single key.
 
-That is why Easy Auth on the api app runs with `require_authentication = false`
-and the gym endpoints are gated in code instead — correct, but resting on the
+That is why Easy Auth on the api app ran with `require_authentication = false`
+and the gym endpoints were gated in code alone — correct, but resting on the
 auth module staying on, since stripping a forgeable `X-MS-CLIENT-PRINCIPAL` is
-what the module is doing for us. Move these endpoints here and the api app has
-nothing anonymous left on it, so the platform gate can go on with no exclusion
+what the module is doing for us. With these endpoints moved here the api app
+has nothing anonymous left on it, so the platform gate is on with no exclusion
 list at all.
 
 ## What this app holds
@@ -32,19 +32,19 @@ this app is a browser holding a token — the WHOOP callback is a top-level
 redirect, the rest carry function keys, and `run.nygard.dev` reads the
 dashboard off the CDN rather than through a function.
 
+Its identity, `id-nygdev-integrations`, holds read/write on `db/primary` and
+`db/gps` only, write on the CDN `data` container, and Key Vault Secrets Officer
+on the vault — the last granted out of band, for the reason given at the end of
+`terraform/consumption.tf`.
+
 ## What is left on the api app
 
-`func-nygdev-api` is the gym logger and nothing else, and its Easy Auth gate is
-now on — `require_authentication = true` with `Return401`, no `excluded_paths`,
-which is what moving this code bought.
+`func-nygdev-api` is the gym logger and nothing else. Its Easy Auth gate is on —
+`require_authentication = true` with `Return401`, no `excluded_paths`, which is
+what moving this code bought — and its Cosmos grant is scoped to `db/gym`.
 
 One thing remains there: **revoking the two grants `id-nygdev-api` no longer
 needs** — Storage Blob Data Contributor on the CDN `data` container, and Key
 Vault Secrets Officer. Both are revoked out of band and then removed from the
 configuration; the commands and the reasoning are in
 `terraform/consumption.tf` beside the assignment.
-
-Narrowing that app's Cosmos grant from the account to `db/gym` is a third,
-optional one. It is a destroy and a create rather than an edit, so it wants
-its own change: the window it opens is now a failed write in front of somebody
-mid-workout rather than a sync that retries.
