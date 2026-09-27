@@ -78,6 +78,11 @@ output "gymbro_static_site_hostname" {
   value       = azurerm_static_web_app.nygdevgymbro.default_host_name
 }
 
+output "house_site_url" {
+  description = "Public address of the 3D house model. Anyone with the link can open it; the site asks search engines not to index it. Content is house/ in this repository, deployed by deploy-house.yml."
+  value       = "https://${azurerm_static_web_app.nygdevhouse.default_host_name}"
+}
+
 output "gym_exercise_library_url" {
   description = "Where the gym logger's built-in exercise library is published. Anonymous-read and cached for a day, so the front end fetches it once with no token and no function call. The file is gym/exercises.json in this repository; editing it and applying is what republishes it."
   value       = "${data.azurerm_storage_account.nygdevcdn.primary_blob_endpoint}${azurerm_storage_container.data.name}/${azurerm_storage_blob.gym_exercises.name}"
