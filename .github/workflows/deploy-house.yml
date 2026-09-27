@@ -1,0 +1,68 @@
+name: Deploy House Model
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'house/**'
+      - '.github/workflows/deploy-house.yml'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-house
+  cancel-in-progress: false
+
+env:
+  APP_NAME: nygdevhouse
+  RESOURCE_GROUP: rg-nygdev-web
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: NygDevAzure
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Az CLI login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # The deploy action only takes the app's deployment token. Reading it here
+      # through the OIDC login means there is no long-lived token stored as a
+      # repository secret to rotate or leak.
+      - name: Fetch deployment token
+        run: |
+          TOKEN=$(az staticwebapp secrets list \
+            --name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.apiKey" \
+            --output tsv)
+          echo "::add-mask::$TOKEN"
+          echo "SWA_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      # house/ is already the finished site (built by the digital-twin project's
+      # tools/site.py), so there is nothing to build: upload it as-is.
+      - name: Deploy
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ env.SWA_TOKEN }}
+          action: upload
+          app_location: house
+          output_location: ''
+          skip_app_build: true
+          skip_api_build: true
+
+      - name: Report URL
+        run: |
+          echo "https://$(az staticwebapp show \
+            --name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query defaultHostname \
+            --output tsv)"

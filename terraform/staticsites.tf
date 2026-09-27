@@ -79,3 +79,25 @@ resource "azurerm_static_web_app" "nygdevgymbro" {
     ignore_changes = [repository_branch, repository_token, repository_url, app_settings]
   }
 }
+
+# The 3D model of the house at Mallingsrudveien 30, shared publicly by link.
+# Free SKU, like the rest: one static page and one .glb, no API, no sign-in.
+#
+# Unlike the four above, its content lives in this repository, in house/, and is
+# deployed by deploy-house.yml in this repository. The page is built elsewhere —
+# the digital-twin project, which is not in git — and copied into house/ by that
+# project's tools/site.py; this repo holds only what is served.
+#
+# It has no custom domain yet. Adding one (hus.nygard.dev, say) is the same
+# manual step as for the others: the CNAME at the DNS host, then the domain on
+# the app in the portal.
+resource "azurerm_static_web_app" "nygdevhouse" {
+  name                = "nygdevhouse"
+  resource_group_name = var.web_resource_group
+  location            = "westeurope"
+  tags                = local.common_tags
+
+  lifecycle {
+    ignore_changes = [repository_branch, repository_token, repository_url, app_settings]
+  }
+}
