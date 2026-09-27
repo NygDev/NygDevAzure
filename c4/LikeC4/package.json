@@ -12,7 +12,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
-    "likec4": "^1.59.2",
+    "likec4": "^1.59.4",
     "typescript": "^7.0.2"
   }
 }

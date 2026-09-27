@@ -144,26 +144,10 @@ public readonly record struct PlannedExercise(string ExerciseName, int Sets)
 /// </summary>
 public readonly record struct MesoDay(int DayIndex, string Label, IReadOnlyList<PlannedExercise> Plan)
 {
-    public static MesoDay Read(JsonElement element)
-    {
-        var plan = new List<PlannedExercise>();
-
-        // Absent rather than empty on any block created before planning
-        // existed, and this is the whole migration: an unplanned day reads as a
-        // day with an empty plan, which is what it is.
-        if (element.TryGetProperty("plan", out var stored) && stored.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var exercise in stored.EnumerateArray())
-            {
-                plan.Add(PlannedExercise.Read(exercise));
-            }
-        }
-
-        return new MesoDay(
-            GymDocument.Int32(element, "dayIndex"),
-            GymDocument.String(element, "label"),
-            plan);
-    }
+    public static MesoDay Read(JsonElement element) => new(
+        GymDocument.Int32(element, "dayIndex"),
+        GymDocument.String(element, "label"),
+        GymDocument.List(element, "plan", PlannedExercise.Read));
 
     public object ToResponse() => new
     {
@@ -183,24 +167,11 @@ public readonly record struct MesoDay(int DayIndex, string Label, IReadOnlyList<
 /// </summary>
 public sealed record Mesocycle(string Id, string Name, int Weeks, IReadOnlyList<MesoDay> Days)
 {
-    public static Mesocycle Read(JsonElement document)
-    {
-        var days = new List<MesoDay>();
-
-        if (document.TryGetProperty("days", out var stored) && stored.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var day in stored.EnumerateArray())
-            {
-                days.Add(MesoDay.Read(day));
-            }
-        }
-
-        return new Mesocycle(
-            GymIds.StripMesocyclePrefix(GymDocument.String(document, "id")),
-            GymDocument.String(document, "name"),
-            GymDocument.Int32(document, "weeks"),
-            days);
-    }
+    public static Mesocycle Read(JsonElement document) => new(
+        GymIds.StripMesocyclePrefix(GymDocument.String(document, "id")),
+        GymDocument.String(document, "name"),
+        GymDocument.Int32(document, "weeks"),
+        GymDocument.List(document, "days", MesoDay.Read));
 
     /// <summary>The wire shape, which is the same shape the Plan tab
     /// edits.</summary>
@@ -270,23 +241,10 @@ public readonly record struct MesocycleSummary(
 /// </summary>
 public sealed record DayTemplate(string Id, string Name, IReadOnlyList<PlannedExercise> Plan)
 {
-    public static DayTemplate Read(JsonElement document)
-    {
-        var plan = new List<PlannedExercise>();
-
-        if (document.TryGetProperty("plan", out var stored) && stored.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var exercise in stored.EnumerateArray())
-            {
-                plan.Add(PlannedExercise.Read(exercise));
-            }
-        }
-
-        return new DayTemplate(
-            GymDocument.String(document, "id"),
-            GymDocument.String(document, "name"),
-            plan);
-    }
+    public static DayTemplate Read(JsonElement document) => new(
+        GymDocument.String(document, "id"),
+        GymDocument.String(document, "name"),
+        GymDocument.List(document, "plan", PlannedExercise.Read));
 
     /// <summary>
     /// The wire shape. <c>id</c> is the document id unprefixed of anything —
@@ -333,20 +291,9 @@ public readonly record struct WorkSet(double WeightKg, int Reps, double? Rpe)
 /// </summary>
 public sealed record SessionEntry(string ExerciseName, IReadOnlyList<WorkSet> Sets)
 {
-    public static SessionEntry Read(JsonElement element)
-    {
-        var sets = new List<WorkSet>();
-
-        if (element.TryGetProperty("sets", out var stored) && stored.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var set in stored.EnumerateArray())
-            {
-                sets.Add(WorkSet.Read(set));
-            }
-        }
-
-        return new SessionEntry(GymDocument.String(element, "exerciseName"), sets);
-    }
+    public static SessionEntry Read(JsonElement element) => new(
+        GymDocument.String(element, "exerciseName"),
+        GymDocument.List(element, "sets", WorkSet.Read));
 
     public object ToResponse() => new
     {
@@ -382,26 +329,13 @@ public sealed record GymSession(
 
     public const string Submitted = "submitted";
 
-    public static GymSession Read(JsonElement document)
-    {
-        var entries = new List<SessionEntry>();
-
-        if (document.TryGetProperty("entries", out var stored) && stored.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var entry in stored.EnumerateArray())
-            {
-                entries.Add(SessionEntry.Read(entry));
-            }
-        }
-
-        return new GymSession(
-            GymDocument.String(document, "id"),
-            GymDocument.String(document, "mesoId"),
-            GymDocument.Int32(document, "week"),
-            GymDocument.Int32(document, "dayIndex"),
-            GymDocument.String(document, "status"),
-            entries);
-    }
+    public static GymSession Read(JsonElement document) => new(
+        GymDocument.String(document, "id"),
+        GymDocument.String(document, "mesoId"),
+        GymDocument.Int32(document, "week"),
+        GymDocument.Int32(document, "dayIndex"),
+        GymDocument.String(document, "status"),
+        GymDocument.List(document, "entries", SessionEntry.Read));
 
     public SessionTotals Totals() => SessionTotals.Of(Entries);
 
@@ -556,15 +490,7 @@ public readonly record struct SessionSummary(
     /// </summary>
     public static SessionSummary Read(JsonElement document, bool withEntries = false)
     {
-        var entries = new List<SessionEntry>();
-
-        if (document.TryGetProperty("entries", out var stored) && stored.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var entry in stored.EnumerateArray())
-            {
-                entries.Add(SessionEntry.Read(entry));
-            }
-        }
+        var entries = GymDocument.List(document, "entries", SessionEntry.Read);
 
         return new SessionSummary(
             GymDocument.String(document, "id"),
@@ -644,6 +570,17 @@ internal static class GymDocument
         document.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.Number
             ? property.GetDouble()
             : null;
+
+    /// <summary>
+    /// An array field, read element by element. Absent reads as empty, and that
+    /// is the whole migration for every array here: a document written before
+    /// the field existed — a day from before planning, most of all — simply has
+    /// no key, and an empty list is what it means.
+    /// </summary>
+    public static IReadOnlyList<T> List<T>(JsonElement document, string name, Func<JsonElement, T> read) =>
+        document.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.Array
+            ? property.EnumerateArray().Select(read).ToArray()
+            : [];
 
     private static InvalidOperationException Missing(JsonElement document, string name, string expected)
     {

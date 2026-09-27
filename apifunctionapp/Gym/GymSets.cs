@@ -58,17 +58,10 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
                 return GymEndpoint.Invalid($"'{sessionId}' is not a workout id.");
             }
 
-            var (body, rejection) = await GymEndpoint.ReadBodyAsync(request, token);
-
-            if (body is null)
-            {
-                return rejection!;
-            }
-
-            using (body)
+            return await GymEndpoint.WithBodyAsync(request, token, async body =>
             {
                 if (!GymRequests.TryReadEntry(
-                        body.RootElement,
+                        body,
                         out var exerciseName,
                         out var expected,
                         out var error))
@@ -112,7 +105,7 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
                         $"The session holds {outcome.Actual} exercises, not the {expected} this "
                         + "request expected."),
                 };
-            }
+            });
         });
 
     /// <summary>
@@ -139,17 +132,10 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
                 return GymEndpoint.Invalid($"'{sessionId}' is not a workout id.");
             }
 
-            var (body, rejection) = await GymEndpoint.ReadBodyAsync(request, token);
-
-            if (body is null)
-            {
-                return rejection!;
-            }
-
-            using (body)
+            return await GymEndpoint.WithBodyAsync(request, token, async body =>
             {
                 if (!GymRequests.TryReadSet(
-                        body.RootElement,
+                        body,
                         out var entryIndex,
                         out var expected,
                         out var set,
@@ -206,7 +192,7 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
                         $"Entry {entryIndex.ToString(CultureInfo.InvariantCulture)} holds "
                         + $"{outcome.Actual} sets, not the {expected} this request expected."),
                 };
-            }
+            });
         });
 
     /// <summary>
@@ -389,18 +375,10 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
 
             return outcome.Result switch
             {
-                RemoveEntryResult.Applied => new OkObjectResult(new
+                RemoveEntryResult.Applied or RemoveEntryResult.AlreadyRemoved => new OkObjectResult(new
                 {
                     ok = true,
-                    alreadyRemoved = false,
-                    entryIndex,
-                    entryCount = outcome.Session!.Entries.Count,
-                }),
-
-                RemoveEntryResult.AlreadyRemoved => new OkObjectResult(new
-                {
-                    ok = true,
-                    alreadyRemoved = true,
+                    alreadyRemoved = outcome.Result == RemoveEntryResult.AlreadyRemoved,
                     entryIndex,
                     entryCount = outcome.Session!.Entries.Count,
                 }),
@@ -446,17 +424,10 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
                 return GymEndpoint.Invalid($"'{sessionId}' is not a workout id.");
             }
 
-            var (body, rejection) = await GymEndpoint.ReadBodyAsync(request, token);
-
-            if (body is null)
-            {
-                return rejection!;
-            }
-
-            using (body)
+            return await GymEndpoint.WithBodyAsync(request, token, async body =>
             {
                 if (!GymRequests.TryReadEntryMove(
-                        body.RootElement,
+                        body,
                         out var from,
                         out var to,
                         out var exerciseName,
@@ -477,19 +448,10 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
 
                 return outcome.Result switch
                 {
-                    ReorderResult.Applied => new OkObjectResult(new
+                    ReorderResult.Applied or ReorderResult.AlreadyApplied => new OkObjectResult(new
                     {
                         ok = true,
-                        alreadyApplied = false,
-                        from,
-                        to,
-                        entryCount = outcome.Session!.Entries.Count,
-                    }),
-
-                    ReorderResult.AlreadyApplied => new OkObjectResult(new
-                    {
-                        ok = true,
-                        alreadyApplied = true,
+                        alreadyApplied = outcome.Result == ReorderResult.AlreadyApplied,
                         from,
                         to,
                         entryCount = outcome.Session!.Entries.Count,
@@ -499,7 +461,7 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
 
                     _ => ReorderConflict(sessionId, from, to, exerciseName, expectedEntryCount),
                 };
-            }
+            });
         });
 
     /// <summary>

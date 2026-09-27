@@ -21,3 +21,6 @@ terraform.rc
 # Node / build output (anywhere in the repo)
 node_modules/
 dist/
+
+# Visual Studio's per-user workspace cache
+.vs/

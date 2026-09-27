@@ -254,13 +254,7 @@ public sealed class GymStore(Container container)
 
         if (!response.IsSuccessStatusCode)
         {
-            throw new CosmosException(
-                $"Storing the mesocycle '{name}' and pointing the user at it failed. "
-                + response.ErrorMessage,
-                response.StatusCode,
-                subStatusCode: 0,
-                activityId: response.ActivityId,
-                requestCharge: response.RequestCharge);
+            throw Failure(response, $"Storing the mesocycle '{name}' and pointing the user at it failed.");
         }
 
         return new Mesocycle(mesoId, name, weeks, days);
@@ -365,14 +359,6 @@ public sealed class GymStore(Container container)
         IReadOnlyList<PlannedExercise> plan,
         CancellationToken cancellationToken)
     {
-        var value = plan
-            .Select(exercise => new Dictionary<string, object?>
-            {
-                ["exerciseName"] = exercise.ExerciseName,
-                ["sets"] = exercise.Sets,
-            })
-            .ToList();
-
         var options = new PatchItemRequestOptions
         {
             FilterPredicate =
@@ -384,7 +370,7 @@ public sealed class GymStore(Container container)
         using var response = await container.PatchItemStreamAsync(
             GymIds.Mesocycle(mesoId),
             new PartitionKey(objectId),
-            [PatchOperation.Set($"/days/{dayIndex}/plan", value)],
+            [PatchOperation.Set($"/days/{dayIndex}/plan", PlanValue(plan))],
             options,
             cancellationToken);
 
@@ -580,14 +566,10 @@ public sealed class GymStore(Container container)
 
             if (!response.IsSuccessStatusCode)
             {
-                throw new CosmosException(
+                throw Failure(
+                    response,
                     $"Deleting {length} sessions of mesocycle {mesoId} failed. The block "
-                    + "itself is untouched, so nothing is orphaned and the delete can be retried. "
-                    + response.ErrorMessage,
-                    response.StatusCode,
-                    subStatusCode: 0,
-                    activityId: response.ActivityId,
-                    requestCharge: response.RequestCharge);
+                    + "itself is untouched, so nothing is orphaned and the delete can be retried.");
             }
         }
 
@@ -626,14 +608,11 @@ public sealed class GymStore(Container container)
 
         if (!finalResponse.IsSuccessStatusCode)
         {
-            throw new CosmosException(
+            throw Failure(
+                finalResponse,
                 $"Removing mesocycle {mesoId} failed after its {sessionIds.Count} sessions were "
                 + "deleted. The block is still there and still current; retrying the delete "
-                + "finishes it. " + finalResponse.ErrorMessage,
-                finalResponse.StatusCode,
-                subStatusCode: 0,
-                activityId: finalResponse.ActivityId,
-                requestCharge: finalResponse.RequestCharge);
+                + "finishes it.");
         }
 
         return new MesocycleDeletion(true, sessionIds.Count, newCurrent);
@@ -1529,13 +1508,9 @@ public sealed class GymStore(Container container)
     /// happens when the last block is deleted, and it puts the user back on the
     /// same empty state they started from instead of a third case.
     /// </summary>
-    private static MemoryStream SerializeUser(string objectId, string? mesoId)
-    {
-        var payload = new MemoryStream();
-
-        using (var writer = new Utf8JsonWriter(payload))
+    private static MemoryStream SerializeUser(string objectId, string? mesoId) =>
+        Serialize(writer =>
         {
-            writer.WriteStartObject();
             writer.WriteString("id", GymIds.User(objectId));
             writer.WriteString("objectId", objectId);
             writer.WriteString("type", GymIds.UserType);
@@ -1544,26 +1519,16 @@ public sealed class GymStore(Container container)
             {
                 writer.WriteString("currentMesoId", mesoId);
             }
-
-            writer.WriteEndObject();
-        }
-
-        payload.Position = 0;
-        return payload;
-    }
+        });
 
     private static MemoryStream SerializeMesocycle(
         string objectId,
         string mesoId,
         string name,
         int weeks,
-        IReadOnlyList<MesoDay> days)
-    {
-        var payload = new MemoryStream();
-
-        using (var writer = new Utf8JsonWriter(payload))
+        IReadOnlyList<MesoDay> days) =>
+        Serialize(writer =>
         {
-            writer.WriteStartObject();
             writer.WriteString("id", GymIds.Mesocycle(mesoId));
 
             // The partition key has to be on the document as well as on the
@@ -1581,28 +1546,12 @@ public sealed class GymStore(Container container)
                 writer.WriteStartObject();
                 writer.WriteNumber("dayIndex", day.DayIndex);
                 writer.WriteString("label", day.Label);
-
-                writer.WriteStartArray("plan");
-
-                foreach (var exercise in day.Plan)
-                {
-                    writer.WriteStartObject();
-                    writer.WriteString("exerciseName", exercise.ExerciseName);
-                    writer.WriteNumber("sets", exercise.Sets);
-                    writer.WriteEndObject();
-                }
-
-                writer.WriteEndArray();
+                WritePlan(writer, day.Plan);
                 writer.WriteEndObject();
             }
 
             writer.WriteEndArray();
-            writer.WriteEndObject();
-        }
-
-        payload.Position = 0;
-        return payload;
-    }
+        });
 
     /// <summary>
     /// A saved day plan. Four keys, and the plan array is the same shape a day
@@ -1612,50 +1561,25 @@ public sealed class GymStore(Container container)
         string objectId,
         string templateId,
         string name,
-        IReadOnlyList<PlannedExercise> plan)
-    {
-        var payload = new MemoryStream();
-
-        using (var writer = new Utf8JsonWriter(payload))
+        IReadOnlyList<PlannedExercise> plan) =>
+        Serialize(writer =>
         {
-            writer.WriteStartObject();
-
             // The prefix is already on it, unlike a mesocycle id: nothing
             // references a template, so there is only one form of the id.
             writer.WriteString("id", templateId);
             writer.WriteString("objectId", objectId);
             writer.WriteString("type", GymIds.TemplateType);
             writer.WriteString("name", name);
-
-            writer.WriteStartArray("plan");
-
-            foreach (var exercise in plan)
-            {
-                writer.WriteStartObject();
-                writer.WriteString("exerciseName", exercise.ExerciseName);
-                writer.WriteNumber("sets", exercise.Sets);
-                writer.WriteEndObject();
-            }
-
-            writer.WriteEndArray();
-            writer.WriteEndObject();
-        }
-
-        payload.Position = 0;
-        return payload;
-    }
+            WritePlan(writer, plan);
+        });
 
     /// <summary>
     /// A session at Start: eight keys and an empty entries array, which the
     /// patches above then append into.
     /// </summary>
-    private static MemoryStream SerializeSession(string objectId, GymSession session)
-    {
-        var payload = new MemoryStream();
-
-        using (var writer = new Utf8JsonWriter(payload))
+    private static MemoryStream SerializeSession(string objectId, GymSession session) =>
+        Serialize(writer =>
         {
-            writer.WriteStartObject();
             writer.WriteString("id", session.Id);
             writer.WriteString("objectId", objectId);
             writer.WriteString("type", GymIds.SessionType);
@@ -1692,11 +1616,41 @@ public sealed class GymStore(Container container)
             }
 
             writer.WriteEndArray();
+        });
+
+    /// <summary>
+    /// One document, written by <paramref name="writeProperties"/> between its
+    /// braces, as the rewound stream the stream APIs take.
+    /// </summary>
+    private static MemoryStream Serialize(Action<Utf8JsonWriter> writeProperties)
+    {
+        var payload = new MemoryStream();
+
+        using (var writer = new Utf8JsonWriter(payload))
+        {
+            writer.WriteStartObject();
+            writeProperties(writer);
             writer.WriteEndObject();
         }
 
         payload.Position = 0;
         return payload;
+    }
+
+    /// <summary>The <c>plan</c> array a day and a template both carry.</summary>
+    private static void WritePlan(Utf8JsonWriter writer, IReadOnlyList<PlannedExercise> plan)
+    {
+        writer.WriteStartArray("plan");
+
+        foreach (var exercise in plan)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("exerciseName", exercise.ExerciseName);
+            writer.WriteNumber("sets", exercise.Sets);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
     }
 
     /// <summary>
@@ -1721,13 +1675,20 @@ public sealed class GymStore(Container container)
             {
                 ["dayIndex"] = index,
                 ["label"] = day.Label,
-                ["plan"] = day.Plan
-                    .Select(exercise => new Dictionary<string, object?>
-                    {
-                        ["exerciseName"] = exercise.ExerciseName,
-                        ["sets"] = exercise.Sets,
-                    })
-                    .ToList(),
+                ["plan"] = PlanValue(day.Plan),
+            })
+            .ToList();
+
+    /// <summary>
+    /// A plan as a patch value — dictionaries, for the reason
+    /// <see cref="DayValues"/> gives.
+    /// </summary>
+    private static List<Dictionary<string, object?>> PlanValue(IReadOnlyList<PlannedExercise> plan) =>
+        plan
+            .Select(exercise => new Dictionary<string, object?>
+            {
+                ["exerciseName"] = exercise.ExerciseName,
+                ["sets"] = exercise.Sets,
             })
             .ToList();
 
@@ -1742,6 +1703,15 @@ public sealed class GymStore(Container container)
             subStatusCode: 0,
             activityId: response.Headers.ActivityId,
             requestCharge: response.Headers.RequestCharge);
+
+    /// <summary>The same, for a transactional batch.</summary>
+    private static CosmosException Failure(TransactionalBatchResponse response, string what) =>
+        new(
+            $"{what} {response.ErrorMessage}",
+            response.StatusCode,
+            subStatusCode: 0,
+            activityId: response.ActivityId,
+            requestCharge: response.RequestCharge);
 }
 
 /// <summary>

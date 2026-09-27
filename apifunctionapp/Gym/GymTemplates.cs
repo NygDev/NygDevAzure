@@ -69,18 +69,10 @@ public class GymTemplates(GymStore store, ILogger<GymTemplates> logger)
     public Task<IActionResult> Create(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "gym/templates")] HttpRequest request,
         CancellationToken cancellationToken) =>
-        GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
-        {
-            var (body, rejection) = await GymEndpoint.ReadBodyAsync(request, token);
-
-            if (body is null)
+        GymEndpoint.RunAsync(request, logger, cancellationToken, (objectId, token) =>
+            GymEndpoint.WithBodyAsync(request, token, async body =>
             {
-                return rejection!;
-            }
-
-            using (body)
-            {
-                if (!GymRequests.TryReadTemplate(body.RootElement, out var name, out var plan, out var error))
+                if (!GymRequests.TryReadTemplate(body, out var name, out var plan, out var error))
                 {
                     return GymEndpoint.Invalid(error);
                 }
@@ -102,8 +94,7 @@ public class GymTemplates(GymStore store, ILogger<GymTemplates> logger)
                 {
                     StatusCode = (int)HttpStatusCode.Created,
                 };
-            }
-        });
+            }));
 
     /// <summary>
     /// Re-saves a template in place: a new name, a new plan, or both.
@@ -128,16 +119,9 @@ public class GymTemplates(GymStore store, ILogger<GymTemplates> logger)
                 return GymEndpoint.Invalid(NotATemplateId(templateId));
             }
 
-            var (body, rejection) = await GymEndpoint.ReadBodyAsync(request, token);
-
-            if (body is null)
+            return await GymEndpoint.WithBodyAsync(request, token, async body =>
             {
-                return rejection!;
-            }
-
-            using (body)
-            {
-                if (!GymRequests.TryReadTemplate(body.RootElement, out var name, out var plan, out var error))
+                if (!GymRequests.TryReadTemplate(body, out var name, out var plan, out var error))
                 {
                     return GymEndpoint.Invalid(error);
                 }
@@ -151,7 +135,7 @@ public class GymTemplates(GymStore store, ILogger<GymTemplates> logger)
                         template = new DayTemplate(templateId, name, plan).ToResponse(),
                     })
                     : NoSuchTemplate(templateId);
-            }
+            });
         });
 
     /// <summary>

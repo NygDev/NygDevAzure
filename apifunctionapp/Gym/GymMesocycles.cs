@@ -101,18 +101,10 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
     public Task<IActionResult> Create(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "gym/mesocycles")] HttpRequest request,
         CancellationToken cancellationToken) =>
-        GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
-        {
-            var (body, rejection) = await GymEndpoint.ReadBodyAsync(request, token);
-
-            if (body is null)
+        GymEndpoint.RunAsync(request, logger, cancellationToken, (objectId, token) =>
+            GymEndpoint.WithBodyAsync(request, token, async body =>
             {
-                return rejection!;
-            }
-
-            using (body)
-            {
-                if (!GymRequests.TryReadMesocycle(body.RootElement, out var name, out var weeks, out var days, out var error))
+                if (!GymRequests.TryReadMesocycle(body, out var name, out var weeks, out var days, out var error))
                 {
                     return GymEndpoint.Invalid(error);
                 }
@@ -128,8 +120,7 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
                 {
                     StatusCode = (int)HttpStatusCode.Created,
                 };
-            }
-        });
+            }));
 
     /// <summary>
     /// Edits the plan: the name, the number of weeks, the day labels, or any
@@ -154,17 +145,10 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
                     + "POST /api/gym/mesocycles, not names.");
             }
 
-            var (body, rejection) = await GymEndpoint.ReadBodyAsync(request, token);
-
-            if (body is null)
-            {
-                return rejection!;
-            }
-
-            using (body)
+            return await GymEndpoint.WithBodyAsync(request, token, async body =>
             {
                 if (!GymRequests.TryReadMesocyclePatch(
-                        body.RootElement,
+                        body,
                         out var name,
                         out var weeks,
                         out var days,
@@ -181,7 +165,7 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
                         "no_such_mesocycle",
                         $"There is no mesocycle {mesoId} in this user's training log.")
                     : new OkObjectResult(new { ok = true, mesocycle = updated.ToResponse() });
-            }
+            });
         });
 
     /// <summary>
@@ -228,18 +212,10 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
     public Task<IActionResult> SetCurrent(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "gym/mesocycles/current")] HttpRequest request,
         CancellationToken cancellationToken) =>
-        GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
-        {
-            var (body, rejection) = await GymEndpoint.ReadBodyAsync(request, token);
-
-            if (body is null)
+        GymEndpoint.RunAsync(request, logger, cancellationToken, (objectId, token) =>
+            GymEndpoint.WithBodyAsync(request, token, async body =>
             {
-                return rejection!;
-            }
-
-            using (body)
-            {
-                if (!GymRequests.TryReadCurrentMesocycle(body.RootElement, out var mesoId, out var error))
+                if (!GymRequests.TryReadCurrentMesocycle(body, out var mesoId, out var error))
                 {
                     return GymEndpoint.Invalid(error);
                 }
@@ -253,8 +229,7 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
                         $"There is no mesocycle {mesoId} in this user's training log, so it cannot "
                         + "be made the current one. GET /api/gym/mesocycles lists the ids that exist.")
                     : new OkObjectResult(new { ok = true, mesocycle = mesocycle.ToResponse() });
-            }
-        });
+            }));
 
     /// <summary>
     /// Deletes a block and every session logged in it.
