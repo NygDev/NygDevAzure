@@ -47,8 +47,9 @@ jobs:
           echo "::add-mask::$TOKEN"
           echo "SWA_TOKEN=$TOKEN" >> "$GITHUB_ENV"
 
-      # house/ is already the finished site (built by the digital-twin project's
-      # tools/site.py), so there is nothing to build: upload it as-is.
+      # house/ is already the finished site, written by house-twin/tools/site.py
+      # and committed, so there is nothing to build: upload it as-is. The build
+      # can't run here, because its inputs are local-only (see house-twin/.gitignore).
       - name: Deploy
         uses: Azure/static-web-apps-deploy@v1
         with:

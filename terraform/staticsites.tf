@@ -84,9 +84,10 @@ resource "azurerm_static_web_app" "nygdevgymbro" {
 # Free SKU, like the rest: one static page and one .glb, no API, no sign-in.
 #
 # Unlike the four above, its content lives in this repository, in house/, and is
-# deployed by deploy-house.yml in this repository. The page is built elsewhere —
-# the digital-twin project, which is not in git — and copied into house/ by that
-# project's tools/site.py; this repo holds only what is served.
+# deployed by deploy-house.yml in this repository. house/ is build output: the
+# model and its build tools are in house-twin/, whose tools/site.py writes it.
+# The build is run locally and its result committed, because its inputs (photos,
+# drawings, the sales prospectus) are kept out of this public repository.
 #
 # It has no custom domain yet. Adding one (hus.nygard.dev, say) is the same
 # manual step as for the others: the CNAME at the DNS host, then the domain on

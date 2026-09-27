@@ -1,0 +1,766 @@
+<div class="app">
+  <aside class="panel">
+    <div class="tb">
+      <div class="name">
+        <span class="k">Enebolig · digital twin v0.4</span>
+        <h1>Mallingsrudveien 30</h1>
+        <div class="sub">1349 Rykkinn, Bærum</div>
+      </div>
+      <div><span class="k">Plans</span><span class="v">Anticimex 2026 · Block Watne 1993</span></div>
+      <div><span class="k">Photos</span><span class="v">6 outside · 6 inside</span></div>
+      <div><span class="k">Built</span><span class="v">1994</span></div>
+      <div><span class="k">Plot</span><span class="v">566 m² · 76/231</span></div>
+      <div><span class="k">BRA</span><span class="v">145 m² + garage 39</span></div>
+      <div><span class="k">Energy label</span><span class="v">D</span></div>
+      <div><span class="k">Scale found</span><span class="v">75.3 px = 1 m</span></div>
+      <div><span class="k">Entrance faces</span><span class="v">WNW · terrace SSW</span></div>
+    </div>
+
+    <div class="section">
+      <h2>Floor areas from the drawing</h2>
+      <table id="rooms"><thead><tr><th>Room</th><th style="text-align:right">m²</th></tr></thead><tbody></tbody></table>
+      <div class="fine">Traced internal floor area inside the walls. The loft figures include floor under the sloping ceiling, so usable area (BRA) will be lower.</div>
+      <table class="bra"><thead><tr><th>Measured by Anticimex, 2026</th><th style="text-align:right">m²</th></tr></thead><tbody>
+        <tr><td>1. etasje (BRA-i)</td><td class="n">88</td></tr>
+        <tr><td>Loft (BRA-i)</td><td class="n">57</td></tr>
+        <tr><td>Garage (BRA-e)</td><td class="n">39</td></tr>
+        <tr class="sum"><td>Total BRA</td><td class="n">184</td></tr>
+        <tr><td>Terrace (TBA)</td><td class="n">44</td></tr>
+      </tbody></table>
+      <div class="fine">BRA includes the internal walls. In the loft it counts only floor with at least 1.9 m headroom, plus 0.6 m beyond that line. The garage also has a 21 m² cold loft that is too low to count.</div>
+    </div>
+
+    <div class="section">
+      <h2>What the sources say</h2>
+      <ul class="checks">
+        <li><span class="pill ok">OK</span><div><b>Both sheets share one scale.</b> <span class="d">5.74, 2.82, 2.81, 4.16 and 3.20 m all measure 75.3 px/m within 0.5%, so the drawing agrees with its own dimensions to about ±2 cm. The 1993 drawing agrees too: it gives 7.50 × 11.70 m inside, and the trace gives 7.46 × 11.69 m.</span></div></li>
+        <li><span class="pill ok">OK</span><div><b>Measured heights.</b> <span class="d">Anticimex measured 2.36 m ceilings on the ground floor, and from 0.72 m to 3.02 m in the loft. The model takes the 0.27 m floor from the 1993 section, which puts the loft floor at 2.63 m. The loft has a flat ceiling at 2.40 m under the collar ties. The 3.02 m is probably under the dormer.</span></div></li>
+        <li><span class="pill photo">Photo</span><div><b>Roof 45°, ridge about 6.7 m.</b> <span class="d">The 1993 drawing says 42° and a 6.3 m ridge, but both verges of the south gable measure 45° in the photo. The drawing gives the eave, 2.76 m at the wall face with a 0.5 m build-up. With a 45° roof, that eave gives the measured 0.72 m knee walls and about 58 m² of loft BRA (57 m² measured). The model had the ridge at 7.0 m before.</span></div>
+          <div class="todo">Measure the ridge height.</div></li>
+        <li><span class="pill photo">Photo</span><div><b>The loft is centred.</b> <span class="d">The south gable window sits dead centre and the dormer over the front door is flush with the wall. The loft sheet draws its stair and chimney about 0.5 m too far east, so the model keeps them where the ground-floor sheet has them. That puts the chimney on the ridge, as in the photos.</span></div></li>
+        <li><span class="pill ok">OK</span><div><b>Drone photo fits the plan.</b> <span class="d">A camera fitted to the four roof corners and both ridge ends of the top-down photo lands within about 0.1 m. It confirms the chimney on the ridge, the terrace depth, and a dormer ridge that runs right up to the main ridge.</span></div></li>
+        <li><span class="pill photo">Photo</span><div><b>Dormer.</b> <span class="d">45°, as in the front photo and the 1993 facade (47° before). Its eaves are 4.85 m up at the side walls, the roof overhangs its walls by 0.7 m, and its ridge ends just under the main ridge, as drawn. Inside, the loft living room's walls rise about 2 m before the ceiling slopes.</span></div></li>
+        <li><span class="pill doc">Drawing</span><div><b>Windows and doors.</b> <span class="d">The 1993 drawing has 1.0 × 1.2 m windows with heads at 2.10 m, so the sills are at 0.90 m. With their white trims they look like 0.8 to 2.2 m in the photos. The front door and its sidelights are 2.08 m tall, and the terrace door is 2.09 m. The loft gable windows run 1.05 to 2.25 m above the loft floor, and the dormer window 0.85 to 2.05 m.</span></div></li>
+        <li><span class="pill photo">Photo</span><div><b>North gable windows.</b> <span class="d">The sketch draws two 1.18 m windows. The Soverom 2 photo shows a single sash about 0.65 m wide, 0.85 to 2.1 m above the floor and about 0.2 m from the partition. The model uses that for both rooms.</span></div>
+          <div class="todo">Measure both north gable windows.</div></li>
+        <li><span class="pill photo">Photo</span><div><b>Fireplace.</b> <span class="d">The sketch's flue square is a stone-clad column, floor to ceiling. A rendered corner stove, about 1.45 m tall, sits in the corner beside it on a black hearth plate. The stone continues along the living room's north wall behind the stove, and the chimney is stone-clad up through the loft bedroom too. A white beam about 0.25 m deep runs from the column to the terrace wall. Sizes are read off the photos.</span></div></li>
+        <li><span class="pill photo">Photo</span><div><b>Bathroom windows.</b> <span class="d">The sketch shows a 1.18 m and a 0.57 m window. The front photo shows two similar windows of about 1.1 m, so the model follows the photo. The prospectus says the bathroom took over a bedroom, and that one window was closed where the washbasins are now.</span></div>
+          <div class="todo">Measure both bathroom windows.</div></li>
+        <li><span class="pill ok">OK</span><div><b>Changes since 1993.</b> <span class="d">The prospectus lists how today's layout differs from the 1993 drawings:</span>
+          <ul class="d">
+            <li>the bathroom took over a bedroom</li>
+            <li>the laundry room was drawn as a storage room</li>
+            <li>the terrace door moved from the east wall to the south gable, and the east wall got a window instead</li>
+            <li>the loft storage room moved</li>
+            <li>two loft bedrooms were made from part of the loft living room</li>
+          </ul>
+          <span class="d">The model follows today's layout.</span></div></li>
+        <li><span class="pill photo">Photo</span><div><b>Terrace and covered lounge.</b> <span class="d">The terrace is 44 m² (measured), with a 0.92 m railing. It was extended in 2019–20, when the lounge roof was also extended, and got an electric awning in 2026. The lounge is a lopsided gable roof, about 2.8 × 4.1 m, in the terrace's east corner. The drone photo fixes where it sits: its back wall is on the drawn terrace edge, 1.5 m past the house, and the ridge is about 0.6 m in from the open west side. The south photo gives the heights: ridge about 3.6 m, west eave about 3.1 m, back wall about 1.2 m. It has exposed rafters and a beam. It is not on the plans.</span></div>
+          <div class="todo">Measure the lounge's eave, ridge and back-wall heights.</div></li>
+        <li><span class="pill doc">Drawing</span><div><b>Garage.</b> <span class="d">A detached double garage, 6.0 × 7.0 m inside. The 1994 drawing gives walls of about 2.0 m with the ridge 2.2 m above them. It has 39 m² BRA and a 21 m² cold loft. It stands about 10 m west of the house across the courtyard: the 1:500 map places it, and the drone photo agrees within about 0.2 m. It got a new electric door in 2025.</span></div>
+          <div class="todo">Measure the garage's wall and ridge heights.</div></li>
+        <li><span class="pill doc">Map</span><div><b>Plot.</b> <span class="d">566 m², drawn from the registered boundary points of 76/231. The 1:500 map ties them to the house to about ±0.3 m. The same map shows plan-up pointing 23° east of true north, not the 28° of the plan sketch's compass.</span></div></li>
+        <li><span class="pill warn">Check</span><div><b>West-side chain is short.</b> <span class="d">3.42 + 3.69 + 4.21 = 11.32 m, but the east side gives 4.00 + 7.59 = 11.59 m. The entré is drawn 3.81 m long but labelled 3.69 m.</span></div>
+          <div class="todo">Measure the entré north–south.</div></li>
+        <li><span class="pill info">Assumed</span><div><b>Stair.</b> <span class="d">16 risers of 164 mm with a winder at the top, traced from the loft sheet.</span></div>
+          <div class="todo">Count the steps.</div></li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>From the sales prospectus</h2>
+      <dl class="facts">
+        <dt>Build</dt><dd>1994. Block Watne house type "Lykkebo". The floor is cast on the ground, with timber-frame walls and horizontal wood cladding. The roof is a gable covered in roof tiles. The windows and terrace door are the original wooden ones.</dd>
+        <dt>Heating</dt><dd>The wood stove in the living room, plus floor heating in some rooms. Mechanical extract runs through the kitchen fan. Energy label D, at 196 kWh/m² a year.</dd>
+        <dt>Work done</dt><dd>
+          <ul>
+            <li>2004–05: bathroom</li>
+            <li>2008: kitchen and parquet</li>
+            <li>2012: painted inside</li>
+            <li>2019–20: terrace extended, with new decking and a bigger lounge roof</li>
+            <li>2022: laundry room, fuse box and EV charger</li>
+            <li>2024–25: roof tiles washed and painted</li>
+            <li>2025: garage door</li>
+            <li>2026: awning</li>
+          </ul></dd>
+        <dt>Condition</dt><dd>Anticimex, September 2026. No item got TG3. These got TG2:
+          <ul>
+            <li>bathroom: grout cracks, leak safety at the door, and an ageing membrane</li>
+            <li>copper water pipes and the manifold cabinet</li>
+            <li>ventilation</li>
+            <li>stair: wear, and a handrail on one side only</li>
+            <li>floors: up to 18 mm out of level in the entré, and some cracked tiles</li>
+            <li>roof tiles and underlay</li>
+            <li>drainage and the outdoor water pipe</li>
+            <li>windows and the front door: worn paint</li>
+            <li>stains in the cold loft</li>
+            <li>chimney: no fire plate under the soot door</li>
+            <li>garage roof</li>
+          </ul>
+          An electrician should check the wiring.</dd>
+      </dl>
+    </div>
+
+    <div class="fine">Traced automatically from the Anticimex sketches, which state they are not to scale and that dimensions are internal and approximate. Heights come from the 2026 condition report, the 1993 building drawings and the listing photos, and the site from the land registry. Treat this as a starting model to check on site.</div>
+  </aside>
+
+  <main class="stage" id="stage">
+    <canvas id="view" aria-label="3D model of the house"></canvas>
+    <div id="labels"></div>
+    <div class="toolbar">
+      <div class="seg" role="group" aria-label="What to show">
+        <button data-floor="outside" aria-pressed="true">Outside</button>
+        <button data-floor="ground" aria-pressed="false">1. etasje</button>
+        <button data-floor="loft" aria-pressed="false">Loft</button>
+        <button data-floor="exploded" aria-pressed="false">Exploded</button>
+      </div>
+      <div class="seg" role="group" aria-label="Camera">
+        <button data-cam="3d" aria-pressed="true">3D</button>
+        <button data-cam="plan" aria-pressed="false">Plan</button>
+      </div>
+      <button class="chip" id="tCut" aria-pressed="false">Cut walls at 1.2 m</button>
+      <button class="chip" id="tPlan" aria-pressed="false">Scanned plans</button>
+      <button class="chip" id="tLbl" aria-pressed="true">Labels</button>
+    </div>
+    <div class="selbox" id="selbox"></div>
+    <div class="compass" title="North"><svg viewBox="-20 -20 40 40" aria-hidden="true"><g id="needle"><path d="M0 -10 L4.5 4 L0 1.5 L-4.5 4 Z" fill="var(--accent)"/><path d="M0 -10 L4.5 4 L0 1.5 L-4.5 4 Z" fill="var(--faint)" transform="rotate(180)" opacity=".45"/><text x="0" y="-12" text-anchor="middle" font-size="8.5" font-family="Barlow Semi Condensed, sans-serif" font-weight="700" fill="var(--ink)">N</text></g></svg></div>
+  </main>
+</div>
+
+<script type="application/json" id="model">__MODEL__</script>
+<script type="application/json" id="plans">__PLANS__</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function(){
+if(!window.THREE){document.getElementById('stage').insertAdjacentHTML('beforeend','<div class="err">The 3D library could not load. Check your connection and reload.</div>');return;}
+const M=JSON.parse(document.getElementById('model').textContent);
+const PL=JSON.parse(document.getElementById('plans').textContent);
+const HS=M.house, AK=M.ark;
+// heights (m above ground-floor floor level). Ground-floor ceiling 2.36 m, as Anticimex measured it (2026);
+// the loft floor structure is 0.27 m, as in the 1993 section; flat loft ceiling at the collar ties, 2.40 m.
+const H={gfTop:2.63, slab:0.27, loftBase:2.63, ceil:2.36, ceilL:2.40, explode:3.4};
+// Main roof: 45°, as both verges of the south gable measure in the photo (the 1993 drawing says 42°). Eaves top 2.76 m at the
+// wall face and a 0.5 m build-up (1993 section); the rafters then sit 0.72 m above the loft floor at the knee walls, as measured.
+// The overhangs are 0.25 m thick. Dormer (front photo, 1993 facade): 45°, top 4.85 m at its side walls, 0.30 m build-up,
+// 0.7 m side overhang, ridge just under the main ridge.
+const R={E:2.76,t:0.50,to:0.25,ov:0.40,gov:0.35,Ea:4.85,ta:0.30,k:Math.tan(45*Math.PI/180),arkOv:0.70};
+R.rx=(HS.xW+HS.xE)/2; R.hw=(AK.zS-AK.zN)/2; R.zc=(AK.zN+AK.zS)/2; R.arkFront=HS.xW-0.35;
+const AKH=R.Ea+R.k*R.hw-H.loftBase+0.1;   // dormer wall prism height above the loft floor, before trimming to the roof
+const SIDE=10.4;
+const HuR=(x)=>R.E-R.t+Math.min(x-HS.xW,HS.xE-x);   // underside of the main roof
+// underside of the straight flight, used to cut the wall that runs beneath the stair
+const RISE=H.loftBase/16, RUN=M.stair[0][1][0]-M.stair[0][0][0], SX0=M.stair[0][0][0];
+const stairUnder=(x)=>Math.max(0.05,RISE-0.27+(x-SX0)*RISE/RUN);
+const TRIM={
+  loft:{fn:(x)=>Math.min(HuR(x),H.loftBase+H.ceilL), xs:[HS.xW+(H.loftBase+H.ceilL-(R.E-R.t)),HS.xE-(H.loftBase+H.ceilL-(R.E-R.t)),R.rx], zs:[]},
+  ark:{fn:(x,z)=>R.Ea-R.ta+R.k*(R.hw-Math.abs(z-R.zc)), xs:[], zs:[R.zc]},
+  ext:{fn:(x)=>HuR(x), xs:[R.rx], zs:[]}};
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ---------- renderer ----------
+const canvas=document.getElementById('view'), stage=document.getElementById('stage');
+if(THREE.ColorManagement) THREE.ColorManagement.legacyMode=false;
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.localClippingEnabled=true;
+renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputEncoding=THREE.sRGBEncoding;
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(38,1,0.1,400);
+const controls=new THREE.OrbitControls(camera,canvas);
+controls.enableDamping=!reduce; controls.dampingFactor=0.12; controls.maxPolarAngle=Math.PI*0.495;
+controls.minDistance=3; controls.maxDistance=90;
+// render on demand: only while the camera moves or after something changed
+let dirty=true; const redraw=()=>{dirty=true;};
+controls.addEventListener('change',redraw);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x9c9588,0.55));
+const sun=new THREE.DirectionalLight(0xfffaf2,1.2);
+sun.position.set(-8,18,20); sun.target.position.set(3.7,0,7);
+sun.castShadow=true; sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera,{left:-22,right:22,top:22,bottom:-22,near:1,far:80});
+sun.shadow.bias=-0.0006; sun.shadow.normalBias=0.02;
+scene.add(sun,sun.target);
+
+// ---------- helpers ----------
+const S=(x,z)=>new THREE.Vector2(x,-z);          // plan (x,z) -> shape space
+function shapeOf(p){
+  const s=new THREE.Shape(p.outer.map(([x,z])=>S(x,z)));
+  (p.holes||[]).forEach(h=>s.holes.push(new THREE.Path(h.map(([x,z])=>S(x,z)))));
+  return s;
+}
+function fin(m,name){m.name=name||'';m.castShadow=true;m.receiveShadow=true;return m;}
+function prism(polys,y0,h,mat,name){
+  const g=new THREE.ExtrudeGeometry(polys.map(shapeOf),{depth:h,bevelEnabled:false});
+  g.rotateX(-Math.PI/2); g.translate(0,y0,0);
+  return fin(new THREE.Mesh(g,mat),name);
+}
+function box(x0,z0,x1,z1,y0,y1,mat,name){
+  const g=new THREE.BoxGeometry(Math.max(x1-x0,0.01),Math.max(y1-y0,0.01),Math.max(z1-z0,0.01));
+  g.translate((x0+x1)/2,(y0+y1)/2,(z0+z1)/2);
+  return fin(new THREE.Mesh(g,mat),name);
+}
+// a sloped slab: outline in plan, top surface y=top(x,z), vertical thickness t; top uses mats[0], underside and edges mats[1]
+function slab(outline,top,t,mats,name){
+  const pts=outline.map(([x,z])=>new THREE.Vector2(x,z));
+  const tris=THREE.ShapeUtils.triangulateShape(pts,[]);
+  const P=[]; const v=(i,dy)=>{const [x,z]=outline[i];P.push(x,top(x,z)+dy,z);};
+  tris.forEach(([a,b,c])=>{v(a,0);v(b,0);v(c,0);});
+  const n0=P.length/3;
+  tris.forEach(([a,b,c])=>{v(a,-t);v(c,-t);v(b,-t);});
+  outline.forEach((_,i)=>{const j=(i+1)%outline.length; v(i,0);v(j,0);v(j,-t); v(i,0);v(j,-t);v(i,-t);});
+  const mk=(arr,mat,nm)=>{const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(arr,3)); g.computeVertexNormals(); return fin(new THREE.Mesh(g,mat),nm);};
+  const grp=new THREE.Group(); grp.name=name;
+  grp.add(mk(P.slice(0,n0*3),mats[0],name+' tekking'),mk(P.slice(n0*3),mats[1],name+' kant'));
+  return grp;
+}
+function subdivide(pts,xs,zs){
+  const out=[];
+  pts.forEach((p,i)=>{
+    const q=pts[(i+1)%pts.length]; out.push(p);
+    const ts=[];
+    xs.forEach(x=>{const d=q[0]-p[0]; if(Math.abs(d)>1e-6){const t=(x-p[0])/d; if(t>1e-4&&t<1-1e-4) ts.push(t);}});
+    zs.forEach(z=>{const d=q[1]-p[1]; if(Math.abs(d)>1e-6){const t=(z-p[1])/d; if(t>1e-4&&t<1-1e-4) ts.push(t);}});
+    ts.sort((a,b)=>a-b).forEach(t=>out.push([p[0]+(q[0]-p[0])*t,p[1]+(q[1]-p[1])*t]));
+  });
+  return out;
+}
+function lowerTop(mesh,fn,floorY){
+  const P=mesh.geometry.attributes.position; let maxY=-1e9;
+  for(let i=0;i<P.count;i++) maxY=Math.max(maxY,P.getY(i));
+  for(let i=0;i<P.count;i++){ if(P.getY(i)>maxY-1e-4){ P.setY(i,Math.max(floorY,Math.min(maxY,fn(P.getX(i),P.getZ(i))))); } }
+  P.needsUpdate=true; mesh.geometry.computeVertexNormals(); mesh.geometry.computeBoundingSphere(); mesh.geometry.computeBoundingBox();
+  return mesh;
+}
+function trimmedPrism(poly,y0,h,mat,name,trim){
+  const p={outer:subdivide(poly.outer,trim.xs,trim.zs),holes:poly.holes||[]};
+  return lowerTop(prism([p],y0,h,mat,name),trim.fn,y0+0.05);
+}
+function trimmedBox(x0,z0,x1,z1,y0,y1,mat,name,trim){
+  return trimmedPrism({outer:[[x0,z0],[x1,z0],[x1,z1],[x0,z1]]},y0,y1-y0,mat,name,trim);
+}
+function edges(mesh,mat){
+  const l=new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry,25),mat);
+  l.name=(mesh.name||'')+' edges'; l.userData.noExport=true; return l;
+}
+const std=(c,o={})=>new THREE.MeshStandardMaterial(Object.assign({color:c,roughness:.92,metalness:0,clipShadows:true},o));
+
+// ---------- materials ----------
+const ROOMCOL={'Bad':'#AFC6D2','Vaskerom':'#AFC6D2','Entré':'#C9C6BC','Kjøkken':'#DCC7A6','Stue':'#D3CFB0',
+  'Soverom':'#DDC3B3','Soverom 2':'#DDC3B3','Soverom 3':'#DDC3B3','Soverom 4':'#DDC3B3','Loftstue':'#D3CFB0','Bod':'#C4BCAE'};
+const RED=new THREE.Color('#A3312A'), WHITE=new THREE.Color('#EFECE5');
+function set(){return{wall:std('#ffffff',{vertexColors:true}),glass:std('#8FB9CE',{transparent:true,opacity:.42,roughness:.15,depthWrite:false}),
+  trim:std('#F4F3EF',{roughness:.7}),edge:new THREE.LineBasicMaterial({color:0x243033,transparent:true,opacity:.6})};}
+const MAT={gf:set(),loft:set(),ark:set(),ext:set(),
+  slab:std('#BEC2BD'),stair:std('#C79E70',{roughness:.8}),terrace:std('#A07E5A',{roughness:.85}),
+  rail:std('#8C7258'),chimney:std('#2E3133',{roughness:.7}),stove:std('#33393B',{roughness:.6}),ground:std('#B3BCB2',{roughness:1}),
+  tile:std('#232527',{roughness:.75,side:THREE.DoubleSide}),shingle:std('#7B4B3A',{roughness:.85,side:THREE.DoubleSide}),
+  fascia:std('#F4F3EF',{roughness:.7,side:THREE.DoubleSide}),red:std('#A3312A')};
+
+// ---------- groups ----------
+const site=new THREE.Group(); site.name='Tomt';
+const gf=new THREE.Group(); gf.name='1. etasje';
+const loftRoot=new THREE.Group(); loftRoot.name='Loft (plassert)';
+const loft=new THREE.Group(); loft.name='Loft';
+const roof=new THREE.Group(); roof.name='Tak';
+const stairG=new THREE.Group(); stairG.name='Trapp';
+loft.add(roof); loftRoot.add(loft); scene.add(site,gf,loftRoot,stairG);
+
+// ---------- site ----------
+const ground=new THREE.Mesh(new THREE.CircleGeometry(80,64),MAT.ground);
+ground.rotation.x=-Math.PI/2; ground.position.set(3.7,-0.26,7.5); ground.receiveShadow=true; ground.name='Terreng'; ground.userData.noExport=true;
+site.add(ground);
+const T=M.terrace; const tx0=T[0][0],tz0=T[0][1],tx1=T[2][0],tz1=T[2][1];
+site.add(box(tx0,tz0,tx1,tz1,-0.25,-0.06,MAT.terrace,'Terrasse'));
+// covered lounge in the terrace's east corner (drone photo + south photo): a lopsided gable, short 38° slope
+// over the open west side, long 46° slope down to a low back wall on the drawn terrace edge; exposed rafters and a beam
+const SH={xw:6.3,xr:6.93,xe:tx1,z0:HS.zS,z1:tz1,ridge:3.63,kw:Math.tan(38*Math.PI/180),ke:Math.tan(46*Math.PI/180),t:0.14};
+SH.top=(x)=>x<=SH.xr?SH.ridge-SH.kw*(SH.xr-x):SH.ridge-SH.ke*(x-SH.xr);
+SH.under=(x)=>SH.top(x)-SH.t;
+MAT.wood=std('#9A6B45',{roughness:.8,side:THREE.DoubleSide}); MAT.rafter=std('#7E5536',{roughness:.8});
+// slatted railing along the west and south edges, stopping at the lounge; 0.92 m above the deck, as measured
+function railing(ax,az,bx,bz,tag){
+  const L=Math.hypot(bx-ax,bz-az), n=Math.max(1,Math.round(L/1.4)), t=0.045, alongX=Math.abs(bx-ax)>Math.abs(bz-az);
+  for(let k=0;k<=n;k++){const px=ax+(bx-ax)*k/n, pz=az+(bz-az)*k/n; site.add(box(px-t,pz-t,px+t,pz+t,-0.06,0.86,MAT.rail,'Stolpe '+tag+k));}
+  [0.14,0.35,0.56,0.77].forEach((y,i)=>{
+    const d=0.02; const [x0,x1]=[Math.min(ax,bx),Math.max(ax,bx)], [z0,z1]=[Math.min(az,bz),Math.max(az,bz)];
+    site.add(alongX?box(x0,z0-d,x1,z1+d,y,y+0.09,MAT.rail,'Spile '+tag+i):box(x0-d,z0,x1+d,z1,y,y+0.09,MAT.rail,'Spile '+tag+i));
+  });
+}
+railing(tx0,tz0+0.05,tx0,tz1,'V'); railing(tx0,tz1,SH.xw,tz1,'S');
+const shedRoof=new THREE.Group(); shedRoof.name='Overbygg tak'; site.add(shedRoof);
+shedRoof.add(slab([[SH.xw-0.25,SH.z0],[SH.xr,SH.z0],[SH.xr,SH.z1+0.25],[SH.xw-0.25,SH.z1+0.25]],SH.top,SH.t,[MAT.shingle,MAT.wood],'Overbygg tak vest'));
+shedRoof.add(slab([[SH.xr,SH.z0],[SH.xe+0.25,SH.z0],[SH.xe+0.25,SH.z1+0.25],[SH.xr,SH.z1+0.25]],SH.top,SH.t,[MAT.shingle,MAT.wood],'Overbygg tak øst'));
+// white bargeboards on the south gable and fascia on the west eave
+shedRoof.add(slab([[SH.xw-0.25,SH.z1+0.2],[SH.xr,SH.z1+0.2],[SH.xr,SH.z1+0.27],[SH.xw-0.25,SH.z1+0.27]],(x)=>SH.top(x)+0.02,0.24,[MAT.fascia,MAT.fascia],'Vindski vest'));
+shedRoof.add(slab([[SH.xr,SH.z1+0.2],[SH.xe+0.25,SH.z1+0.2],[SH.xe+0.25,SH.z1+0.27],[SH.xr,SH.z1+0.27]],(x)=>SH.top(x)+0.02,0.24,[MAT.fascia,MAT.fascia],'Vindski øst'));
+shedRoof.add(slab([[SH.xw-0.3,SH.z0],[SH.xw-0.23,SH.z0],[SH.xw-0.23,SH.z1+0.27],[SH.xw-0.3,SH.z1+0.27]],()=>SH.top(SH.xw-0.25)+0.03,0.12,[MAT.fascia,MAT.fascia],'Takrenne vest'));
+// exposed rafters every 0.6 m and a beam across the long slope
+for(let z=SH.z0+0.35;z<SH.z1-0.05;z+=0.6){
+  shedRoof.add(slab([[SH.xw-0.2,z-0.035],[SH.xr,z-0.035],[SH.xr,z+0.035],[SH.xw-0.2,z+0.035]],(x)=>SH.under(x),0.16,[MAT.rafter,MAT.rafter],'Sperr V '+z.toFixed(1)));
+  shedRoof.add(slab([[SH.xr,z-0.035],[SH.xe,z-0.035],[SH.xe,z+0.035],[SH.xr,z+0.035]],(x)=>SH.under(x),0.16,[MAT.rafter,MAT.rafter],'Sperr Ø '+z.toFixed(1)));
+}
+{ const xb=SH.xr+0.55*(SH.xe-SH.xr), yb=SH.under(xb)-0.16; shedRoof.add(box(xb-0.06,SH.z0,xb+0.06,SH.z1,yb-0.18,yb,MAT.rafter,'Bjelke')); }
+// walls: red outside, boarded inside. Profiles are drawn in the x–y plane and extruded along z.
+function panel(pts,z0,d,mat,name){
+  const g=new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([x,y])=>new THREE.Vector2(x,y))),{depth:d,bevelEnabled:false});
+  g.translate(0,0,z0); return fin(new THREE.Mesh(g,mat),name);
+}
+const U=SH.under, xH=HS.xE;
+// south end: open from the corner post to under the ridge, closed under the long slope
+const southPts=[[SH.xr,-0.25],[SH.xe,-0.25],[SH.xe,U(SH.xe)],[SH.xr,U(SH.xr)]];
+site.add(panel(southPts,SH.z1-0.1,0.1,MAT.red,'Overbygg vegg sør'));
+site.add(panel(southPts.map(([x,y])=>[x,Math.max(y,-0.06)]),SH.z1-0.12,0.02,MAT.wood,'Overbygg panel sør'));
+// north end beyond the house corner
+const northPts=[[xH,-0.25],[SH.xe,-0.25],[SH.xe,U(SH.xe)],...(xH<SH.xr?[[SH.xr,U(SH.xr)]]:[]),[xH,U(xH)]];
+site.add(panel(northPts,SH.z0,0.1,MAT.red,'Overbygg vegg nord'));
+site.add(panel(northPts.map(([x,y])=>[x,Math.max(y,-0.06)]),SH.z0+0.1,0.02,MAT.wood,'Overbygg panel nord'));
+// low back wall on the east
+site.add(box(SH.xe-0.12,SH.z0,SH.xe,SH.z1,-0.25,U(SH.xe),MAT.red,'Overbygg vegg øst'));
+site.add(box(SH.xe-0.14,SH.z0+0.1,SH.xe-0.12,SH.z1-0.12,-0.06,U(SH.xe),MAT.wood,'Overbygg panel øst'));
+// corner post at the open south-west corner
+site.add(box(SH.xw-0.05,SH.z1-0.12,SH.xw+0.07,SH.z1,-0.06,U(SH.xw),MAT.fascia,'Overbygg stolpe'));
+
+// detached double garage: 6.0 × 7.0 m inside, walls about 2.0 m with the ridge 2.2 m above them (1994 drawing), placed from
+// the 1:500 map. Red cladding, a tiled roof with the ridge along x, 0.42 m eaves and 0.4 m gable overhangs, a 5 m door
+// facing the courtyard (garage photo), and a door and two windows on the south side (1994 drawing)
+const GA=Object.assign({y:-0.2,wall:2.0,rise:2.2,t:0.2,ov:0.42,gov:0.4},M.garage);
+GA.zc=(GA.z0+GA.z1)/2; GA.hw=(GA.z1-GA.z0)/2; GA.k=GA.rise/(GA.hw-0.15);        // pitch from the inside half-width
+GA.top=(x,z)=>GA.y+GA.wall+GA.t+GA.k*(GA.hw-Math.abs(z-GA.zc));                  // roof top surface
+MAT.garage=std('#A3312A'); MAT.gtrim=std('#F4F3EF',{roughness:.6}); MAT.gglass=std('#3E4A50',{roughness:.2});
+const garage=new THREE.Group(); garage.name='Garasje'; site.add(garage);
+function gable(xa,d,zc,hw,yb,yt,mat,name){   // triangle in the z–y plane, extruded along x from xa to xa+d
+  const g=new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(zc-hw,yb),new THREE.Vector2(zc+hw,yb),new THREE.Vector2(zc,yt)]),{depth:d,bevelEnabled:false});
+  g.rotateY(-Math.PI/2); g.translate(xa+d,0,0); return fin(new THREE.Mesh(g,mat),name);
+}
+{ const {x0,x1,z0,z1,y}=GA, w=0.15, eave=y+GA.wall, apex=eave+GA.k*GA.hw;
+  garage.add(prism([{outer:[[x0,z0],[x1,z0],[x1,z1],[x0,z1]],holes:[[[x0+w,z0+w],[x0+w,z1-w],[x1-w,z1-w],[x1-w,z0+w]]]}],y,GA.wall,MAT.garage,'Garasje vegger'));
+  garage.add(gable(x0,w,GA.zc,GA.hw,eave,apex,MAT.garage,'Garasje gavl vest'), gable(x1-w,w,GA.zc,GA.hw,eave,apex,MAT.garage,'Garasje gavl øst'));
+  const rx0=x0-GA.gov, rx1=x1+GA.gov, rz0=z0-GA.ov, rz1=z1+GA.ov;
+  garage.add(slab([[rx0,rz0],[rx1,rz0],[rx1,GA.zc],[rx0,GA.zc]],GA.top,GA.t+0.05,[MAT.tile,MAT.fascia],'Garasje tak nord'));
+  garage.add(slab([[rx0,GA.zc],[rx1,GA.zc],[rx1,rz1],[rx0,rz1]],GA.top,GA.t+0.05,[MAT.tile,MAT.fascia],'Garasje tak sør'));
+  // sectional door (new in 2025), about 5.0 × 2.2 m, nearer the south corner as in the photo
+  garage.add(box(x1-0.01,GA.zc-2.35,x1+0.04,GA.zc+2.65,y,y+2.2,MAT.gtrim,'Garasjeport'));
+  // south side: a door at the west end and two windows
+  garage.add(box(x0+0.5,z1-0.01,x0+1.4,z1+0.04,y,y+1.95,MAT.gtrim,'Garasje dør'));
+  [x0+2.4,x0+4.6].forEach((wx,i)=>{
+    garage.add(box(wx-0.08,z1-0.01,wx+1.08,z1+0.03,y+1.02,y+1.9,MAT.gtrim,'Garasje vindu karm '+(i+1)));
+    garage.add(box(wx,z1+0.02,wx+1.0,z1+0.04,y+1.1,y+1.82,MAT.gglass,'Garasje vindu '+(i+1)));
+  });
+  // white corner boards
+  for(const [cx,sx] of [[x0,-1],[x1,1]]) for(const [cz,sz] of [[z0,-1],[z1,1]]){
+    garage.add(box(Math.min(cx,cx-sx*0.12),Math.min(cz,cz+sz*0.03),Math.max(cx,cx-sx*0.12),Math.max(cz,cz+sz*0.03),y,eave,MAT.gtrim,'Garasje hjørnebord'));
+    garage.add(box(Math.min(cx,cx+sx*0.03),Math.min(cz,cz-sz*0.12),Math.max(cx,cx+sx*0.03),Math.max(cz,cz-sz*0.12),y,eave,MAT.gtrim,'Garasje hjørnebord'));
+  }
+}
+// plot boundary: the registered points of 76/231, placed with the 1:500 map (±0.3 m), as a thin white line on the ground
+MAT.plot=std('#F2F2EE',{roughness:.9});
+{ const P=M.plot; for(let i=0;i<P.length;i++){ const [ax,az]=P[i], [bx,bz]=P[(i+1)%P.length];
+    const g=new THREE.BoxGeometry(Math.hypot(bx-ax,bz-az)+0.05,0.03,0.06);
+    g.rotateY(-Math.atan2(bz-az,bx-ax)); g.translate((ax+bx)/2,-0.245,(az+bz)/2);
+    const m=fin(new THREE.Mesh(g,MAT.plot),'Tomtegrense '+(i+1)); m.castShadow=false; site.add(m); } }
+
+// ---------- floors ----------
+const roomMeshes=[], labels=[], occluders=[], painted=[];
+function frames(o,base,mats,grp,tag,nm){
+  // white exterior frame on the outer face
+  if(o.kind==='door'&&o.head<1.5) return;
+  const f=0.08, pr=0.04; let face, sgn;
+  if(o.axis==='v'){ const west=o.x0<3; face=west?(o.gable?HS.xW:o.x0):o.x1; sgn=west?-1:1; }
+  else { const north=o.z0<5; face=north?(o.gable?HS.zN:o.z0):(o.gable?HS.zS:o.z1); sgn=north?-1:1; }
+  const y0=base+o.sill, y1=base+o.head;
+  const a0=o.axis==='v'?o.z0:o.x0, a1=o.axis==='v'?o.z1:o.x1;
+  const d0=Math.min(face-0.02*sgn,face+pr*sgn), d1=Math.max(face-0.02*sgn,face+pr*sgn);
+  const add=(p0,p1,q0,q1,n)=>grp.add(o.axis==='v'?box(d0,p0,d1,p1,q0,q1,mats.trim,tag+' '+n):box(p0,d0,p1,d1,q0,q1,mats.trim,tag+' '+n));
+  add(a0-f,a0,y0,y1,'karm '+nm+'a'); add(a1,a1+f,y0,y1,'karm '+nm+'b');
+  add(a0-f,a1+f,y1,y1+f,'karm '+nm+'c');
+  if(o.kind==='window'){ add(a0-f,a1+f,y0-f,y0,'karm '+nm+'d'); if(a1-a0>1.5){const c=(a0+a1)/2; add(c-f/2,c+f/2,y0,y1,'post '+nm);} }
+}
+function glassOf(o,base,mat,tag,nm){
+  const t=0.012; let g;
+  if(o.axis==='v'){const cx=(o.x0+o.x1)/2; g=box(cx-t,o.z0,cx+t,o.z1,base+o.sill,base+o.head,mat,tag+' glass '+nm);}
+  else {const cz=o.gable?(o.z0<5?HS.zN+0.1:HS.zS-0.1):(o.z0+o.z1)/2; g=box(o.x0,cz-t,o.x1,cz+t,base+o.sill,base+o.head,mat,tag+' glass '+nm);}
+  g.castShadow=false; return g;
+}
+function wallMesh(grp,m,mats){ m.userData.paint=true; painted.push(m); grp.add(m,edges(m,mats.edge)); return m; }
+function buildFloor(F,grp,base,top,tag){
+  const mats=MAT[tag];
+  const sl=tag==='gf'?prism(F.footprint,-H.slab,H.slab,MAT.slab,'Gulv 1. etasje'):prism([{outer:[[0,0],[HS.xIn,0],[HS.xIn,HS.zIn],[0,HS.zIn]],holes:[F.stairHole]}],base-H.slab,H.slab,MAT.slab,'Etasjeskille');
+  sl.userData.occluder=true; occluders.push(sl); grp.add(sl);
+  const tr=tag==='loft'?TRIM.loft:null;
+  const P_=(poly,y0,h,mat,nm,t)=>t?trimmedPrism(poly,y0,h,mat,nm,t):prism([poly],y0,h,mat,nm);
+  const B_=(x0,z0,x1,z1,y0,y1,mat,nm,t)=>t?trimmedBox(x0,z0,x1,z1,y0,y1,mat,nm,t):box(x0,z0,x1,z1,y0,y1,mat,nm);
+  F.walls.forEach((w,i)=>wallMesh(grp,P_(w,base,top,mats.wall,tag+' vegg '+(i+1),tr),mats));
+  (F.stairWalls||[]).forEach((w,i)=>wallMesh(grp,trimmedPrism(w,base,top,mats.wall,'vegg under trapp '+(i+1),{fn:stairUnder,xs:[],zs:[]}),mats));
+  if(tag==='loft') F.arkWalls.forEach((w,i)=>wallMesh(grp,P_(w,base,AKH,MAT.ark.wall,'ark vegg '+(i+1),TRIM.ark),MAT.ark));
+  F.openings.forEach((o,i)=>{
+    const nm=(o.kind==='door'?'dør ':'vindu ')+(i+1);
+    const ms=o.ark?MAT.ark:mats, hTop=o.ark?AKH:top, ot=o.ark?TRIM.ark:tr;
+    if(!o.gable){
+      if(o.sill>0) wallMesh(grp,box(o.x0,o.z0,o.x1,o.z1,base,base+o.sill,ms.wall,tag+' brystning '+nm),ms);
+      wallMesh(grp,B_(o.x0,o.z0,o.x1,o.z1,base+o.head,base+hTop,ms.wall,tag+' overligger '+nm,ot),ms);
+    }
+    if(o.kind==='window'||(o.kind==='door'&&o.axis==='h'&&tag==='gf')) grp.add(glassOf(o,base,mats.glass,tag,nm));
+    if(o.kind==='door'&&o.axis==='v'&&tag==='gf'){ // front door: solid white leaf
+      const cx=(o.x0+o.x1)/2; grp.add(box(cx-0.03,o.z0,cx+0.03,o.z1,base,base+o.head,mats.trim,'Inngangsdør'));}
+    frames(o,base,mats,grp,tag,nm);
+  });
+  F.lintels.forEach((o,i)=>wallMesh(grp,B_(o.x0,o.z0,o.x1,o.z1,base+2.1,base+top,mats.wall,tag+' innerdør '+(i+1),tr),mats));
+  F.rooms.forEach(r=>{
+    const mat=std(ROOMCOL[r.name]||'#DDDDDD'); mat.userData.base=mat.color.clone();
+    const m=prism(r.poly,base+0.001,0.018,mat,'Rom '+r.name); m.castShadow=false;
+    m.userData.room=r; m.userData.floor=tag; grp.add(m); roomMeshes.push(m);
+    const el=document.createElement('div'); el.className='lbl';
+    el.innerHTML=r.name+'<span>'+r.area.toFixed(1)+'</span>';
+    document.getElementById('labels').appendChild(el);
+    labels.push({el,grp,tag,room:r,pos:new THREE.Vector3(r.cx[0],base+0.9,r.cx[1])});
+  });
+}
+buildFloor(M.ground,gf,0,H.gfTop,'gf');
+buildFloor(M.loft,loft,H.loftBase,3.0,'loft');
+
+// ---------- exterior shell of the loft level ----------
+const Hu=(x)=>R.E-R.t+Math.min(x-HS.xW,HS.xE-x);           // roof underside
+// gable walls with the loft windows cut out: a triangle from where the roof underside crosses the loft floor up to the
+// ridge (the rafters meet the loft floor just inside the outer walls, so the ground-floor walls reach the roof)
+[['N',HS.zN],['S',HS.zS-0.2]].forEach(([side,z0])=>{
+  const b=H.loftBase, d=Math.max(0,b-(R.E-R.t));
+  const sh=new THREE.Shape([new THREE.Vector2(HS.xW+d,b),new THREE.Vector2(HS.xE-d,b),new THREE.Vector2(R.rx,Hu(R.rx))]);
+  M.loft.openings.filter(o=>o.gable&&((side==='N')===(o.z0<5))).forEach(o=>{
+    sh.holes.push(new THREE.Path([new THREE.Vector2(o.x0,b+o.sill),new THREE.Vector2(o.x0,b+o.head),new THREE.Vector2(o.x1,b+o.head),new THREE.Vector2(o.x1,b+o.sill)]));
+  });
+  const g=new THREE.ExtrudeGeometry(sh,{depth:0.2,bevelEnabled:false}); g.translate(0,0,z0);
+  const m=fin(new THREE.Mesh(g,MAT.ext.wall),'Gavl '+side); m.userData.occluder=true; occluders.push(m); wallMesh(loft,m,MAT.ext);
+});
+// corner boards
+const cb=(x,z,y0,y1,grp,mat,n)=>{const w=0.14,p=0.03;
+  const sx=x<3?-1:1, sz=z<5?-1:1;
+  grp.add(box(Math.min(x,x-sx*w),Math.min(z+sz*p,z),Math.max(x,x-sx*w),Math.max(z+sz*p,z),y0,y1,mat,'Hjørnebord '+n+'a'));
+  grp.add(box(Math.min(x+sx*p,x),Math.min(z,z-sz*w),Math.max(x+sx*p,x),Math.max(z,z-sz*w),y0,y1,mat,'Hjørnebord '+n+'b'));};
+[[HS.xW,HS.zN],[HS.xE,HS.zN],[HS.xW,HS.zS],[HS.xE,HS.zS]].forEach(([x,z],i)=>cb(x,z,-0.15,H.gfTop,gf,MAT.gf.trim,i+1));
+[[HS.xW,AK.zN],[HS.xW,AK.zS]].forEach(([x,z],i)=>{const w=0.14,p=0.03,sz=z<5?1:-1;
+  loft.add(box(x-p,Math.min(z,z+sz*w),x,Math.max(z,z+sz*w),H.loftBase,R.Ea-R.ta,MAT.loft.trim,'Hjørnebord ark '+(i+1)));});
+// dormer side walls carry on past the knee wall, above the main roof, until the main roof reaches the dormer eave
+{ const yTop=R.Ea-R.ta, x0=HS.kneeW, x1=yTop-(R.E-R.t)+HS.xW;
+  [[AK.zN+0.005,'nord'],[AK.zS-0.19,'sør']].forEach(([z0,n])=>
+    wallMesh(loft,panel([[x0,HuR(x0)-0.05],[x1,yTop],[x0,yTop]],z0,0.185,MAT.ark.wall,'ark vegg '+n+' over tak'),MAT.ark));
+}
+
+// ---------- roof ----------
+const vx=(z)=>R.Ea+R.k*(R.hw-Math.abs(z-R.zc))-R.E+HS.xW;   // valley line between dormer and main roof
+const zA=AK.zN-R.arkOv, zB=AK.zS+R.arkOv, xe=HS.xW-R.ov, zn=HS.zN-R.gov, zs=HS.zS+R.gov;
+// A 0.25 m slab per slope carries the tiles out to the eaves and verges. Inside the walls a second slab, just under it,
+// makes up the full 0.5 m build-up; it starts 2 cm inside the wall faces so its edges stay hidden in the walls.
+const tw=(x)=>R.E+(x-HS.xW), te=(x)=>R.E+(HS.xE-x), wx=HS.xW+0.02, ex=HS.xE-0.02, nz=HS.zN+0.02, sz=HS.zS-0.02;
+const roofParts=[
+  // the main roof is cut away only between the dormer walls; the dormer's overhang sits above it
+  slab([[xe,zn],[R.rx,zn],[R.rx,zs],[xe,zs],[xe,AK.zS],[vx(AK.zS),AK.zS],[vx(R.zc),R.zc],[vx(AK.zN),AK.zN],[xe,AK.zN]],tw,R.to,[MAT.tile,MAT.fascia],'Tak vest'),
+  slab([[R.rx,zn],[HS.xE+R.ov,zn],[HS.xE+R.ov,zs],[R.rx,zs]],te,R.to,[MAT.tile,MAT.fascia],'Tak øst'),
+  slab([[wx,nz],[R.rx,nz],[R.rx,sz],[wx,sz],[wx,AK.zS],[vx(AK.zS),AK.zS],[vx(R.zc),R.zc],[vx(AK.zN),AK.zN],[wx,AK.zN]],(x)=>tw(x)-0.01,R.t-0.01,[MAT.fascia,MAT.fascia],'Takoppbygg vest'),
+  slab([[R.rx,nz],[ex,nz],[ex,sz],[R.rx,sz]],(x)=>te(x)-0.01,R.t-0.01,[MAT.fascia,MAT.fascia],'Takoppbygg øst'),
+  slab([[R.arkFront,R.zc],[R.arkFront,zA],[vx(zA),zA],[vx(R.zc),R.zc]],(x,z)=>R.Ea+R.k*(R.hw-(R.zc-z)),R.ta,[MAT.tile,MAT.fascia],'Ark nord'),
+  slab([[R.arkFront,R.zc],[vx(R.zc),R.zc],[vx(zB),zB],[R.arkFront,zB]],(x,z)=>R.Ea+R.k*(R.hw-(z-R.zc)),R.ta,[MAT.tile,MAT.fascia],'Ark sør')];
+roofParts.forEach(g=>{roof.add(g); g.traverse(m=>{if(m.isMesh){m.userData.occluder=true;occluders.push(m);}});});
+
+// ---------- fireplace (Stue photos; no furniture) ----------
+// Stone-clad column where the sketch draws the flue, stone on the north wall behind the stove, a rendered corner
+// stove in the corner between the column and that wall, a black hearth plate, and a white beam resting on the column.
+// Stove heights read off the photos: about 1.45 m tall, hearth ledge at 0.42 m.
+MAT.stone=std('#7E6448',{roughness:.95}); MAT.stoneL=std('#7E6448',{roughness:.95});
+MAT.render=std('#8E8B86',{roughness:.95}); MAT.hearth=std('#2A2C2E',{roughness:.6}); MAT.beam=std('#F4F3EF',{roughness:.7});
+{ const F=M.fire, [c0,c1]=F.column, C={x:c1[0]+0.005,z:F.corner[1]+0.04};   // stove corner, in front of the stone
+  gf.add(box(c0[0]-0.01,F.corner[1],C.x,c1[1]+0.01,0,H.ceil,MAT.stone,'Peismur'));
+  gf.add(box(c1[0],F.corner[1],F.cladTo,C.z,0,H.ceil,MAT.stone,'Peismur bak ovn'));
+  gf.add(box(c0[0]-0.13,F.corner[1],c0[0]+0.13,HS.zIn,H.ceil-0.25,H.ceil,MAT.beam,'Bjelke'));
+  const q=(rt,rb,y0,y1,mat,name,t0=0,tl=Math.PI/2,seg=24)=>{   // quarter (or part) round, filling the corner
+    const g=new THREE.CylinderGeometry(rt,rb,y1-y0,seg,1,false,t0,tl); g.translate(C.x,(y0+y1)/2,C.z); return fin(new THREE.Mesh(g,mat),name);};
+  gf.add(q(0.54,0.54,0.03,0.40,MAT.render,'Peisovn sokkel'), q(0.63,0.63,0.40,0.45,MAT.hearth,'Peisovn hylle'),
+         q(0.50,0.50,0.45,0.83,MAT.render,'Peisovn brennkammer'), q(0.53,0.53,0.47,0.80,MAT.stove,'Peisinnsats',Math.PI/4-0.45,0.9,4),
+         q(0.62,0.62,0.83,0.96,MAT.render,'Peisovn krage'), q(0.44,0.54,0.96,1.45,MAT.render,'Peisovn hette'));
+  const [a,b]=F.hearth, pl=[[F.corner[0],F.corner[1]]];
+  for(let i=0;i<=16;i++){const t=i/16*Math.PI/2; pl.push([F.corner[0]+a*Math.cos(t),F.corner[1]+b*Math.sin(t)]);}
+  const plate=prism([{outer:pl,holes:[]}],0.02,0.012,MAT.hearth,'Peisplate'); plate.castShadow=false; gf.add(plate);
+}
+// chimney through the loft (stone-clad, as in the Soverom 4 photo) and out through the roof
+const ch=M.chimney, chTop=H.loftBase+H.ceilL;
+loft.add(box(ch[0][0],ch[0][1],ch[2][0],ch[2][1],H.loftBase-H.slab,chTop,MAT.stoneL,'Pipe loft'));
+const chim=box(ch[0][0],ch[0][1],ch[2][0],ch[2][1],chTop,R.E+(R.rx-HS.xW)+0.9,MAT.chimney,'Pipe');
+chim.userData.occluder=true; occluders.push(chim); loft.add(chim);
+
+// stair: 16 risers, 15 treads
+const rise=H.loftBase/16;
+M.stair.forEach((t,i)=>{
+  const top=(i+1)*rise, bot=Math.max(0,top-0.22);
+  const m=prism([{outer:t,holes:[]}],bot,top-bot,MAT.stair,'Trinn '+(i+1));
+  stairG.add(m,edges(m,MAT.gf.edge));
+});
+
+// ---------- red cladding outside, white inside ----------
+function interior(x,y,z){
+  if(y<H.loftBase) return x>0.005&&x<HS.xIn-0.005&&z>0.005&&z<HS.zIn-0.005;
+  if(z>AK.zN&&z<AK.zS&&x>AK.x&&x<vx(z)) return true;                     // under the dormer roof
+  return x>HS.kneeW&&x<HS.kneeE&&z>0&&z<HS.zIn&&y<HuR(x);                // under the main roof
+}
+const _a=new THREE.Vector3(),_b=new THREE.Vector3(),_c=new THREE.Vector3(),_n=new THREE.Vector3(),_p=new THREE.Vector3();
+painted.forEach(m=>{
+  let g=m.geometry.index?m.geometry.toNonIndexed():m.geometry; m.geometry=g;
+  const P=g.attributes.position, C=new Float32Array(P.count*3);
+  for(let i=0;i<P.count;i+=3){
+    _a.fromBufferAttribute(P,i);_b.fromBufferAttribute(P,i+1);_c.fromBufferAttribute(P,i+2);
+    _n.subVectors(_c,_b).cross(_p.subVectors(_a,_b)).normalize();
+    _p.copy(_a).add(_b).add(_c).divideScalar(3).addScaledVector(_n,0.05);
+    const col=(Math.abs(_n.y)<0.5&&!interior(_p.x,_p.y,_p.z))?RED:WHITE;
+    for(let k=0;k<3;k++) C.set([col.r,col.g,col.b],(i+k)*3);
+  }
+  g.setAttribute('color',new THREE.BufferAttribute(C,3));
+});
+
+// ---------- merge static meshes: one mesh per group, material and shadow setting ----------
+// Cuts draw calls several-fold and gives the .glb a short, named object list. Rooms, occluders and plan sheets stay separate.
+const MATNAMES={slab:'Etasjeskiller',stair:'Trapp',terrace:'Terrasse',rail:'Rekkverk',chimney:'Pipe',stove:'Peisinnsats',ground:'Terreng',
+  stone:'Skifer peismur',stoneL:'Skifer pipe loft',render:'Peisovn',hearth:'Peisplate',beam:'Bjelke',
+  tile:'Takstein',shingle:'Takshingel overbygg',fascia:'Vindski',red:'Kledning overbygg',wood:'Panel overbygg',rafter:'Sperrer overbygg',
+  garage:'Kledning garasje',gtrim:'Port og karmer garasje',gglass:'Glass garasje',plot:'Tomtegrense'};
+Object.entries(MAT).forEach(([k,m])=>{
+  if(m.isMaterial){m.name=MATNAMES[k]||k;return;}
+  Object.entries(m).forEach(([kk,mm])=>{mm.name={wall:'Vegger',glass:'Glass',trim:'Karmer',edge:'Kanter'}[kk]+' '+{gf:'1. etasje',loft:'loft',ark:'ark',ext:'loft ute'}[k];});
+});
+function mergeStatic(roots){
+  scene.updateMatrixWorld(true);
+  const buckets=new Map(), inv=new THREE.Matrix4(), rel=new THREE.Matrix4();
+  roots.forEach(root=>root.traverse(o=>{
+    if(!(o.isMesh||o.isLineSegments)||o.userData.room||o.userData.occluder||(o.isMesh&&o.userData.noExport)) return;
+    let r=o.parent; while(r&&!roots.includes(r)) r=r.parent;
+    if(r!==root) return;
+    const key=[root.uuid,o.material.uuid,o.isLineSegments,o.castShadow,o.receiveShadow].join();
+    if(!buckets.has(key)) buckets.set(key,{root,list:[]});
+    buckets.get(key).list.push(o);
+  }));
+  const cat=(arrs)=>{const out=new Float32Array(arrs.reduce((a,b)=>a+b.length,0)); let i=0; arrs.forEach(a=>{out.set(a,i);i+=a.length;}); return new THREE.BufferAttribute(out,3);};
+  buckets.forEach(({root,list})=>{
+    if(list.length<2) return;
+    const o0=list[0], line=o0.isLineSegments, col=!line&&o0.material.vertexColors, pos=[], nor=[], cl=[];
+    inv.copy(root.matrixWorld).invert();
+    list.forEach(o=>{
+      const g=o.geometry.index?o.geometry.toNonIndexed():o.geometry.clone();
+      g.applyMatrix4(rel.multiplyMatrices(inv,o.matrixWorld));
+      pos.push(g.attributes.position.array);
+      if(!line) nor.push(g.attributes.normal.array);
+      if(col) cl.push(g.attributes.color?g.attributes.color.array:new Float32Array(g.attributes.position.count*3).fill(1));
+      o.parent.remove(o); o.geometry.dispose(); g.dispose();
+    });
+    const g=new THREE.BufferGeometry(); g.setAttribute('position',cat(pos));
+    if(!line) g.setAttribute('normal',cat(nor));
+    if(col) g.setAttribute('color',cat(cl));
+    const m=line?new THREE.LineSegments(g,o0.material):new THREE.Mesh(g,o0.material);
+    m.name=o0.material.name; m.castShadow=o0.castShadow; m.receiveShadow=o0.receiveShadow; m.userData.noExport=!!o0.userData.noExport;
+    root.add(m);
+  });
+  roots.forEach(root=>{const empty=[]; root.traverse(o=>{if(o.isGroup&&!roots.includes(o)&&!o.children.length) empty.push(o);}); empty.forEach(o=>o.parent.remove(o));});
+}
+mergeStatic([site,shedRoof,garage,gf,loft,roof,stairG]);
+
+// scanned plans as paper on the floors
+const planMeshes=[];
+function planPlane(p,y,grp,name){
+  const tex=new THREE.TextureLoader().load(p.src,redraw); tex.encoding=THREE.sRGBEncoding; tex.anisotropy=4;
+  const w=p.x1-p.x0,d=p.z1-p.z0;
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(w,d),new THREE.MeshBasicMaterial({map:tex,transparent:true,opacity:.96,toneMapped:false}));
+  m.rotation.x=-Math.PI/2; m.position.set(p.x0+w/2,y,p.z0+d/2); m.visible=false; m.name=name; m.userData.noExport=true;
+  grp.add(m); planMeshes.push(m);
+}
+planPlane(PL.ground,0.03,gf,'Plan 1. etasje');
+planPlane(PL.loft,H.loftBase+0.03,loft,'Plan loft');
+
+// ---------- clipping: loft walls follow the roof ----------
+const s2=Math.SQRT2, kL=Math.hypot(1,R.k);
+const P={w:new THREE.Plane(),e:new THREE.Plane(),c:new THREE.Plane(),an:new THREE.Plane(),as:new THREE.Plane(),
+  cutG:new THREE.Plane(new THREE.Vector3(0,-1,0),1.2),cutL:new THREE.Plane()};
+function updatePlanes(oy){
+  P.w.set(new THREE.Vector3(1/s2,-1/s2,0),(R.E-R.t-HS.xW+oy)/s2);
+  P.e.set(new THREE.Vector3(-1/s2,-1/s2,0),(R.E-R.t+HS.xE+oy)/s2);
+  P.c.set(new THREE.Vector3(0,-1,0),H.loftBase+H.ceilL+oy);
+  P.an.set(new THREE.Vector3(0,-1/kL,R.k/kL),(R.Ea-R.ta+R.k*R.hw-R.k*R.zc+oy)/kL);
+  P.as.set(new THREE.Vector3(0,-1/kL,-R.k/kL),(R.Ea-R.ta+R.k*R.hw+R.k*R.zc+oy)/kL);
+  P.cutL.set(new THREE.Vector3(0,-1,0),oy+H.loftBase+1.2);
+}
+function clip(mats,planes){mats.forEach(m=>{m.clippingPlanes=planes;m.needsUpdate=true;});}
+
+// ---------- state ----------
+const state={floor:'outside',cam:'3d',cut:false,plans:false,labels:true,selected:null};
+function applyFloors(){
+  const f=state.floor, side=(f==='exploded'&&state.cam==='plan');
+  gf.visible=stairG.visible=(f!=='loft');
+  loft.visible=(f!=='ground');
+  roof.visible=shedRoof.visible=(f==='outside'&&!state.cut);
+  loftRoot.position.set(side?SIDE:0,side?-H.loftBase:(f==='exploded'?H.explode:0),0);
+  const oy=loftRoot.position.y; updatePlanes(oy);
+  const cg=state.cut?[P.cutG]:[], cl=state.cut?[P.cutL]:[];
+  clip([MAT.gf.wall,MAT.gf.glass,MAT.gf.edge,MAT.gf.trim,MAT.stone,MAT.render,MAT.beam],cg);
+  clip([MAT.loft.wall,MAT.loft.edge,MAT.ark.wall,MAT.ark.edge,MAT.ext.wall,MAT.ext.edge],cl);
+  clip([MAT.loft.glass,MAT.loft.trim,MAT.ark.glass,MAT.ark.trim,MAT.chimney,MAT.stoneL],cl);
+  redraw();
+}
+function applyPlans(){
+  planMeshes.forEach(m=>m.visible=state.plans);
+  roomMeshes.forEach(m=>m.visible=!state.plans);
+  redraw();
+}
+function labelVisible(L){
+  if(!state.labels||!L.grp.visible) return false;
+  if(state.floor==='outside') return L.tag==='loft'&&state.cut;
+  return true;
+}
+
+// label occlusion by floors, roof and gables
+function shown(o){while(o){if(!o.visible)return false;o=o.parent;}return true;}
+const occRay=new THREE.Raycaster(); let occTick=0;
+function updateOcclusion(){
+  const cam=camera.position, list=occluders.filter(shown), p=new THREE.Vector3();
+  labels.forEach(L=>{
+    if(!labelVisible(L)){L.occ=false;return;}
+    p.copy(L.pos); L.grp.localToWorld(p);
+    const d=p.distanceTo(cam); occRay.set(cam,p.clone().sub(cam).normalize()); occRay.far=d-0.1;
+    L.occ=occRay.intersectObjects(list,false).some(h=>{
+      const pl=h.object.material.clippingPlanes||(Array.isArray(h.object.material)?null:null);
+      return !(pl&&pl.length&&pl.some(q=>q.distanceToPoint(h.point)<0));
+    });
+  });
+}
+
+// ---------- camera ----------
+function camTarget(){
+  const aspect=stage.clientWidth/Math.max(stage.clientHeight,1);
+  const t=Math.tan(THREE.MathUtils.degToRad(camera.fov/2));
+  if(state.cam==='plan'){
+    const exp=state.floor==='exploded';
+    const cx=exp?3.7+SIDE/2:3.9, cz=8.0;
+    const halfD=exp?9.0:9.4, halfW=exp?11.4:6.4;
+    const dist=Math.max(halfD/t,(halfW/aspect)/t)*1.08;
+    return {pos:new THREE.Vector3(cx,dist,cz+0.02),tgt:new THREE.Vector3(cx,0,cz),rot:false};
+  }
+  const f=state.floor;
+  const tgt=new THREE.Vector3(3.9,f==='exploded'?2.8:f==='loft'?3.2:f==='outside'?2.6:1.2,7.6);
+  const dir=f==='outside'?new THREE.Vector3(-0.72,0.42,0.56).normalize():new THREE.Vector3(-0.55,0.62,0.56).normalize();
+  const span=f==='exploded'?15.5:14;
+  const dist=Math.max(span/t,(span*(aspect<1?0.95:1.15)/aspect)/t)*0.72;
+  return {pos:tgt.clone().add(dir.multiplyScalar(dist)),tgt,rot:true};
+}
+let tween=null;
+function goCam(instant){
+  const c=camTarget(); controls.enableRotate=c.rot;
+  if(instant||reduce){camera.position.copy(c.pos);controls.target.copy(c.tgt);controls.update();return;}
+  tween={t0:performance.now(),p0:camera.position.clone(),q0:controls.target.clone(),p1:c.pos,q1:c.tgt};
+}
+
+// ---------- selection ----------
+const selBox=document.getElementById('selbox');
+const HINT='<div class="t">Tap a room</div><div class="s">Pick 1. etasje, Loft or Exploded to see inside. Drag to orbit, scroll or pinch to zoom, right-drag to pan.</div>';
+selBox.innerHTML=HINT;
+function accentColor(){return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#2D6C8C';}
+function select(mesh){
+  redraw();
+  roomMeshes.forEach(m=>m.material.color.copy(m.material.userData.base));
+  document.querySelectorAll('tr.room').forEach(tr=>tr.classList.toggle('sel',!!mesh&&tr.dataset.id===mesh.uuid));
+  labels.forEach(L=>L.el.classList.toggle('sel',!!mesh&&L.room===mesh.userData.room));
+  state.selected=mesh;
+  if(!mesh){selBox.innerHTML=HINT;return;}
+  mesh.material.color.set(accentColor()).lerp(mesh.material.userData.base,0.45);
+  const r=mesh.userData.room, fl=mesh.userData.floor==='gf'?'1. etasje':'Loft';
+  const extra=r.area_net?' · '+r.area_net.toFixed(1)+' m² excluding the stair opening':'';
+  selBox.innerHTML='<div class="t">'+r.name+'</div><div class="s">'+fl+' · '+r.area.toFixed(1)+' m² traced'+extra+'</div>';
+  const f=state.floor;
+  if(mesh.userData.floor==='gf'&&(f==='loft'||f==='outside')) setFloor('ground');
+  if(mesh.userData.floor==='loft'&&(f==='ground'||(f==='outside'&&!state.cut))) setFloor('loft');
+}
+const ray=new THREE.Raycaster(); const ptr=new THREE.Vector2(); let down=null;
+canvas.addEventListener('pointerdown',e=>{down=[e.clientX,e.clientY];});
+canvas.addEventListener('pointerup',e=>{
+  if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>5) return;
+  const r=canvas.getBoundingClientRect();
+  ptr.set(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
+  ray.setFromCamera(ptr,camera);
+  const hit=ray.intersectObjects([...roomMeshes,...occluders].filter(shown),false)[0];
+  select(hit&&hit.object.userData.room?hit.object:null);
+});
+
+// ---------- rooms table ----------
+const tb=document.querySelector('#rooms tbody');
+[['1. etasje','gf'],['Loft','loft']].forEach(([title,tag])=>{
+  const ms=roomMeshes.filter(m=>m.userData.floor===tag);
+  tb.insertAdjacentHTML('beforeend','<tr><th colspan="2">'+title+'</th></tr>');
+  ms.forEach(m=>{
+    const tr=document.createElement('tr'); tr.className='room'; tr.dataset.id=m.uuid; tr.tabIndex=0;
+    tr.innerHTML='<td><span class="sw" style="background:'+(ROOMCOL[m.userData.room.name]||'#ddd')+'"></span>'+m.userData.room.name+'</td><td class="n">'+m.userData.room.area.toFixed(1)+'</td>';
+    const go=()=>select(state.selected===m?null:m);
+    tr.addEventListener('click',go); tr.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go();}});
+    tb.appendChild(tr);
+  });
+  const sum=ms.reduce((a,m)=>a+m.userData.room.area,0);
+  tb.insertAdjacentHTML('beforeend','<tr class="sum"><td>Total</td><td class="n">'+sum.toFixed(1)+'</td></tr>');
+});
+
+// ---------- controls wiring ----------
+function press(sel,val,attr){document.querySelectorAll(sel).forEach(b=>b.setAttribute('aria-pressed',String(b.dataset[attr]===val)));}
+function setFloor(f){state.floor=f;press('[data-floor]',f,'floor');applyFloors();goCam();}
+document.querySelectorAll('[data-floor]').forEach(b=>b.addEventListener('click',()=>setFloor(b.dataset.floor)));
+document.querySelectorAll('[data-cam]').forEach(b=>b.addEventListener('click',()=>{state.cam=b.dataset.cam;press('[data-cam]',state.cam,'cam');applyFloors();goCam();}));
+function toggle(id,key,fn){const b=document.getElementById(id);b.addEventListener('click',()=>{state[key]=!state[key];b.setAttribute('aria-pressed',String(state[key]));fn&&fn();redraw();});}
+toggle('tCut','cut',applyFloors); toggle('tPlan','plans',applyPlans); toggle('tLbl','labels');
+
+// ---------- theme ----------
+function applyTheme(){
+  const s=getComputedStyle(document.documentElement);
+  scene.background=new THREE.Color(s.getPropertyValue('--scene').trim()||'#E4E8E6');
+  const dark=scene.background.getHSL({}).l<0.3;
+  MAT.ground.color.set(dark?'#262E2C':'#B3BCB2'); scene.fog=new THREE.Fog(scene.background,50,110);
+  if(state.selected) select(state.selected);
+  redraw();
+}
+new MutationObserver(applyTheme).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyTheme);
+
+// ---------- loop ----------
+const needle=document.getElementById('needle');
+const NB=THREE.MathUtils.degToRad(M.north_bearing_of_plan_up);   // plan-up is this far east of true north
+const NORTH=new THREE.Vector3(-Math.sin(NB),0,-Math.cos(NB));
+const v=new THREE.Vector3(), v2=new THREE.Vector3();
+function resize(){
+  const w=stage.clientWidth,h=stage.clientHeight; if(!w||!h) return;
+  renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); redraw();
+}
+new ResizeObserver(resize).observe(stage);
+let wasMoving=false;
+function frame(){
+  requestAnimationFrame(frame);
+  let moving=!!tween;
+  if(tween){
+    const u=Math.min(1,(performance.now()-tween.t0)/650), k=1-Math.pow(1-u,3);
+    camera.position.lerpVectors(tween.p0,tween.p1,k); controls.target.lerpVectors(tween.q0,tween.q1,k);
+    if(u>=1) tween=null;
+  }
+  if(controls.update()) moving=true;            // true while damping is still settling
+  if(wasMoving&&!moving) dirty=true;            // one last full update once the camera stops
+  wasMoving=moving;
+  if(!moving&&!dirty) return;                   // nothing changed: skip the frame
+  dirty=false;
+  renderer.render(scene,camera);
+  if(!moving||(occTick++%4)===0) updateOcclusion();
+  const w=stage.clientWidth,h=stage.clientHeight;
+  labels.forEach(L=>{
+    if(!labelVisible(L)||L.occ){L.el.hidden=true;return;}
+    v.copy(L.pos); L.grp.localToWorld(v); v.project(camera);
+    if(v.z>1||Math.abs(v.x)>1.1||Math.abs(v.y)>1.1){L.el.hidden=true;return;}
+    L.el.hidden=false; L.el.style.transform='translate('+((v.x+1)/2*w).toFixed(1)+'px,'+((1-v.y)/2*h).toFixed(1)+'px) translate(-50%,-50%)';
+  });
+  v.copy(controls.target).project(camera); v2.copy(controls.target).add(NORTH).project(camera);
+  const ang=Math.atan2((v2.x-v.x)*w,(v2.y-v.y)*h);
+  needle.setAttribute('transform','rotate('+(ang*180/Math.PI).toFixed(1)+')');
+}
+if(stage.clientWidth<520){state.labels=false;document.getElementById('tLbl').setAttribute('aria-pressed','false');}
+resize(); applyTheme(); applyFloors(); applyPlans(); goCam(true);
+requestAnimationFrame(frame);
+window.__twin={camera,controls,scene,renderer,THREE,gf,loft,loftRoot,roof,stairG,site,state,setFloor,select,roomMeshes,applyFloors};
+})();
+</script>
