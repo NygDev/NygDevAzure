@@ -484,16 +484,17 @@ function panel(pts,z0,d,mat,name){
   g.translate(0,0,z0); return fin(new THREE.Mesh(g,mat),name);
 }
 const U=SH.under, xH=HS.xE;
+// the walls stand on the deck (top at -0.06), flush with its edges, instead of running through it to the ground
 // south end: open from the corner post to under the ridge, closed under the long slope
-const southPts=[[SH.xr,-0.25],[SH.xe,-0.25],[SH.xe,U(SH.xe)],[SH.xr,U(SH.xr)]];
+const southPts=[[SH.xr,-0.06],[SH.xe,-0.06],[SH.xe,U(SH.xe)],[SH.xr,U(SH.xr)]];
 site.add(panel(southPts,SH.z1-0.1,0.1,MAT.red,'Overbygg vegg sør'));
-site.add(panel(southPts.map(([x,y])=>[x,Math.max(y,-0.06)]),SH.z1-0.12,0.02,MAT.wood,'Overbygg panel sør'));
+site.add(panel(southPts,SH.z1-0.12,0.02,MAT.wood,'Overbygg panel sør'));
 // north end beyond the house corner
-const northPts=[[xH,-0.25],[SH.xe,-0.25],[SH.xe,U(SH.xe)],...(xH<SH.xr?[[SH.xr,U(SH.xr)]]:[]),[xH,U(xH)]];
+const northPts=[[xH,-0.06],[SH.xe,-0.06],[SH.xe,U(SH.xe)],...(xH<SH.xr?[[SH.xr,U(SH.xr)]]:[]),[xH,U(xH)]];
 site.add(panel(northPts,SH.z0,0.1,MAT.red,'Overbygg vegg nord'));
-site.add(panel(northPts.map(([x,y])=>[x,Math.max(y,-0.06)]),SH.z0+0.1,0.02,MAT.wood,'Overbygg panel nord'));
+site.add(panel(northPts,SH.z0+0.1,0.02,MAT.wood,'Overbygg panel nord'));
 // low back wall on the east
-site.add(box(SH.xe-0.12,SH.z0,SH.xe,SH.z1,-0.25,U(SH.xe),MAT.red,'Overbygg vegg øst'));
+site.add(box(SH.xe-0.12,SH.z0,SH.xe,SH.z1,-0.06,U(SH.xe),MAT.red,'Overbygg vegg øst'));
 site.add(box(SH.xe-0.14,SH.z0+0.1,SH.xe-0.12,SH.z1-0.12,-0.06,U(SH.xe),MAT.wood,'Overbygg panel øst'));
 // corner post at the open south-west corner
 site.add(box(SH.xw-0.05,SH.z1-0.12,SH.xw+0.07,SH.z1,-0.06,U(SH.xw),MAT.fascia,'Overbygg stolpe'));
