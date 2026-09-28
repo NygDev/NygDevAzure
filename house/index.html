@@ -649,7 +649,7 @@ MAT.render=std('#8E8B86',{roughness:.95}); MAT.hearth=std('#2A2C2E',{roughness:.
 { const F=M.fire, [c0,c1]=F.column, C={x:c1[0]+0.005,z:F.corner[1]+0.04};   // stove corner, in front of the stone
   gf.add(box(c0[0]-0.01,F.corner[1],C.x,c1[1]+0.01,0,H.ceil,MAT.stone,'Peismur'));
   gf.add(box(c1[0],F.corner[1],F.cladTo,C.z,0,H.ceil,MAT.stone,'Peismur bak ovn'));
-  gf.add(box(c0[0]-0.13,F.corner[1],c0[0]+0.13,HS.zIn,H.ceil-0.25,H.ceil,MAT.beam,'Bjelke'));
+  gf.add(box(c0[0]-0.13,c1[1]+0.01,c0[0]+0.13,HS.zIn,H.ceil-0.25,H.ceil,MAT.beam,'Bjelke'));   // butts against the column's south face
   const q=(rt,rb,y0,y1,mat,name,t0=0,tl=Math.PI/2,seg=24)=>{   // quarter (or part) round, filling the corner
     const g=new THREE.CylinderGeometry(rt,rb,y1-y0,seg,1,false,t0,tl); g.translate(C.x,(y0+y1)/2,C.z); return fin(new THREE.Mesh(g,mat),name);};
   gf.add(q(0.54,0.54,0.03,0.40,MAT.render,'Peisovn sokkel'), q(0.63,0.63,0.40,0.45,MAT.hearth,'Peisovn hylle'),
