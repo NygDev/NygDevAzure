@@ -83,19 +83,20 @@
             <li>2025: garage door</li>
             <li>2026: awning</li>
           </ul></dd>
-        <dt>Condition</dt><dd>Anticimex, September 2026. No item got TG3. These got TG2:
+        <dt>Condition</dt><dd>Anticimex, September 2026. No item got TG3. These got TG2. Where an item is in one place, tap the place to see it in the model:
           <ul>
-            <li>bathroom: grout cracks, leak safety at the door, and an ageing membrane</li>
-            <li>copper water pipes and the manifold cabinet</li>
-            <li>ventilation</li>
-            <li>stair: wear, and a handrail on one side only</li>
-            <li>floors: up to 18 mm out of level in the entré, and some cracked tiles</li>
+            <li>bathroom: grout cracks, leak safety at the door, and an ageing membrane <button class="spot" data-spot="bad" aria-pressed="false">Bad</button></li>
+            <li>manifold cabinet: no splash guard <button class="spot" data-spot="vask" aria-pressed="false">Vaskerom</button></li>
+            <li>ventilation: the extract fan in the kitchen hood is old <button class="spot" data-spot="kjokken" aria-pressed="false">Kjøkken</button></li>
+            <li>stair: wear, and a handrail on one side only <button class="spot" data-spot="trapp" aria-pressed="false">Trapp</button></li>
+            <li>floors: up to 18 mm out of level, and some cracked tiles <button class="spot" data-spot="entre" aria-pressed="false">Entré</button></li>
+            <li>stains in the cold loft <button class="spot" data-spot="kaldloft" aria-pressed="false">Kaldloft</button></li>
+            <li>chimney: no fire plate under the soot door <button class="spot" data-spot="pipe" aria-pressed="false">Pipe</button></li>
+            <li>garage roof <button class="spot" data-spot="garasje" aria-pressed="false">Garasje</button></li>
+            <li>copper water pipes, throughout the house</li>
             <li>roof tiles and underlay</li>
             <li>drainage and the outdoor water pipe</li>
             <li>windows and the front door: worn paint</li>
-            <li>stains in the cold loft</li>
-            <li>chimney: no fire plate under the soot door</li>
-            <li>garage roof</li>
           </ul>
           An electrician should check the wiring.</dd>
       </dl>
@@ -132,10 +133,31 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
 <script>
-(function(){
+(async function(){
 if(!window.THREE){document.getElementById('stage').insertAdjacentHTML('beforeend','<div class="err">The 3D library could not load. Check your connection and reload.</div>');return;}
 const M=JSON.parse(document.getElementById('model').textContent);
 const PL=JSON.parse(document.getElementById('plans').textContent);
+const ROOMCOL={'Bad':'#AFC6D2','Vaskerom':'#AFC6D2','Entré':'#C9C6BC','Kjøkken':'#DCC7A6','Stue':'#D3CFB0',
+  'Soverom':'#DDC3B3','Soverom 2':'#DDC3B3','Soverom 3':'#DDC3B3','Soverom 4':'#DDC3B3','Loftstue':'#D3CFB0','Bod':'#C4BCAE'};
+let ready=false;   // true once the 3D scene exists; clicks before that do nothing
+
+// ---------- rooms table: filled before the first paint, so the panel doesn't shift when the model appears ----------
+const tb=document.querySelector('#rooms tbody'), rows=[];
+[['1. etasje',M.ground.rooms],['Loft',M.loft.rooms]].forEach(([title,rooms])=>{
+  tb.insertAdjacentHTML('beforeend','<tr><th colspan="2">'+title+'</th></tr>');
+  rooms.forEach(r=>{
+    const tr=document.createElement('tr'); tr.className='room'; tr.tabIndex=0;
+    tr.innerHTML='<td><span class="sw" style="background:'+(ROOMCOL[r.name]||'#ddd')+'"></span>'+r.name+'</td><td class="n">'+r.area.toFixed(1)+'</td>';
+    const go=()=>{ if(!ready) return; const m=roomMeshes.find(m=>m.userData.room===r); setSpot(null); select(state.selected===m?null:m); };
+    tr.addEventListener('click',go); tr.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go();}});
+    tb.appendChild(tr); rows.push({tr,r});
+  });
+  tb.insertAdjacentHTML('beforeend','<tr class="sum"><td>Total</td><td class="n">'+rooms.reduce((a,r)=>a+r.area,0).toFixed(1)+'</td></tr>');
+});
+// Let the panel paint first; building the scene takes a few hundred ms on a phone. The timeout covers pages
+// that start hidden, where requestAnimationFrame waits until they are shown.
+await new Promise(r=>{requestAnimationFrame(()=>setTimeout(r)); setTimeout(r,120);});
+
 const HS=M.house, AK=M.ark;
 // heights (m above ground-floor floor level). Ground-floor ceiling 2.36 m, as Anticimex measured it (2026);
 // the loft floor structure is 0.27 m, as in the 1993 section; flat loft ceiling at the collar ties, 2.40 m.
@@ -161,18 +183,23 @@ const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
 // ---------- renderer ----------
 const canvas=document.getElementById('view'), stage=document.getElementById('stage');
 if(THREE.ColorManagement) THREE.ColorManagement.legacyMode=false;
-const renderer=new THREE.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+let DPR=Math.min(devicePixelRatio,2);
+renderer.setPixelRatio(DPR);
 renderer.localClippingEnabled=true;
 renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+// the sun and the model don't move, so the shadow map is only redrawn when applyFloors() changes what is shown
+renderer.shadowMap.autoUpdate=false;
 renderer.outputEncoding=THREE.sRGBEncoding;
 const scene=new THREE.Scene();
 const camera=new THREE.PerspectiveCamera(38,1,0.1,400);
 const controls=new THREE.OrbitControls(camera,canvas);
 controls.enableDamping=!reduce; controls.dampingFactor=0.12; controls.maxPolarAngle=Math.PI*0.495;
 controls.minDistance=3; controls.maxDistance=90;
-// render on demand: only while the camera moves or after something changed
-let dirty=true; const redraw=()=>{dirty=true;};
+// render on demand: the loop runs only while the camera moves or after something changed, and sleeps otherwise
+let dirty=true, raf=0;
+const kick=()=>{if(!raf) raf=requestAnimationFrame(frame);};
+const redraw=()=>{dirty=true;kick();};
 controls.addEventListener('change',redraw);
 
 scene.add(new THREE.HemisphereLight(0xffffff,0x9c9588,0.55));
@@ -247,8 +274,6 @@ function edges(mesh,mat){
 const std=(c,o={})=>new THREE.MeshStandardMaterial(Object.assign({color:c,roughness:.92,metalness:0,clipShadows:true},o));
 
 // ---------- materials ----------
-const ROOMCOL={'Bad':'#AFC6D2','Vaskerom':'#AFC6D2','Entré':'#C9C6BC','Kjøkken':'#DCC7A6','Stue':'#D3CFB0',
-  'Soverom':'#DDC3B3','Soverom 2':'#DDC3B3','Soverom 3':'#DDC3B3','Soverom 4':'#DDC3B3','Loftstue':'#D3CFB0','Bod':'#C4BCAE'};
 const RED=new THREE.Color('#A3312A'), WHITE=new THREE.Color('#EFECE5');
 function set(){return{wall:std('#ffffff',{vertexColors:true}),glass:std('#8FB9CE',{transparent:true,opacity:.42,roughness:.15,depthWrite:false}),
   trim:std('#F4F3EF',{roughness:.7}),edge:new THREE.LineBasicMaterial({color:0x243033,transparent:true,opacity:.6})};}
@@ -585,7 +610,8 @@ function updatePlanes(oy){
   P.as.set(new THREE.Vector3(0,-1/kL,-R.k/kL),(R.Ea-R.ta+R.k*R.hw+R.k*R.zc+oy)/kL);
   P.cutL.set(new THREE.Vector3(0,-1,0),oy+H.loftBase+1.2);
 }
-function clip(mats,planes){mats.forEach(m=>{m.clippingPlanes=planes;m.needsUpdate=true;});}
+// recompile a material only when its number of planes changes; moving a plane is just a uniform
+function clip(mats,planes){mats.forEach(m=>{if((m.clippingPlanes||[]).length!==planes.length) m.needsUpdate=true; m.clippingPlanes=planes;});}
 
 // ---------- state ----------
 const state={floor:'outside',cam:'3d',cut:false,plans:false,labels:true,selected:null};
@@ -600,6 +626,7 @@ function applyFloors(){
   clip([MAT.gf.wall,MAT.gf.glass,MAT.gf.edge,MAT.gf.trim,MAT.stone,MAT.render,MAT.beam],cg);
   clip([MAT.loft.wall,MAT.loft.edge,MAT.ark.wall,MAT.ark.edge,MAT.ext.wall,MAT.ext.edge],cl);
   clip([MAT.loft.glass,MAT.loft.trim,MAT.ark.glass,MAT.ark.trim,MAT.chimney,MAT.stoneL],cl);
+  renderer.shadowMap.needsUpdate=true;
   redraw();
 }
 function applyPlans(){
@@ -648,11 +675,11 @@ function camTarget(){
   return {pos:tgt.clone().add(dir.multiplyScalar(dist)),tgt,rot:true};
 }
 let tween=null;
-function goCam(instant){
-  const c=camTarget(); controls.enableRotate=c.rot;
+function flyTo(c,instant){
   if(instant||reduce){camera.position.copy(c.pos);controls.target.copy(c.tgt);controls.update();return;}
-  tween={t0:performance.now(),p0:camera.position.clone(),q0:controls.target.clone(),p1:c.pos,q1:c.tgt};
+  tween={t0:performance.now(),p0:camera.position.clone(),q0:controls.target.clone(),p1:c.pos,q1:c.tgt}; kick();
 }
+function goCam(instant){const c=camTarget(); controls.enableRotate=c.rot; flyTo(c,instant);}
 
 // ---------- selection ----------
 const selBox=document.getElementById('selbox');
@@ -662,14 +689,16 @@ function accentColor(){return getComputedStyle(document.documentElement).getProp
 function select(mesh){
   redraw();
   roomMeshes.forEach(m=>m.material.color.copy(m.material.userData.base));
-  document.querySelectorAll('tr.room').forEach(tr=>tr.classList.toggle('sel',!!mesh&&tr.dataset.id===mesh.uuid));
+  rows.forEach(({tr,r})=>tr.classList.toggle('sel',!!mesh&&r===mesh.userData.room));
   labels.forEach(L=>L.el.classList.toggle('sel',!!mesh&&L.room===mesh.userData.room));
   state.selected=mesh;
-  if(!mesh){selBox.innerHTML=HINT;return;}
+  if(spot) selBox.innerHTML=spot.html;
+  else if(!mesh) selBox.innerHTML=HINT;
+  if(!mesh) return;
   mesh.material.color.set(accentColor()).lerp(mesh.material.userData.base,0.45);
   const r=mesh.userData.room, fl=mesh.userData.floor==='gf'?'1. etasje':'Loft';
   const extra=r.area_net?' · '+r.area_net.toFixed(1)+' m² excluding the stair opening':'';
-  selBox.innerHTML='<div class="t">'+r.name+'</div><div class="s">'+fl+' · '+r.area.toFixed(1)+' m² traced'+extra+'</div>';
+  if(!spot) selBox.innerHTML='<div class="t">'+r.name+'</div><div class="s">'+fl+' · '+r.area.toFixed(1)+' m² traced'+extra+'</div>';
   const f=state.floor;
   if(mesh.userData.floor==='gf'&&(f==='loft'||f==='outside')) setFloor('ground');
   if(mesh.userData.floor==='loft'&&(f==='ground'||(f==='outside'&&!state.cut))) setFloor('loft');
@@ -682,24 +711,58 @@ canvas.addEventListener('pointerup',e=>{
   ptr.set(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
   ray.setFromCamera(ptr,camera);
   const hit=ray.intersectObjects([...roomMeshes,...occluders].filter(shown),false)[0];
-  select(hit&&hit.object.userData.room?hit.object:null);
+  setSpot(null); select(hit&&hit.object.userData.room?hit.object:null);
 });
 
-// ---------- rooms table ----------
-const tb=document.querySelector('#rooms tbody');
-[['1. etasje','gf'],['Loft','loft']].forEach(([title,tag])=>{
-  const ms=roomMeshes.filter(m=>m.userData.floor===tag);
-  tb.insertAdjacentHTML('beforeend','<tr><th colspan="2">'+title+'</th></tr>');
-  ms.forEach(m=>{
-    const tr=document.createElement('tr'); tr.className='room'; tr.dataset.id=m.uuid; tr.tabIndex=0;
-    tr.innerHTML='<td><span class="sw" style="background:'+(ROOMCOL[m.userData.room.name]||'#ddd')+'"></span>'+m.userData.room.name+'</td><td class="n">'+m.userData.room.area.toFixed(1)+'</td>';
-    const go=()=>select(state.selected===m?null:m);
-    tr.addEventListener('click',go); tr.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go();}});
-    tb.appendChild(tr);
-  });
-  const sum=ms.reduce((a,m)=>a+m.userData.room.area,0);
-  tb.insertAdjacentHTML('beforeend','<tr class="sum"><td>Total</td><td class="n">'+sum.toFixed(1)+'</td></tr>');
+// ---------- condition report: pins for the TG2 items that are in one place ----------
+// Positions come from the Anticimex report (September 2026) and the seller's declaration in the prospectus. Items that
+// cover the whole house (copper pipes, roof, drainage, windows) have no pin. `room` pins sit on that room's floor.
+const fireC=[(M.fire.column[0][0]+M.fire.column[1][0])/2,(M.fire.column[0][1]+M.fire.column[1][1])/2];
+const tread=M.stair[7], treadC=[0,1].map(k=>tread.reduce((a,p)=>a+p[k],0)/tread.length);
+const SPOTS={
+  bad:{room:'Bad',dist:14,note:'Cracked grout in the wall tiles. No membrane upstand was found at the door sill and the floor doesn\'t fall to the drain, so a leak could run out the door. The membrane dates from 2005.'},
+  vask:{room:'Vaskerom',dist:14,note:'The manifold cabinet for the pipe-in-pipe system is here. It has no splash guard, so a leak inside it could wet the wall around it. The room itself was redone in 2022 and got TG1.'},
+  kjokken:{room:'Kjøkken',dist:14,note:'The fan in the kitchen hood also drives the extract for the bathroom and laundry room. It is old enough that the report calls its future function uncertain.'},
+  entre:{room:'Entré',dist:14,note:'Up to 18 mm out of level within 2 m, the worst in the house (the kitchen has 10 mm). Some floor tiles are cracked; the sellers link three cracked tiles to the slope.'},
+  trapp:{grp:()=>stairG,floor:'ground',pos:[treadC[0],8*H.loftBase/16,treadC[1]],dist:13,note:'Wear and some damage from age. The handrail is on one side only, which falls short of today\'s rules.'},
+  kaldloft:{grp:()=>loft,floor:'loft',pos:[R.rx,H.loftBase+H.ceilL+0.45,HS.zIn/2],dist:15,
+    note:'The unheated space above the loft ceiling, reached through a hatch. Boards are stained in places, which suggests damp; no raised moisture was measured. The sellers suggest water may have got in during the 2024 roof work.'},
+  pipe:{grp:()=>gf,floor:'ground',pos:[fireC[0],1.2,fireC[1]],dist:13,
+    note:'The soot door has no fireproof plate under or beside it, so embers could land on something that burns. The report doesn\'t say where on the chimney the door is, so the pin marks the chimney.'},
+  garasje:{grp:()=>site,floor:'outside',pos:[(GA.x0+GA.x1)/2,GA.top((GA.x0+GA.x1)/2,GA.zc),GA.zc],dist:28,note:'The roof covering is ageing and its future function is uncertain. No visible damage of note.'}};
+let spot=null;
+const mark=document.createElement('div'); mark.className='mark'; mark.hidden=true; mark.innerHTML='<i></i><b></b>';
+document.getElementById('labels').appendChild(mark);
+Object.entries(SPOTS).forEach(([key,s])=>{
+  const btn=document.querySelector('.spot[data-spot="'+key+'"]');
+  s.name=btn?btn.textContent:key;
+  if(s.room){
+    s.mesh=roomMeshes.find(m=>m.userData.floor==='gf'&&m.userData.room.name===s.room);
+    const r=s.mesh.userData.room; s.grp=()=>gf; s.floor='ground'; s.pos=[r.cx[0],0.05,r.cx[1]];
+  }
+  s.html='<div class="t">'+s.name+' · TG2</div><div class="s">'+s.note+'</div>';
+  if(btn) btn.addEventListener('click',()=>{ if(ready) setSpot(spot===s?null:key); });
 });
+const spotAt=new THREE.Vector3(), _sph=new THREE.Spherical();
+function setSpot(key){
+  const s=key?SPOTS[key]:null;
+  document.querySelectorAll('.spot').forEach(b=>b.setAttribute('aria-pressed',String(!!s&&b.dataset.spot===key)));
+  const was=spot; spot=s; mark.hidden=true;
+  if(!s){ if(was) select(null); return; }       // clearing a pin also clears the room it highlighted
+  mark.querySelector('b').textContent='TG2 · '+s.name;
+  // show the spot's floor in 3D, highlight its room, then fly there keeping the current compass direction
+  state.cam='3d'; press('[data-cam]','3d','cam'); controls.enableRotate=true;
+  state.floor=s.floor; press('[data-floor]',s.floor,'floor'); applyFloors();
+  select(s.mesh||null);
+  scene.updateMatrixWorld(); spotAt.set(...s.pos); s.grp().localToWorld(spotAt);
+  _sph.setFromVector3(camera.position.clone().sub(controls.target));
+  // inside, look down steeply enough to see over the walls; outside, a lower view of the building
+  _sph.phi=s.floor==='outside'?THREE.MathUtils.clamp(_sph.phi,0.6,1.0):THREE.MathUtils.clamp(_sph.phi,0.3,0.6); _sph.radius=s.dist;
+  flyTo({pos:spotAt.clone().add(new THREE.Vector3().setFromSpherical(_sph)),tgt:spotAt.clone()});
+  // on a phone the view sits above the panel: bring it back on screen
+  const b=stage.getBoundingClientRect();
+  if(b.bottom<80||b.top>innerHeight-80) stage.scrollIntoView({behavior:reduce?'auto':'smooth',block:'start'});
+}
 
 // ---------- controls wiring ----------
 function press(sel,val,attr){document.querySelectorAll(sel).forEach(b=>b.setAttribute('aria-pressed',String(b.dataset[attr]===val)));}
@@ -726,14 +789,26 @@ const needle=document.getElementById('needle');
 const NB=THREE.MathUtils.degToRad(M.north_bearing_of_plan_up);   // plan-up is this far east of true north
 const NORTH=new THREE.Vector3(-Math.sin(NB),0,-Math.cos(NB));
 const v=new THREE.Vector3(), v2=new THREE.Vector3();
+let stageW=1, stageH=1;
 function resize(){
   const w=stage.clientWidth,h=stage.clientHeight; if(!w||!h) return;
-  renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); redraw();
+  stageW=w; stageH=h; DPR=Math.min(devicePixelRatio,2);
+  renderer.setPixelRatio(DPR); renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); redraw();
 }
 new ResizeObserver(resize).observe(stage);
-let wasMoving=false;
-function frame(){
-  requestAnimationFrame(frame);
+// Show or hide an overlay element and move it to the projected point p, touching the DOM only when something changed.
+function place(el,show,p,center){
+  if(el.hidden===show) el.hidden=!show;
+  if(!show) return;
+  const t='translate('+((p.x+1)/2*stageW).toFixed(1)+'px,'+((1-p.y)/2*stageH).toFixed(1)+'px)'+(center?' translate(-50%,-50%)':'');
+  if(el._t!==t){el._t=t; el.style.transform=t;}
+}
+const onScreen=(p,m)=>p.z<=1&&Math.abs(p.x)<=m&&Math.abs(p.y)<=m;
+// Weak GPUs: if moving frames come slower than about 35 fps, the camera moves at a lower resolution
+// and the view is drawn sharp again as soon as it stops.
+let slowGPU=false, slowFrames=0, lastMove=0, wasMoving=false;
+function frame(now){
+  raf=0;
   let moving=!!tween;
   if(tween){
     const u=Math.min(1,(performance.now()-tween.t0)/650), k=1-Math.pow(1-u,3);
@@ -741,26 +816,33 @@ function frame(){
     if(u>=1) tween=null;
   }
   if(controls.update()) moving=true;            // true while damping is still settling
+  if(moving){
+    if(wasMoving){ slowFrames=now-lastMove>28?slowFrames+1:0; if(slowFrames>=3) slowGPU=true; }
+    lastMove=now; kick();                       // keep going until the camera stops
+  }
   if(wasMoving&&!moving) dirty=true;            // one last full update once the camera stops
   wasMoving=moving;
-  if(!moving&&!dirty) return;                   // nothing changed: skip the frame
+  if(!moving&&!dirty) return;                   // nothing changed: sleep until redraw() wakes the loop
   dirty=false;
+  const pr=moving&&slowGPU?Math.max(0.75,DPR*0.6):DPR;
+  if(renderer.getPixelRatio()!==pr) renderer.setPixelRatio(pr);
   renderer.render(scene,camera);
   if(!moving||(occTick++%4)===0) updateOcclusion();
-  const w=stage.clientWidth,h=stage.clientHeight;
   labels.forEach(L=>{
-    if(!labelVisible(L)||L.occ){L.el.hidden=true;return;}
-    v.copy(L.pos); L.grp.localToWorld(v); v.project(camera);
-    if(v.z>1||Math.abs(v.x)>1.1||Math.abs(v.y)>1.1){L.el.hidden=true;return;}
-    L.el.hidden=false; L.el.style.transform='translate('+((v.x+1)/2*w).toFixed(1)+'px,'+((1-v.y)/2*h).toFixed(1)+'px) translate(-50%,-50%)';
+    let show=labelVisible(L)&&!L.occ&&!(spot&&spot.mesh&&spot.mesh.userData.room===L.room);
+    if(show){ v.copy(L.pos); L.grp.localToWorld(v); v.project(camera); show=onScreen(v,1.1); }
+    place(L.el,show,v,true);
   });
+  let showMark=!!spot&&shown(spot.grp());
+  if(showMark){ v.set(...spot.pos); spot.grp().localToWorld(v); v.project(camera); showMark=onScreen(v,1); }
+  place(mark,showMark,v,false);
   v.copy(controls.target).project(camera); v2.copy(controls.target).add(NORTH).project(camera);
-  const ang=Math.atan2((v2.x-v.x)*w,(v2.y-v.y)*h);
+  const ang=Math.atan2((v2.x-v.x)*stageW,(v2.y-v.y)*stageH);
   needle.setAttribute('transform','rotate('+(ang*180/Math.PI).toFixed(1)+')');
 }
 if(stage.clientWidth<520){state.labels=false;document.getElementById('tLbl').setAttribute('aria-pressed','false');}
 resize(); applyTheme(); applyFloors(); applyPlans(); goCam(true);
-requestAnimationFrame(frame);
-window.__twin={camera,controls,scene,renderer,THREE,gf,loft,loftRoot,roof,stairG,site,state,setFloor,select,roomMeshes,applyFloors};
+ready=true; redraw();
+window.__twin={camera,controls,scene,renderer,THREE,gf,loft,loftRoot,roof,stairG,site,state,setFloor,select,roomMeshes,applyFloors,setSpot,SPOTS};
 })();
 </script>

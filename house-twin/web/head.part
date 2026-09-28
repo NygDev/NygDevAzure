@@ -1,7 +1,11 @@
 <title>Mallingsrudveien 30</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<!-- start the 3D library downloads now; the script tags sit at the end of a long body -->
+<link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js">
+<link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js">
+<!-- fonts load without blocking the first paint or the 3D start; only the weights the page uses -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Barlow:wght@400;600&family=IBM+Plex+Mono:wght@400&display=swap" media="print" onload="this.media='all'">
 <style>
 :root{
   --bg:#E9EDEB; --panel:#F8FAF9; --ink:#1B2426; --muted:#5A6668; --faint:#8A9597;
@@ -85,6 +89,21 @@ table.bra{margin-top:14px}
 .facts dt{font-family:var(--display);font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-weight:600;padding-top:2px}
 .facts dd{margin:0;color:var(--muted)}
 .facts ul{margin:4px 0;padding-left:18px}
+.facts li{margin:2px 0}
+
+/* condition report: a place button on items that point at one spot, and its pin in the view */
+.spot{position:relative;display:inline-flex;align-items:center;gap:4px;margin-left:3px;padding:0 6px 0 5px;border:1px solid var(--warn);border-radius:3px;background:var(--warn-soft);color:var(--warn);font-family:var(--display);font-weight:600;font-size:12px;line-height:17px;letter-spacing:.02em;cursor:pointer;white-space:nowrap;vertical-align:1px}
+.spot::before{content:"";width:8px;height:11px;background:currentColor;-webkit-mask:var(--pin) center/contain no-repeat;mask:var(--pin) center/contain no-repeat}
+.spot::after{content:"";position:absolute;inset:-6px -3px}
+.spot:hover{background:var(--panel)}
+.spot[aria-pressed="true"]{background:var(--warn);color:var(--panel)}
+:root{--pin:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 11'%3E%3Cpath fill-rule='evenodd' d='M4 0a4 4 0 0 0-4 4c0 3 4 7 4 7s4-4 4-7a4 4 0 0 0-4-4zm0 2.4a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2z'/%3E%3C/svg%3E")}
+.mark{position:absolute;left:0;top:0;pointer-events:none;will-change:transform}
+.mark i{position:absolute;left:-7px;top:-7px;width:14px;height:14px;border-radius:50%;background:var(--warn);border:2px solid var(--panel);box-shadow:0 0 0 1px var(--warn)}
+.mark i::after{content:"";position:absolute;inset:-3px;border-radius:50%;border:2px solid var(--warn);animation:ping 1.3s ease-out 3}
+.mark::before{content:"";position:absolute;left:-.5px;bottom:6px;width:1px;height:10px;background:var(--warn)}
+.mark b{position:absolute;left:0;bottom:16px;transform:translateX(-50%);background:var(--warn);color:var(--panel);border-radius:3px;padding:1px 7px;white-space:nowrap;font-family:var(--display);font-size:12.5px;font-weight:600;line-height:1.3}
+@keyframes ping{from{transform:scale(1);opacity:.8}to{transform:scale(2.4);opacity:0}}
 
 /* chips and segmented controls */
 .chip{border:1px solid var(--line);background:var(--chip);border-radius:4px;padding:5px 9px;cursor:pointer;font-size:13px;line-height:1.2}
@@ -116,6 +135,6 @@ table.bra{margin-top:14px}
   .panel{border-right:0;border-top:1px solid var(--line);overflow:visible;padding:18px 16px 28px}
   .seg button{padding:5px 8px}
 }
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (prefers-reduced-motion:reduce){*,*::after{transition:none!important;animation:none!important}}
 </style>
 
