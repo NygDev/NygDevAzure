@@ -112,4 +112,9 @@ builder.Services.AddSingleton(provider =>
 builder.Services.AddSingleton(provider => new GymStore(
     provider.GetRequiredService<CosmosClient>().GetContainer("db", "gym")));
 
+// Builds the client above and pays its first-call costs at worker startup
+// rather than inside the first request — see GymWarmup for why that request
+// is the one worth sparing.
+builder.Services.AddHostedService<GymWarmup>();
+
 builder.Build().Run();

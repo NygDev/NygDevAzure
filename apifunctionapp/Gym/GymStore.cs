@@ -1409,6 +1409,33 @@ public sealed class GymStore(Container container)
     }
 
     // -----------------------------------------------------------------------
+    // Warm-up
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// A point read of a document that cannot exist, for what it costs the
+    /// client rather than for what it finds.
+    ///
+    /// The first operation through a CosmosClient pays for everything behind
+    /// it: a managed-identity token, the account's and the container's
+    /// metadata, and the JIT of the request path. <see cref="GymWarmup"/>
+    /// spends that here, at worker startup, instead of inside a request.
+    ///
+    /// The partition is not an object id — those are GUIDs, see
+    /// <see cref="GymPrincipal"/> — so this reads nobody's data. A 404 is the
+    /// expected answer, and one RU is the whole bill.
+    /// </summary>
+    public async Task<HttpStatusCode> WarmUpAsync(CancellationToken cancellationToken)
+    {
+        using var response = await container.ReadItemStreamAsync(
+            "warmup",
+            new PartitionKey("warmup"),
+            cancellationToken: cancellationToken);
+
+        return response.StatusCode;
+    }
+
+    // -----------------------------------------------------------------------
     // Reading and writing raw documents
     // -----------------------------------------------------------------------
 

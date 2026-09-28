@@ -48,8 +48,18 @@ resource "azurerm_application_insights" "consumption" {
 
 # ---------------------------------------------------------------------------
 # Flex Consumption plans (SKU: FC1)
-# Free grant: 100,000 executions + 250,000 GB-s compute per month per
-# subscription — no baseline cost, you only pay for what you use beyond that.
+# Free grant: 100,000 GB-s + 250,000 executions per month per subscription,
+# shared by every app here — no baseline cost, you only pay for what you use
+# beyond that, and only while no app has always-ready instances.
+#
+# An instance's activity bills at a minimum of one second, then by the 100 ms,
+# at the configured instance memory — concurrent executions on one instance
+# share that window. That is why every app is 512 MB: a gym set-tap bills its
+# full second whether it takes 40 ms or 900, and at 2048 MB the same second
+# costs four times as much. What bills past the floor is cold starts, which is
+# why the .NET apps publish ReadyToRun and the PowerShell app carries no Az
+# modules.
+#
 # Both runtimes (PowerShell 7.x and .NET 10 isolated) run on Linux under
 # Flex Consumption.
 # ---------------------------------------------------------------------------

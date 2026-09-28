@@ -1,5 +1,3 @@
-psfunctionapp/Modules/
-
 # Terraform
 **/.terraform/*
 *.tfstate

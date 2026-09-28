@@ -1,35 +1,22 @@
 using namespace System.Net
-using namespace Azure.Storage.Blobs.Models
 
 param($Request, $TriggerMetadata)
 
+Import-Module FoundryCache
+
+# The sweep: every blob in the container brought in line with the same rule the
+# Event Grid function applies on upload, for anything that predates it or
+# slipped past it.
 try {
-    Disable-AzContextAutosave -Scope Process
-    Connect-AzAccount -Identity
+    $updated = 0
 
-    $context = New-AzStorageContext -StorageAccountName "nygdevcdn" -UseConnectedAccount
-    $blobs   = Get-AzStorageBlob -Context $context -Container "foundry"
+    foreach ($blob in Get-FoundryBlobs) {
+        $cacheControl = Get-FoundryCacheControl -Name $blob.Name
 
-    $mediaExtensions = "\.(jpg|jpeg|png|gif|webp|mp4|webm|mp3|ogg|wav)$"
-    $mediaCache      = "max-age=28800"
-    $updated         = 0
-
-    foreach ($blob in $blobs) {
-        $name = $blob.Name.ToLower()
-
-        $targetCache = $null
-        if ($name -match $mediaExtensions) {
-            $targetCache = $mediaCache
-        } elseif ($name -match "\.html$") {
-            $targetCache = "no-cache"
-        }
-
-        if ($null -ne $targetCache -and $blob.BlobProperties.CacheControl -ne $targetCache) {
-            $headers              = [BlobHttpHeaders]::new()
-            $headers.CacheControl = $targetCache
-            $headers.ContentType  = $blob.BlobProperties.ContentType
-            $null = $blob.BlobClient.SetHttpHeaders($headers)
-            $updated++
+        if ($cacheControl -and $blob.CacheControl -ne $cacheControl) {
+            if (Set-FoundryBlobHeaders -Name $blob.Name -CacheControl $cacheControl -ContentType $blob.ContentType) {
+                $updated++
+            }
         }
     }
 

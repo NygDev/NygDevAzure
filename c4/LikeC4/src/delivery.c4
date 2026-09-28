@@ -98,7 +98,7 @@ model {
 
       deployFunc = workflow 'Deploy PS Function App' {
         technology 'deploy-ps-function-app.yml — push to master on psfunctionapp/**'
-        description 'Save-Module bundles Az.Accounts and Az.Storage into the package, then Azure/functions-action@v1 to func-nygdev-azadmin.'
+        description 'Azure/functions-action@v1 to func-nygdev-azadmin. No Az modules are bundled: the functions call the Blob REST API directly.'
       }
 
       tfApply = workflow 'Terraform Apply' {

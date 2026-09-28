@@ -7,6 +7,31 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Nothing here formats or compares by culture — every parse is
+         InvariantCulture and every comparison ordinal — so the runtime can skip
+         loading ICU at startup, which is time a quarter-core instance spends
+         before the first request can be answered. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!-- Cold start, and publish-only so a local build and func start stay
+       portable.
+
+       Flex Consumption bills an instance's activity at a minimum of one second
+       and by the 100 ms after that, so a warm call costs the same whether it
+       takes 40 ms or 900. What costs more than the floor is the first call
+       after an idle spell, and on a 512 MB instance — a quarter of a core —
+       most of that is the JIT compiling the Cosmos SDK, Azure.Identity and the
+       ASP.NET Core pipeline. ReadyToRun ships that code precompiled.
+
+       The runtime identifier is what ReadyToRun needs, and it also drops the
+       Cosmos SDK's Windows-only native binaries — ServiceInterop and the VC
+       runtime, about 18 MB that can never load on Linux — from the package the
+       instance fetches before it starts. -->
+  <PropertyGroup Condition="'$(_IsPublishing)' == 'true'">
+    <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
 
   <ItemGroup>

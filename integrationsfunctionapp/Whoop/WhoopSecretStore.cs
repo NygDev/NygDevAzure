@@ -4,7 +4,7 @@ namespace ApiFunctionApp.Whoop;
 
 /// <summary>
 /// The two WHOOP secrets in the nygdev Key Vault. The app reaches them as
-/// id-nygdev-api, which holds Key Vault Secrets Officer on the vault — the
+/// id-nygdev-integrations, which holds Key Vault Secrets Officer on the vault — the
 /// refresh token has to be written back as well as read, so a reader role
 /// would not be enough.
 /// </summary>

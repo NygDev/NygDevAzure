@@ -4,6 +4,7 @@ on:
     branches: [master]
     paths:
       - 'psfunctionapp/**'
+      - '.github/workflows/deploy-ps-function-app.yml'
   workflow_dispatch:
 permissions:
   id-token: write
@@ -15,12 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Bundle Az modules into package
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path psfunctionapp/Modules | Out-Null
-          Save-Module -Name Az.Accounts -Path psfunctionapp/Modules -Repository PSGallery -Force
-          Save-Module -Name Az.Storage  -Path psfunctionapp/Modules -Repository PSGallery -Force
+      # No Az modules to bundle: the functions call the Blob REST API directly
+      # (psfunctionapp/Modules/FoundryCache), so the package is the scripts.
 
       - name: Az CLI login
         uses: azure/login@v3

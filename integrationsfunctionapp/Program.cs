@@ -1,24 +1,17 @@
 // The integrations half of the API: WHOOP, the GPS spool and the running
-// dashboard, on func-nygdev-integrations.
+// dashboard, on func-nygdev-integrations. The namespaces still say
+// ApiFunctionApp because this code was split out of that app rather than
+// written here.
 //
-// Every file here but this one is a byte-identical copy of its counterpart
-// under apifunctionapp/, namespaces included, and that is deliberate for as
-// long as the copy lasts: the two can be diffed to nothing, so the cutover is
-// a deletion rather than a merge. This file is the only one that differs — the
-// same registrations minus the gym logger's.
-//
-// The copy is now complete, timers included, which is only safe because
-// func-nygdev-api is stopped. Two apps running WhoopSyncTimer would be two
-// syncs against one WHOOP refresh token, and WHOOP rotates it on every use.
-// That app stays stopped until its copies of these files are deleted.
+// This must stay the only app running WhoopSyncTimer. Two would be two syncs
+// against one WHOOP refresh token, and WHOOP rotates it on every use.
 //
 // The gym logger stays on func-nygdev-api. That is the point of the split
 // rather than an accident of which half was easier to move: everything here
 // authenticates as something other than an Entra user — WHOOP redirects a
 // browser to the callback, the phone holds a function key — so Easy Auth
-// cannot be required in front of it. Once these endpoints are gone from the
-// api app, that app has nothing anonymous left and can have the platform gate
-// turned on with no exclusions.
+// cannot be required in front of it, while the api app has nothing anonymous
+// left and runs with the platform gate on.
 
 using ApiFunctionApp.Gps;
 using ApiFunctionApp.Running;
