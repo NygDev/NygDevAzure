@@ -17,6 +17,56 @@ The `gym_exercise_library_url` output is the URL.
 Custom exercise names are not in here and never will be: they are the user's,
 so they post inline with the entry and live on the session document.
 
+An exercise is `{name, equipment}` and, optionally, three fields that describe
+what it is a substitute for. The front end reads them to suggest a swap when the
+machine you wanted has eight people waiting for it:
+
+| Field | What it says | Example |
+| --- | --- | --- |
+| `variationOf` | The same movement, done another way. Names the family's root — the "regular" one | `Preacher Curl` → `Bicep Curl` |
+| `pattern` | The job the movement does, so different exercises can stand in for each other | `horizontal-push`, `hinge`, `curl` |
+| `group` | The muscle group it is planned against — one of gymbro's seven | `Chest`, `Posterior` |
+
+All three are optional and absent reads as unknown, so a library without them —
+an older cached copy, or the app's bundled fallback from before them — still
+works and simply suggests less.
+
+The logger bundles a copy of this file as its offline fallback
+(`sites/gym/src/lib/library.ts` in nygdevweb), because a gym with no signal is
+when a picker — and a swap sheet — can least afford to be empty. Change one and
+change the other.
+
+### Variations are exercises, not an attribute of one
+
+A preacher curl is **its own exercise, linked to a parent**, rather than a
+`variant: "preacher"` on a bicep curl. The reasons are the history it has to
+produce:
+
+- **Progress and top sets are tracked per variation.** Thirty kilos on a
+  preacher bench and thirty standing are not the same lift; a chart that mixed
+  them would show progress whenever you switched to the easier one. Keeping the
+  names apart is what keeps gymbro's top-set chart honest.
+- **What a variation counts toward is derived, not stored.** "Sets of arms this
+  week" counts preacher curls through `group`, and a family rollup ("all
+  curls") is a `variationOf` lookup away whenever a screen wants one.
+- **Nothing on the wire changes.** A session entry is a name, and a variation
+  is a name, so every session, plan and template ever written is still valid
+  and nothing needs a migration.
+
+Three rules keep the links useful:
+
+- **Names are unique.** Equipment used to tell the two bench presses apart,
+  but an entry stores only a name, so both were one exercise in history. The
+  dumbbell one is now `Dumbbell Bench Press`; old sessions that say `Bench
+  Press` read as the barbell lift, which is what the picker already showed them
+  as.
+- **Families are one level deep.** `variationOf` names a root, never another
+  variation, and a variation shares its root's `group`.
+- **A family is the same movement.** `Romanian Deadlift` has a `hinge` pattern
+  like `Deadlift`, but it is a lift of its own with its own variations, not a
+  deadlift done differently. The pattern is what still offers one for the
+  other.
+
 ## `templates.json`
 
 The built-in **day templates** — named plans like Push or Lower A that the Plan

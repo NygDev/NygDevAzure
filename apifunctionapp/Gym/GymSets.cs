@@ -33,7 +33,8 @@ namespace ApiFunctionApp.Gym;
 /// so it is allowed to read the session first rather than patch blind. See
 /// <see cref="GymStore.ReorderEntryAsync"/> for why that is the safer trade
 /// for an operation that has to carry a whole entry, sets included, rather
-/// than append one value.
+/// than append one value. Swapping an exercise and correcting a logged set
+/// are the same kind of write for the same reason, and go the same way.
 /// </summary>
 public class GymSets(GymStore store, ILogger<GymSets> logger)
 {
@@ -463,6 +464,198 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
                 };
             });
         });
+
+    /// <summary>
+    /// Swaps an exercise for another — the rack is taken, so the squat becomes
+    /// a leg press, or the curl a preacher curl.
+    ///
+    /// <c>{entryIndex, exerciseName, expectedEntryCount, expectedSetCount,
+    /// to}</c>. An exercise with nothing logged is replaced where it stands; one
+    /// that was lifted keeps every set it has, on the exercise it was lifted on,
+    /// and the substitute goes in straight after it. Either way the substitute
+    /// carries <c>swappedFrom</c>, naming the exercise the plan asked for.
+    ///
+    /// <c>entryIndex</c> in the answer is where the substitute now sits, which
+    /// is the index to log its sets against, and <c>replaced</c> says which of
+    /// the two shapes was written.
+    /// </summary>
+    [Function("GymEntrySwap")]
+    public Task<IActionResult> SwapEntry(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "gym/workouts/{sessionId}/entries/swap")] HttpRequest request,
+        string sessionId,
+        CancellationToken cancellationToken) =>
+        GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
+        {
+            if (!GymIds.IsSessionId(sessionId))
+            {
+                return GymEndpoint.Invalid($"'{sessionId}' is not a workout id.");
+            }
+
+            return await GymEndpoint.WithBodyAsync(request, token, async body =>
+            {
+                if (!GymRequests.TryReadEntrySwap(
+                        body,
+                        out var entryIndex,
+                        out var exerciseName,
+                        out var expectedEntryCount,
+                        out var expectedSetCount,
+                        out var to,
+                        out var error))
+                {
+                    return GymEndpoint.Invalid(error);
+                }
+
+                var outcome = await store.SwapEntryAsync(
+                    objectId,
+                    sessionId,
+                    entryIndex,
+                    exerciseName,
+                    expectedEntryCount,
+                    expectedSetCount,
+                    to,
+                    token);
+
+                return outcome.Result switch
+                {
+                    SwapResult.Applied or SwapResult.AlreadyApplied => new OkObjectResult(new
+                    {
+                        ok = true,
+                        alreadyApplied = outcome.Result == SwapResult.AlreadyApplied,
+                        entryIndex = outcome.At,
+                        entryCount = outcome.Session!.Entries.Count,
+                        replaced = outcome.Replaced,
+                        exerciseName = to,
+                    }),
+
+                    SwapResult.SessionNotFound => GymWorkouts.NoSuchSession(sessionId),
+
+                    SwapResult.SessionFull => GymEndpoint.Failure(
+                        HttpStatusCode.Conflict,
+                        "session_full",
+                        $"'{exerciseName}' has sets logged, so swapping it adds '{to}' after it rather than "
+                        + $"replacing it — and {sessionId} already holds the "
+                        + $"{GymLimits.MaxEntriesPerSession} exercises a session can. Nothing was written."),
+
+                    _ => GuardConflict(
+                        entryIndex,
+                        $"Session {sessionId} no longer matches this swap: expected {expectedEntryCount} "
+                        + $"exercises with '{exerciseName}' at position {entryIndex} holding "
+                        + $"{expectedSetCount} sets."),
+                };
+            });
+        });
+
+    /// <summary>
+    /// Corrects a logged set in place — the weight was mistyped, the reps
+    /// miscounted — on a session being logged or one long since submitted.
+    ///
+    /// <c>{exerciseName, expectedSetCount, weightKg, reps, rpe}</c>, the last
+    /// three exactly as a logged set takes them. The first two are the guard:
+    /// which exercise the caller believes sits at <c>entryIndex</c>, and how
+    /// many sets it holds. A set index means a set only as long as both are
+    /// true.
+    ///
+    /// Nothing derived needs correcting after it. Volume, average RPE and every
+    /// top set are summed from the sets whenever they are read, so the next
+    /// read of the session, the block or a chart already reflects the edit.
+    /// </summary>
+    [Function("GymSetEdit")]
+    public Task<IActionResult> EditSet(
+        [HttpTrigger(
+            AuthorizationLevel.Anonymous,
+            "put",
+            Route = "gym/workouts/{sessionId}/entries/{entryIndex:int}/sets/{setIndex:int}")] HttpRequest request,
+        string sessionId,
+        int entryIndex,
+        int setIndex,
+        CancellationToken cancellationToken) =>
+        GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
+        {
+            if (!GymIds.IsSessionId(sessionId))
+            {
+                return GymEndpoint.Invalid($"'{sessionId}' is not a workout id.");
+            }
+
+            if (entryIndex < 0 || entryIndex >= GymLimits.MaxEntriesPerSession)
+            {
+                return GymEndpoint.Invalid($"'entryIndex' is {entryIndex}, outside 0 to "
+                    + $"{GymLimits.MaxEntriesPerSession - 1}.");
+            }
+
+            if (setIndex < 0 || setIndex >= GymLimits.MaxSetsPerEntry)
+            {
+                return GymEndpoint.Invalid($"'setIndex' is {setIndex}, outside 0 to "
+                    + $"{GymLimits.MaxSetsPerEntry - 1}.");
+            }
+
+            return await GymEndpoint.WithBodyAsync(request, token, async body =>
+            {
+                if (!GymRequests.TryReadSetEdit(
+                        body,
+                        out var exerciseName,
+                        out var expected,
+                        out var set,
+                        out var error))
+                {
+                    return GymEndpoint.Invalid(error);
+                }
+
+                if (setIndex >= expected)
+                {
+                    return GymEndpoint.Invalid(
+                        $"'setIndex' is {setIndex} and 'expectedSetCount' is {expected}, so the set "
+                        + "being edited is not one the entry is said to hold.");
+                }
+
+                var outcome = await store.EditSetAsync(
+                    objectId,
+                    sessionId,
+                    entryIndex,
+                    setIndex,
+                    exerciseName,
+                    expected,
+                    set,
+                    token);
+
+                return outcome.Result switch
+                {
+                    EditSetResult.Applied or EditSetResult.AlreadyApplied => new OkObjectResult(new
+                    {
+                        ok = true,
+                        alreadyApplied = outcome.Result == EditSetResult.AlreadyApplied,
+                        entryIndex,
+                        setIndex,
+                        setCount = expected,
+                    }),
+
+                    EditSetResult.SessionNotFound => GymWorkouts.NoSuchSession(sessionId),
+
+                    _ => GuardConflict(
+                        entryIndex,
+                        $"Session {sessionId} no longer matches this edit: expected '{exerciseName}' at "
+                        + $"position {entryIndex} holding {expected} sets."),
+                };
+            });
+        });
+
+    /// <summary>
+    /// A swap's or a set edit's guard did not hold. The same code a removal's
+    /// refusal answers with, because it means the same thing to a client — the
+    /// entry is not what the request described, nothing was written, re-read —
+    /// and a client already handles that one.
+    /// </summary>
+    private static IActionResult GuardConflict(int entryIndex, string mismatch) =>
+        new ObjectResult(new
+        {
+            ok = false,
+            error = "entry_conflict",
+            message = mismatch + " Nothing was written. Re-read the workout with "
+                + "GET /api/gym/workouts/{id} and try again from what it holds.",
+            entryIndex,
+        })
+        {
+            StatusCode = (int)HttpStatusCode.Conflict,
+        };
 
     /// <summary>
     /// A removal's guard did not hold. Same shape as

@@ -1042,30 +1042,19 @@ public sealed class GymStore(Container container)
         var reordered = Reordered(entries, from, to);
         var updated = session with { Entries = reordered };
 
-        using var payload = SerializeSession(objectId, updated);
-        using var response = await container.ReplaceItemStreamAsync(
-            payload,
-            sessionId,
-            new PartitionKey(objectId),
-            new ItemRequestOptions { IfMatchEtag = etag, EnableContentResponseOnWrite = false },
-            cancellationToken);
-
-        if (response.StatusCode == HttpStatusCode.PreconditionFailed)
-        {
-            // Something else wrote the session between the read above and this
-            // write — a set logged mid-drag, most likely. The client's own
-            // retry-on-409 path (already needed for the hot-path writes) is
-            // what resolves this: re-read, and either the drag still applies
-            // or it does not.
-            return new ReorderOutcome(ReorderResult.Conflict, null);
-        }
-
-        if (!response.IsSuccessStatusCode)
-        {
-            throw Failure(response, $"Moving entry {from} to {to} in session {sessionId} failed.");
-        }
-
-        return new ReorderOutcome(ReorderResult.Applied, updated);
+        // A false here is something else having written the session between
+        // the read above and this write — a set logged mid-drag, most likely.
+        // The client's own retry-on-409 path (already needed for the hot-path
+        // writes) is what resolves this: re-read, and either the drag still
+        // applies or it does not.
+        return await ReplaceSessionAsync(
+            objectId,
+            updated,
+            etag,
+            $"Moving entry {from} to {to} in session {sessionId} failed.",
+            cancellationToken)
+            ? new ReorderOutcome(ReorderResult.Applied, updated)
+            : new ReorderOutcome(ReorderResult.Conflict, null);
     }
 
     /// <summary>
@@ -1155,35 +1144,217 @@ public sealed class GymStore(Container container)
             Entries = entries.Where((_, index) => index != entryIndex).ToArray(),
         };
 
-        using var payload = SerializeSession(objectId, updated);
+        // A false here is a set logged against this session between the read
+        // and the write — conceivably against this very entry, which is
+        // exactly what the emptiness check is there to protect. The client
+        // re-reads and decides again.
+        return await ReplaceSessionAsync(
+            objectId,
+            updated,
+            etag,
+            $"Removing entry {entryIndex} from session {sessionId} failed.",
+            cancellationToken)
+            ? new RemoveEntryOutcome(RemoveEntryResult.Applied, updated)
+            : new RemoveEntryOutcome(RemoveEntryResult.Conflict, null);
+    }
+
+    /// <summary>
+    /// Swaps one exercise for another — the machine is taken, so the planned
+    /// one becomes something that is free.
+    ///
+    /// What the swap writes is <see cref="GymSession.WithSwap"/>'s decision:
+    /// an exercise with nothing logged is replaced in place, and one that was
+    /// lifted keeps its sets and gets the substitute inserted after it. So no
+    /// set is ever lost or moved by a swap, which is the one thing this has to
+    /// guarantee.
+    ///
+    /// That decision is the client's to state rather than the server's to
+    /// discover: <paramref name="expectedSetCount"/> is how many sets the
+    /// caller believes the exercise holds, and the swap applies only while that
+    /// is true. Without it, a set tapped a moment before the swap and still in
+    /// flight would land <em>after</em> an in-place replace — on the
+    /// substitute, under a name it was not lifted on. With it, the swap that
+    /// raced the set is refused and the client re-reads.
+    ///
+    /// Read-then-replace under an ETag, like <see cref="ReorderEntryAsync"/>
+    /// and for the same reasons: it happens a handful of times a session, the
+    /// guard has to check a name, and a retry after a lost response has to be
+    /// told apart from a fresh swap:
+    ///
+    /// <list type="bullet">
+    /// <item>The exercise is where and as the caller describes — apply.</item>
+    /// <item>The substitute is already in the slot, or already straight after
+    /// the original with one more entry than the caller counted — this swap
+    /// landed and only the answer was lost.</item>
+    /// <item>Anything else — the session changed some other way. Nothing is
+    /// written, and the client re-reads.</item>
+    /// </list>
+    /// </summary>
+    public async Task<SwapOutcome> SwapEntryAsync(
+        string objectId,
+        string sessionId,
+        int entryIndex,
+        string exerciseName,
+        int expectedEntryCount,
+        int expectedSetCount,
+        string to,
+        CancellationToken cancellationToken)
+    {
+        var (session, etag) = await ReadSessionWithETagAsync(objectId, sessionId, cancellationToken);
+
+        if (session is null)
+        {
+            return SwapOutcome.SessionNotFound;
+        }
+
+        var entries = session.Entries;
+        var asDescribed = entries.Count == expectedEntryCount
+            && entryIndex < entries.Count
+            && entries[entryIndex].ExerciseName == exerciseName
+            && entries[entryIndex].Sets.Count == expectedSetCount;
+
+        if (!asDescribed)
+        {
+            var replacedAlready = expectedSetCount == 0
+                && entries.Count == expectedEntryCount
+                && entryIndex < entries.Count
+                && entries[entryIndex].ExerciseName == to;
+
+            if (replacedAlready)
+            {
+                return new SwapOutcome(SwapResult.AlreadyApplied, session, entryIndex, Replaced: true);
+            }
+
+            var insertedAlready = expectedSetCount > 0
+                && entries.Count == expectedEntryCount + 1
+                && entryIndex + 1 < entries.Count
+                && entries[entryIndex].ExerciseName == exerciseName
+                && entries[entryIndex + 1].ExerciseName == to;
+
+            return insertedAlready
+                ? new SwapOutcome(SwapResult.AlreadyApplied, session, entryIndex + 1, Replaced: false)
+                : new SwapOutcome(SwapResult.Conflict, session, entryIndex, Replaced: false);
+        }
+
+        // Inserting adds an entry, so it is held to the same ceiling the picker
+        // is. Replacing in place cannot grow the session and never meets it.
+        if (expectedSetCount > 0 && entries.Count >= GymLimits.MaxEntriesPerSession)
+        {
+            return new SwapOutcome(SwapResult.SessionFull, session, entryIndex, Replaced: false);
+        }
+
+        var (swapped, at, replaced) = session.WithSwap(entryIndex, to);
+        var updated = session with { Entries = swapped };
+
+        return await ReplaceSessionAsync(
+            objectId,
+            updated,
+            etag,
+            $"Swapping '{exerciseName}' for '{to}' in session {sessionId} failed.",
+            cancellationToken)
+            ? new SwapOutcome(SwapResult.Applied, updated, at, replaced)
+            : new SwapOutcome(SwapResult.Conflict, null, entryIndex, Replaced: false);
+    }
+
+    /// <summary>
+    /// Replaces one logged set with corrected values — a weight mistyped, the
+    /// reps miscounted, an RPE that was not what the set felt like.
+    ///
+    /// In place, so the set keeps its position: deleting and re-logging it would
+    /// move a corrected first set to the bottom of the list, and order is read
+    /// downstream. Nothing derived needs touching afterwards — volume, average
+    /// RPE and every top set are summed from the sets on the way out, so the
+    /// next read of anything is already right.
+    ///
+    /// Guarded on which exercise sits at <paramref name="entryIndex"/> and how
+    /// many sets it holds, the two things that change what a set index points
+    /// at: a drag on another device moves the entry, and a delete shifts the
+    /// sets. Either one since the caller's snapshot is a conflict rather than
+    /// an edit to the wrong set. A retry needs no guard of its own — writing the
+    /// same values twice is the same as writing them once — so a set that
+    /// already holds them answers <c>AlreadyApplied</c> and writes nothing.
+    /// </summary>
+    public async Task<EditSetOutcome> EditSetAsync(
+        string objectId,
+        string sessionId,
+        int entryIndex,
+        int setIndex,
+        string exerciseName,
+        int expectedSetCount,
+        WorkSet set,
+        CancellationToken cancellationToken)
+    {
+        var (session, etag) = await ReadSessionWithETagAsync(objectId, sessionId, cancellationToken);
+
+        if (session is null)
+        {
+            return new EditSetOutcome(EditSetResult.SessionNotFound, null);
+        }
+
+        var entry = entryIndex < session.Entries.Count ? session.Entries[entryIndex] : null;
+
+        if (entry is null
+            || entry.ExerciseName != exerciseName
+            || entry.Sets.Count != expectedSetCount
+            || setIndex >= entry.Sets.Count)
+        {
+            return new EditSetOutcome(EditSetResult.Conflict, session);
+        }
+
+        if (entry.Sets[setIndex] == set)
+        {
+            return new EditSetOutcome(EditSetResult.AlreadyApplied, session);
+        }
+
+        var updated = session with { Entries = session.WithSet(entryIndex, setIndex, set) };
+
+        return await ReplaceSessionAsync(
+            objectId,
+            updated,
+            etag,
+            $"Editing set {setIndex} of entry {entryIndex} in session {sessionId} failed.",
+            cancellationToken)
+            ? new EditSetOutcome(EditSetResult.Applied, updated)
+            : new EditSetOutcome(EditSetResult.Conflict, null);
+    }
+
+    /// <summary>
+    /// Writes a whole session back under the ETag it was read with — the second
+    /// half of every read-then-replace above. False means something else wrote
+    /// the session in between and nothing was written here; the caller answers
+    /// that as a conflict, and the client re-reads.
+    /// </summary>
+    private async Task<bool> ReplaceSessionAsync(
+        string objectId,
+        GymSession session,
+        string? etag,
+        string failureMessage,
+        CancellationToken cancellationToken)
+    {
+        using var payload = SerializeSession(objectId, session);
         using var response = await container.ReplaceItemStreamAsync(
             payload,
-            sessionId,
+            session.Id,
             new PartitionKey(objectId),
             new ItemRequestOptions { IfMatchEtag = etag, EnableContentResponseOnWrite = false },
             cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.PreconditionFailed)
         {
-            // A set was logged against this session between the read and the
-            // write — conceivably against this very entry, which is exactly
-            // what the emptiness check is there to protect. The client re-reads
-            // and decides again.
-            return new RemoveEntryOutcome(RemoveEntryResult.Conflict, null);
+            return false;
         }
 
         if (!response.IsSuccessStatusCode)
         {
-            throw Failure(response, $"Removing entry {entryIndex} from session {sessionId} failed.");
+            throw Failure(response, failureMessage);
         }
 
-        return new RemoveEntryOutcome(RemoveEntryResult.Applied, updated);
+        return true;
     }
 
     /// <summary>
-    /// A point read that also hands back the ETag, for the one write in this
-    /// file that goes through optimistic concurrency instead of a guarded
-    /// patch.
+    /// A point read that also hands back the ETag, for the writes in this file
+    /// that go through optimistic concurrency instead of a guarded patch.
     /// </summary>
     private async Task<(GymSession? Session, string? ETag)> ReadSessionWithETagAsync(
         string objectId,
@@ -1622,6 +1793,15 @@ public sealed class GymStore(Container container)
                 writer.WriteStartObject();
                 writer.WriteString("exerciseName", entry.ExerciseName);
 
+                // Only on an entry that was swapped, and it has to be written
+                // here rather than only by the swap: every read-then-replace in
+                // this file goes through this method, and a drag that dropped it
+                // would quietly forget what the substitute is standing in for.
+                if (entry.SwappedFrom is { } swappedFrom)
+                {
+                    writer.WriteString("swappedFrom", swappedFrom);
+                }
+
                 writer.WriteStartArray("sets");
 
                 foreach (var set in entry.Sets)
@@ -1883,3 +2063,76 @@ public enum RemoveEntryResult
 /// concurrent write the caller must re-read to see past.
 /// </summary>
 public readonly record struct RemoveEntryOutcome(RemoveEntryResult Result, GymSession? Session);
+
+/// <summary>How swapping one exercise for another ended.</summary>
+public enum SwapResult
+{
+    /// <summary>The swap was written. The ordinary answer.</summary>
+    Applied,
+
+    /// <summary>
+    /// A retry of a swap that already landed. Success, the same as a hot-path
+    /// <see cref="PatchResult.AlreadyApplied"/>.
+    /// </summary>
+    AlreadyApplied,
+
+    /// <summary>
+    /// The session does not match what the caller described — a different
+    /// entry count, another exercise at that index, or a different number of
+    /// sets on it. Nothing was written; re-read and swap again.
+    /// </summary>
+    Conflict,
+
+    /// <summary>
+    /// The swap would have inserted an entry into a session already at
+    /// <see cref="GymLimits.MaxEntriesPerSession"/>. Not stale state, so a
+    /// re-read does not fix it.
+    /// </summary>
+    SessionFull,
+
+    /// <summary>No session with that id in this user's partition.</summary>
+    SessionNotFound,
+}
+
+/// <summary>
+/// A swap's result. <c>At</c> is where the substitute now sits and
+/// <c>Replaced</c> whether it took the original's place or went in after it —
+/// both meaningful only for the two success results. <c>Session</c> is null
+/// for <see cref="SwapResult.SessionNotFound"/> and for a concurrent write the
+/// caller must re-read to see past.
+/// </summary>
+public readonly record struct SwapOutcome(SwapResult Result, GymSession? Session, int At, bool Replaced)
+{
+    public static SwapOutcome SessionNotFound => new(SwapResult.SessionNotFound, null, 0, false);
+}
+
+/// <summary>How correcting a logged set ended.</summary>
+public enum EditSetResult
+{
+    /// <summary>The set was rewritten. The ordinary answer.</summary>
+    Applied,
+
+    /// <summary>
+    /// The set already holds these values — a retry of an edit that landed, or
+    /// an edit that changed nothing. Success either way, and nothing was
+    /// written.
+    /// </summary>
+    AlreadyApplied,
+
+    /// <summary>
+    /// Another exercise sits at that index, or it holds a different number of
+    /// sets, so the set index may not mean the set the caller saw. Nothing was
+    /// written; re-read and edit again.
+    /// </summary>
+    Conflict,
+
+    /// <summary>No session with that id in this user's partition.</summary>
+    SessionNotFound,
+}
+
+/// <summary>
+/// An edit's result, with the session as it now stands. <c>Session</c> is null
+/// for <see cref="EditSetResult.SessionNotFound"/> and for a concurrent write
+/// the caller must re-read to see past.
+/// </summary>
+public readonly record struct EditSetOutcome(EditSetResult Result, GymSession? Session);

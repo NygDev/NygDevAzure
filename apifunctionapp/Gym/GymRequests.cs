@@ -330,6 +330,129 @@ internal static class GymRequests
     }
 
     /// <summary>
+    /// <c>POST /api/gym/workouts/{id}/entries/swap</c> — the machine is taken.
+    ///
+    /// <c>exerciseName</c> is what the caller believes sits at
+    /// <c>entryIndex</c>, and <c>expectedSetCount</c> how many sets it holds;
+    /// neither is written, both are the guard. The set count is also what
+    /// decides the swap's shape — none logged replaces the exercise, some
+    /// logged keeps them and inserts the substitute after — so it is stated by
+    /// the client rather than discovered by the server: see
+    /// <see cref="GymStore.SwapEntryAsync"/> for the race that prevents.
+    ///
+    /// <c>to</c> is free text like any exercise name: a variation from the
+    /// library, an alternative it suggested, or something typed.
+    /// </summary>
+    public static bool TryReadEntrySwap(
+        JsonElement body,
+        out int entryIndex,
+        out string exerciseName,
+        out int expectedEntryCount,
+        out int expectedSetCount,
+        out string to,
+        out string error)
+    {
+        entryIndex = 0;
+        exerciseName = string.Empty;
+        expectedEntryCount = 0;
+        expectedSetCount = 0;
+        to = string.Empty;
+
+        if (!GymJson.TryReadInt(
+                body,
+                "entryIndex",
+                0,
+                GymLimits.MaxEntriesPerSession - 1,
+                out entryIndex,
+                out error)
+            || !GymJson.TryReadString(
+                body,
+                "exerciseName",
+                GymLimits.MaxExerciseNameLength,
+                out exerciseName,
+                out error)
+            || !GymJson.TryReadInt(
+                body,
+                "expectedEntryCount",
+                1,
+                GymLimits.MaxEntriesPerSession,
+                out expectedEntryCount,
+                out error)
+            || !GymJson.TryReadInt(
+                body,
+                "expectedSetCount",
+                0,
+                GymLimits.MaxSetsPerEntry,
+                out expectedSetCount,
+                out error)
+            || !GymJson.TryReadString(body, "to", GymLimits.MaxExerciseNameLength, out to, out error))
+        {
+            return false;
+        }
+
+        if (entryIndex >= expectedEntryCount)
+        {
+            error = $"'entryIndex' is {entryIndex} and 'expectedEntryCount' is {expectedEntryCount}, so "
+                + "the exercise being swapped is not one the session is said to hold.";
+            return false;
+        }
+
+        if (to == exerciseName)
+        {
+            error = $"'to' and 'exerciseName' are both '{to}'. A swap replaces one exercise with "
+                + "another; swapping one for itself has nothing to write.";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// <c>PUT /api/gym/workouts/{id}/entries/{i}/sets/{j}</c> — correcting a
+    /// logged set.
+    ///
+    /// The set's values exactly as <see cref="TryReadSet"/> takes them, bounded
+    /// the same way, so an edit cannot store anything a fresh tap could not.
+    /// <c>exerciseName</c> and <c>expectedSetCount</c> are the guard: they are
+    /// what the caller believes the entry is and holds, and together they are
+    /// what a set index means.
+    /// </summary>
+    public static bool TryReadSetEdit(
+        JsonElement body,
+        out string exerciseName,
+        out int expectedSetCount,
+        out WorkSet set,
+        out string error)
+    {
+        exerciseName = string.Empty;
+        expectedSetCount = 0;
+        set = default;
+
+        if (!GymJson.TryReadString(
+                body,
+                "exerciseName",
+                GymLimits.MaxExerciseNameLength,
+                out exerciseName,
+                out error)
+            || !GymJson.TryReadInt(
+                body,
+                "expectedSetCount",
+                1,
+                GymLimits.MaxSetsPerEntry,
+                out expectedSetCount,
+                out error)
+            || !GymJson.TryReadDouble(body, "weightKg", 0, GymLimits.MaxWeightKg, out var weight, out error)
+            || !GymJson.TryReadInt(body, "reps", 1, GymLimits.MaxReps, out var reps, out error)
+            || !TryReadRpe(body, out var rpe, out error))
+        {
+            return false;
+        }
+
+        set = new WorkSet(weight, reps, rpe);
+        return true;
+    }
+
+    /// <summary>
     /// RPE: absent, a literal null, or a number from 5 to 10 on a half step.
     ///
     /// Optional because a set without a rating is still a set, and refusing it

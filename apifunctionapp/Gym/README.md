@@ -93,11 +93,18 @@ it. The source is `gym/exercises.json` in this repository; the
 
 ```jsonc
 {
-  "version": "2026-09-03",
+  "version": "2026-10-02",
   "equipment": ["Bar", "Dumbbell", "Cable", "Machine", "Bodyweight"],
-  "exercises": [{ "name": "Bench Press", "equipment": "Bar" }]
+  "exercises": [
+    { "name": "Bicep Curl", "equipment": "Dumbbell", "group": "Arms", "pattern": "curl" },
+    { "name": "Preacher Curl", "equipment": "Bar", "group": "Arms", "pattern": "curl", "variationOf": "Bicep Curl" }
+  ]
 }
 ```
+
+`group`, `pattern` and `variationOf` are optional and describe what an exercise
+can be swapped for; `gym/README.md` has the rules. Nothing here reads them —
+an entry is a name, and a variation is just another name.
 
 Custom exercise names are not in it and never will be: they are the user's, so
 they post inline with the entry.
@@ -431,6 +438,12 @@ The id is constructible: `session_` plus today's date resumes a draft directly,
 with no "which block, which cell was I on" lookup in front of it. It only
 exists once Start has created it.
 
+An entry that was swapped in for another carries `swappedFrom`, naming the
+exercise the plan asked for — `{ "exerciseName": "Leg Press", "swappedFrom":
+"Squat", "sets": [...] }`. The key is absent on every other entry rather than
+null, which is every entry written before swapping existed. See the swap route
+below.
+
 ### `GET /gym/workouts?mesoId=`
 
 History. Without `mesoId`, the current block. Same session summaries as
@@ -532,6 +545,47 @@ already been rearranged once; reading first and replacing the document under
 an ETag is what makes it safe to retry regardless, at the cost of an RU this
 call can afford and the hot path cannot.
 
+### `POST /gym/workouts/{id}/entries/swap` — the machine is taken
+
+```jsonc
+{ "entryIndex": 0, "exerciseName": "Squat", "expectedEntryCount": 5, "expectedSetCount": 2, "to": "Leg Press" }
+```
+
+Replaces one exercise with another without losing anything logged against it.
+What it writes depends on whether the exercise was lifted:
+
+- **Nothing logged** (`expectedSetCount: 0`) — the exercise is **replaced** in
+  place. The slot keeps its position, so the substitute sits where the plan
+  expects the original.
+- **Sets logged** — those sets stay where they are, on the exercise they were
+  lifted on, and the substitute is **inserted** straight after it. A swap never
+  moves a set onto an exercise it was not done on: two lifts' numbers in one
+  history is exactly what keeping variations apart is for.
+
+Either way the substitute carries `swappedFrom`, naming the *original*
+exercise — not the one it directly replaced, so a second swap still points at
+the plan. That is what lets the front end carry the plan's set count across:
+the leg press owes what the squat had left. Replacing an untouched slot with its
+original again clears the field.
+
+**200** `{ok, alreadyApplied, entryIndex, entryCount, replaced, exerciseName}`.
+`entryIndex` is where the substitute now sits — the index to log its sets
+against — and `replaced` says which of the two shapes was written.
+
+`exerciseName`, `expectedEntryCount` and `expectedSetCount` are the guard, and
+none of them is written. The set count is in it because it is what decides the
+shape: a set tapped a moment before the swap and still in flight would
+otherwise land *after* an in-place replace — on the substitute, under a name it
+was not lifted on. With the count stated, the swap that raced it is refused
+instead.
+
+Read-then-replace under an ETag, like the move. A retry after a lost response
+finds the substitute already in the slot, or already straight after the
+original with one more entry than counted, and comes back `alreadyApplied`.
+Anything else is **409 `entry_conflict`** — re-read and swap again. **409
+`session_full`** is the one refusal a re-read does not fix: an insert into a
+session already holding forty exercises.
+
 ### `POST /gym/workouts/{id}/sets` — the tap
 
 ```jsonc
@@ -543,6 +597,32 @@ call can afford and the hot path cannot.
 
 **409 `no_such_entry`** means the entry index is not in the session — add the
 exercise first.
+
+### `PUT /gym/workouts/{id}/entries/{entryIndex}/sets/{setIndex}` — correcting a set
+
+```jsonc
+{ "exerciseName": "Squat", "expectedSetCount": 3, "weightKg": 102.5, "reps": 5, "rpe": 8 }
+```
+
+Rewrites one logged set in place — a mistyped weight, a miscounted rep — on a
+draft or on a session submitted weeks ago alike. The values are bounded exactly
+as a logged set's are. **200** `{ok, alreadyApplied, entryIndex, setIndex,
+setCount}`.
+
+In place rather than delete-and-relog, because the pair would move a corrected
+first set to the bottom of its exercise, and order is read downstream.
+
+`exerciseName` and `expectedSetCount` are the guard: they are the two things
+that change what a set index points at — a drag on another device moves the
+entry, a delete shifts the sets — so either one having changed is **409
+`entry_conflict`** rather than an edit to the wrong set. A retry needs nothing
+more: writing the same values twice is writing them once, so a set that
+already holds them answers `alreadyApplied` and nothing is written.
+
+**Nothing derived needs correcting afterwards.** Volume, average RPE and every
+top set are summed from the sets whenever they are read — see the end of this
+file — so the next read of the session, the block list or a chart already
+reflects the edit.
 
 ### `DELETE /gym/workouts/{id}/entries/{entryIndex}/sets/{setIndex}?expectedSetCount=`
 
@@ -623,8 +703,6 @@ Removes a workout — the answer to the duplicate a cell can now collect.
   cannot be deleted, and no call takes its sets with it. Removing the exercise
   is the undo for picking the wrong one, not a way to discard a workout; the
   sets come off one at a time first, each through its own guarded delete.
-- **Editing a logged set in place.** Delete it and log it again; both calls are
-  guarded, so the pair is safe to retry.
 - **A route that applies a template to a day.** See above: it is a copy into
   the Plan tab's draft, which the block's own PATCH then saves.
 - **The rest of the design's open questions** — deload flags, warm-up marking,
@@ -650,7 +728,8 @@ Removes a workout — the answer to the duplicate a cell can now collect.
 | 409 | `count_mismatch` | Stale client state. Carries `expected` and `actual`; re-read and retry. Nothing was written. |
 | 409 | `no_such_entry` | The entry index is not in the session. |
 | 409 | `entry_not_empty` | The exercise still holds logged sets. Delete those first. |
-| 409 | `entry_conflict` | The session does not match the removal's guard. Re-read and try again. |
+| 409 | `entry_conflict` | The session does not match the guard of a removal, a swap or a set edit. Re-read and try again. |
+| 409 | `session_full` | A swap would insert a 41st exercise. Nothing was written. |
 | 409 | `no_current_mesocycle`, `date_full` | See Start, above. |
 | 409 | `template_limit` | 50 saved day templates. Delete one to save another. |
 | 500 | `unreadable_document`, `dangling_mesocycle` | A stored document does not match what the code writes. Not retryable. |

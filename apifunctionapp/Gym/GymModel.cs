@@ -288,18 +288,41 @@ public readonly record struct WorkSet(double WeightKg, int Reps, double? Rpe)
 /// adding one would be for this feature's benefit alone, and the position a
 /// client already addresses sets by does the job without a second identity to
 /// keep in step with the first.
+///
+/// <c>SwappedFrom</c> is the exercise this entry was swapped in for — the rack
+/// was taken, so the planned squat became a leg press. It records a decision
+/// made at the time and nothing else records it: the plan still says squat, and
+/// the leg press's own name says nothing about why it is there. It is what lets
+/// the front end carry the planned set count across to the substitute, and it
+/// always names the <em>original</em> exercise, so swapping twice still points
+/// at the plan rather than at the first substitute. Absent on every entry that
+/// was not swapped, which is every entry written before swapping existed.
 /// </summary>
-public sealed record SessionEntry(string ExerciseName, IReadOnlyList<WorkSet> Sets)
+public sealed record SessionEntry(string ExerciseName, IReadOnlyList<WorkSet> Sets, string? SwappedFrom = null)
 {
     public static SessionEntry Read(JsonElement element) => new(
         GymDocument.String(element, "exerciseName"),
-        GymDocument.List(element, "sets", WorkSet.Read));
+        GymDocument.List(element, "sets", WorkSet.Read),
+        GymDocument.OptionalString(element, "swappedFrom"));
 
-    public object ToResponse() => new
-    {
-        exerciseName = ExerciseName,
-        sets = Sets.Select(set => set.ToResponse()).ToArray(),
-    };
+    /// <summary>
+    /// The wire shape. <c>swappedFrom</c> is present only on an entry that was
+    /// swapped, for the reason <see cref="SessionSummary.ToResponse"/> leaves
+    /// <c>entries</c> off: a key that is null on nearly every entry is bytes
+    /// on every session read for nothing.
+    /// </summary>
+    public object ToResponse() => SwappedFrom is null
+        ? new
+        {
+            exerciseName = ExerciseName,
+            sets = Sets.Select(set => set.ToResponse()).ToArray(),
+        }
+        : new
+        {
+            exerciseName = ExerciseName,
+            swappedFrom = SwappedFrom,
+            sets = Sets.Select(set => set.ToResponse()).ToArray(),
+        };
 }
 
 /// <summary>
@@ -388,6 +411,64 @@ public sealed record GymSession(
 
         return plan;
     }
+
+    /// <summary>
+    /// The entries with one exercise swapped for another — what
+    /// <see cref="GymStore.SwapEntryAsync"/> writes, kept here so the rule is a
+    /// function of the session rather than half of a Cosmos call.
+    ///
+    /// Two shapes, decided by whether the exercise was lifted:
+    ///
+    /// <list type="bullet">
+    /// <item>Nothing logged against it: it is <em>replaced</em> in place. The
+    /// slot keeps its position, so the substitute is where the plan expects
+    /// the original to be.</item>
+    /// <item>Sets logged against it: those sets stay where they are, on the
+    /// exercise they were lifted on, and the substitute is <em>inserted</em>
+    /// straight after it. A swap never moves a set onto an exercise it was not
+    /// done on — that would put two lifts' numbers into one history, which is
+    /// exactly what keeping variations apart exists to prevent.</item>
+    /// </list>
+    ///
+    /// The substitute's <c>SwappedFrom</c> is the <em>original</em> exercise,
+    /// not the one it directly replaces, so a second swap still points at the
+    /// plan. Replacing an untouched slot with its original again clears it —
+    /// the slot is back to what the plan says. Inserting the original after a
+    /// substitute that was lifted keeps it, because that entry is still
+    /// standing in for the sets the plan asked of the first one.
+    /// </summary>
+    public (IReadOnlyList<SessionEntry> Entries, int At, bool Replaced) WithSwap(int entryIndex, string to)
+    {
+        var current = Entries[entryIndex];
+        var original = current.SwappedFrom ?? current.ExerciseName;
+        var next = Entries.ToList();
+
+        if (current.Sets.Count == 0)
+        {
+            next[entryIndex] = new SessionEntry(to, [], original == to ? null : original);
+
+            return (next, entryIndex, true);
+        }
+
+        next.Insert(entryIndex + 1, new SessionEntry(to, [], original));
+
+        return (next, entryIndex + 1, false);
+    }
+
+    /// <summary>
+    /// The entries with one logged set replaced by another — the edit that
+    /// corrects a mistyped weight without deleting the set and logging it again
+    /// at the bottom of the list.
+    /// </summary>
+    public IReadOnlyList<SessionEntry> WithSet(int entryIndex, int setIndex, WorkSet set) =>
+        Entries
+            .Select((entry, index) => index != entryIndex
+                ? entry
+                : entry with
+                {
+                    Sets = entry.Sets.Select((logged, at) => at == setIndex ? set : logged).ToArray(),
+                })
+            .ToArray();
 
     public object ToResponse() => new
     {
@@ -569,6 +650,15 @@ internal static class GymDocument
     public static double? OptionalDouble(JsonElement document, string name) =>
         document.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.Number
             ? property.GetDouble()
+            : null;
+
+    /// <summary>
+    /// The same, for a string — an entry's <c>swappedFrom</c>, which every entry
+    /// written before swapping existed simply does not have.
+    /// </summary>
+    public static string? OptionalString(JsonElement document, string name) =>
+        document.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String
+            ? property.GetString()
             : null;
 
     /// <summary>
