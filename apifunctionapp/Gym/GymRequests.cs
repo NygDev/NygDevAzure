@@ -342,6 +342,11 @@ internal static class GymRequests
     ///
     /// <c>to</c> is free text like any exercise name: a variation from the
     /// library, an alternative it suggested, or something typed.
+    ///
+    /// <c>withSets</c> is optional and false when absent. True says the sets
+    /// logged on the exercise were lifted on <c>to</c>, so they go with the
+    /// swap rather than staying behind — the correction a finished workout
+    /// makes when the curls were done on the cable after all.
     /// </summary>
     public static bool TryReadEntrySwap(
         JsonElement body,
@@ -350,6 +355,7 @@ internal static class GymRequests
         out int expectedEntryCount,
         out int expectedSetCount,
         out string to,
+        out bool withSets,
         out string error)
     {
         entryIndex = 0;
@@ -357,6 +363,7 @@ internal static class GymRequests
         expectedEntryCount = 0;
         expectedSetCount = 0;
         to = string.Empty;
+        withSets = false;
 
         if (!GymJson.TryReadInt(
                 body,
@@ -385,7 +392,8 @@ internal static class GymRequests
                 GymLimits.MaxSetsPerEntry,
                 out expectedSetCount,
                 out error)
-            || !GymJson.TryReadString(body, "to", GymLimits.MaxExerciseNameLength, out to, out error))
+            || !GymJson.TryReadString(body, "to", GymLimits.MaxExerciseNameLength, out to, out error)
+            || !GymJson.TryReadOptionalBool(body, "withSets", out withSets, out error))
         {
             return false;
         }
@@ -753,6 +761,35 @@ internal static class GymJson
 
         value = number;
         error = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// A flag that may be left off: absent or null reads as false, anything
+    /// other than a JSON boolean is refused rather than guessed at — a
+    /// <c>"false"</c> string that read as true would move sets nobody meant to.
+    /// </summary>
+    public static bool TryReadOptionalBool(
+        JsonElement body,
+        string name,
+        out bool value,
+        out string error)
+    {
+        value = false;
+        error = string.Empty;
+
+        if (!body.TryGetProperty(name, out var property) || property.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (property.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            error = $"'{name}' is {property.GetRawText()}, expected true or false.";
+            return false;
+        }
+
+        value = property.GetBoolean();
         return true;
     }
 

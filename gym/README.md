@@ -17,7 +17,7 @@ The `gym_exercise_library_url` output is the URL.
 Custom exercise names are not in here and never will be: they are the user's,
 so they post inline with the entry and live on the session document.
 
-An exercise is `{name, equipment}` and, optionally, three fields that describe
+An exercise is `{name, equipment}` and, optionally, four fields that describe
 what it is a substitute for. The front end reads them to suggest a swap when the
 machine you wanted has eight people waiting for it:
 
@@ -25,11 +25,27 @@ machine you wanted has eight people waiting for it:
 | --- | --- | --- |
 | `variationOf` | The same movement, done another way. Names the family's root — the "regular" one | `Preacher Curl` → `Bicep Curl` |
 | `pattern` | The job the movement does, so different exercises can stand in for each other | `horizontal-push`, `hinge`, `curl` |
+| `muscles` | What it trains, main muscle first, one to three of them | `Chin-up` → `["Lats", "Biceps", "Upper Back"]` |
 | `group` | The muscle group it is planned against — one of gymbro's seven | `Chest`, `Posterior` |
 
-All three are optional and absent reads as unknown, so a library without them —
+All four are optional and absent reads as unknown, so a library without them —
 an older cached copy, or the app's bundled fallback from before them — still
 works and simply suggests less.
+
+The swap sheet offers them in that order: the exercise's variations, then
+others with its `pattern`, then whatever trains the same `muscles` — ranked by
+overlap, with the main muscle on each side counting most, and shown with the
+muscles they share. So a curl's same-muscle suggestions are a chin-up and a
+close-grip pulldown, *Biceps*. `group` is deliberately not what that tier
+uses: it is a planning bucket, and Arms holding biceps and triceps both made a
+triceps pushdown a curl's "same muscle group". It is only the fallback for a
+library too old to carry `muscles`.
+
+`muscles` is a short list on purpose — what the exercise is *for*, not every
+muscle that works during it — and its vocabulary is a closed one: Chest, Front
+Delts, Side Delts, Rear Delts, Triceps, Biceps, Forearms, Lats, Upper Back,
+Lower Back, Quads, Glutes, Hamstrings, Calves. A name spelled differently is a
+muscle that matches nothing.
 
 The logger bundles a copy of this file as its offline fallback
 (`sites/gym/src/lib/library.ts` in nygdevweb), because a gym with no signal is

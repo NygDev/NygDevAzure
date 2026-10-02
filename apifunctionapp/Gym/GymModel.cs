@@ -417,7 +417,7 @@ public sealed record GymSession(
     /// <see cref="GymStore.SwapEntryAsync"/> writes, kept here so the rule is a
     /// function of the session rather than half of a Cosmos call.
     ///
-    /// Two shapes, decided by whether the exercise was lifted:
+    /// Three shapes:
     ///
     /// <list type="bullet">
     /// <item>Nothing logged against it: it is <em>replaced</em> in place. The
@@ -425,27 +425,38 @@ public sealed record GymSession(
     /// the original to be.</item>
     /// <item>Sets logged against it: those sets stay where they are, on the
     /// exercise they were lifted on, and the substitute is <em>inserted</em>
-    /// straight after it. A swap never moves a set onto an exercise it was not
-    /// done on — that would put two lifts' numbers into one history, which is
-    /// exactly what keeping variations apart exists to prevent.</item>
+    /// straight after it — the rack was taken halfway through. A swap never
+    /// moves a set onto an exercise it was not done on unless asked to: that
+    /// would put two lifts' numbers into one history, which is exactly what
+    /// keeping variations apart exists to prevent.</item>
+    /// <item><paramref name="withSets"/>: the sets <em>were</em> done on
+    /// <paramref name="to"/>, and the entry was simply logged under the wrong
+    /// name — the planned curl was done on the cable because the dumbbells were
+    /// taken, and nobody swapped before logging. It is replaced in place and
+    /// its sets go with it, so their history lands on the exercise they were
+    /// actually lifted on. This is what a swap on a finished workout means:
+    /// there is nothing left to log, only a record to correct.</item>
     /// </list>
     ///
     /// The substitute's <c>SwappedFrom</c> is the <em>original</em> exercise,
     /// not the one it directly replaces, so a second swap still points at the
-    /// plan. Replacing an untouched slot with its original again clears it —
-    /// the slot is back to what the plan says. Inserting the original after a
-    /// substitute that was lifted keeps it, because that entry is still
-    /// standing in for the sets the plan asked of the first one.
+    /// plan. Replacing a slot with its original again clears it — the slot is
+    /// back to what the plan says. Inserting the original after a substitute
+    /// that was lifted keeps it, because that entry is still standing in for
+    /// the sets the plan asked of the first one.
     /// </summary>
-    public (IReadOnlyList<SessionEntry> Entries, int At, bool Replaced) WithSwap(int entryIndex, string to)
+    public (IReadOnlyList<SessionEntry> Entries, int At, bool Replaced) WithSwap(
+        int entryIndex,
+        string to,
+        bool withSets = false)
     {
         var current = Entries[entryIndex];
         var original = current.SwappedFrom ?? current.ExerciseName;
         var next = Entries.ToList();
 
-        if (current.Sets.Count == 0)
+        if (current.Sets.Count == 0 || withSets)
         {
-            next[entryIndex] = new SessionEntry(to, [], original == to ? null : original);
+            next[entryIndex] = new SessionEntry(to, current.Sets, original == to ? null : original);
 
             return (next, entryIndex, true);
         }

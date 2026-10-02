@@ -1165,16 +1165,19 @@ public sealed class GymStore(Container container)
     /// What the swap writes is <see cref="GymSession.WithSwap"/>'s decision:
     /// an exercise with nothing logged is replaced in place, and one that was
     /// lifted keeps its sets and gets the substitute inserted after it. So no
-    /// set is ever lost or moved by a swap, which is the one thing this has to
-    /// guarantee.
+    /// set is ever lost, and none is moved unless the caller says the sets were
+    /// lifted on the substitute: <paramref name="withSets"/>, which replaces
+    /// the exercise in place and carries its sets across. That is the swap a
+    /// finished workout makes — correcting the name the sets were logged under.
     ///
-    /// That decision is the client's to state rather than the server's to
+    /// The shape is the client's to state rather than the server's to
     /// discover: <paramref name="expectedSetCount"/> is how many sets the
     /// caller believes the exercise holds, and the swap applies only while that
     /// is true. Without it, a set tapped a moment before the swap and still in
     /// flight would land <em>after</em> an in-place replace — on the
     /// substitute, under a name it was not lifted on. With it, the swap that
-    /// raced the set is refused and the client re-reads.
+    /// raced the set is refused and the client re-reads. The same count is what
+    /// makes <paramref name="withSets"/> move exactly the sets the caller saw.
     ///
     /// Read-then-replace under an ETag, like <see cref="ReorderEntryAsync"/>
     /// and for the same reasons: it happens a handful of times a session, the
@@ -1198,6 +1201,7 @@ public sealed class GymStore(Container container)
         int expectedEntryCount,
         int expectedSetCount,
         string to,
+        bool withSets,
         CancellationToken cancellationToken)
     {
         var (session, etag) = await ReadSessionWithETagAsync(objectId, sessionId, cancellationToken);
@@ -1207,6 +1211,10 @@ public sealed class GymStore(Container container)
             return SwapOutcome.SessionNotFound;
         }
 
+        // In place when there is nothing to keep behind, or when what there is
+        // goes with the swap; inserted after the original otherwise.
+        var inPlace = expectedSetCount == 0 || withSets;
+
         var entries = session.Entries;
         var asDescribed = entries.Count == expectedEntryCount
             && entryIndex < entries.Count
@@ -1215,7 +1223,7 @@ public sealed class GymStore(Container container)
 
         if (!asDescribed)
         {
-            var replacedAlready = expectedSetCount == 0
+            var replacedAlready = inPlace
                 && entries.Count == expectedEntryCount
                 && entryIndex < entries.Count
                 && entries[entryIndex].ExerciseName == to;
@@ -1225,7 +1233,7 @@ public sealed class GymStore(Container container)
                 return new SwapOutcome(SwapResult.AlreadyApplied, session, entryIndex, Replaced: true);
             }
 
-            var insertedAlready = expectedSetCount > 0
+            var insertedAlready = !inPlace
                 && entries.Count == expectedEntryCount + 1
                 && entryIndex + 1 < entries.Count
                 && entries[entryIndex].ExerciseName == exerciseName
@@ -1238,12 +1246,12 @@ public sealed class GymStore(Container container)
 
         // Inserting adds an entry, so it is held to the same ceiling the picker
         // is. Replacing in place cannot grow the session and never meets it.
-        if (expectedSetCount > 0 && entries.Count >= GymLimits.MaxEntriesPerSession)
+        if (!inPlace && entries.Count >= GymLimits.MaxEntriesPerSession)
         {
             return new SwapOutcome(SwapResult.SessionFull, session, entryIndex, Replaced: false);
         }
 
-        var (swapped, at, replaced) = session.WithSwap(entryIndex, to);
+        var (swapped, at, replaced) = session.WithSwap(entryIndex, to, withSets);
         var updated = session with { Entries = swapped };
 
         return await ReplaceSessionAsync(

@@ -470,14 +470,17 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
     /// a leg press, or the curl a preacher curl.
     ///
     /// <c>{entryIndex, exerciseName, expectedEntryCount, expectedSetCount,
-    /// to}</c>. An exercise with nothing logged is replaced where it stands; one
-    /// that was lifted keeps every set it has, on the exercise it was lifted on,
-    /// and the substitute goes in straight after it. Either way the substitute
-    /// carries <c>swappedFrom</c>, naming the exercise the plan asked for.
+    /// to, withSets?}</c>. An exercise with nothing logged is replaced where it
+    /// stands; one that was lifted keeps every set it has, on the exercise it
+    /// was lifted on, and the substitute goes in straight after it. With
+    /// <c>withSets</c> the sets were lifted on <c>to</c> all along, so it is
+    /// replaced where it stands and they go with it — the correction a
+    /// finished workout makes. Every shape gives the substitute
+    /// <c>swappedFrom</c>, naming the exercise the plan asked for.
     ///
     /// <c>entryIndex</c> in the answer is where the substitute now sits, which
-    /// is the index to log its sets against, and <c>replaced</c> says which of
-    /// the two shapes was written.
+    /// is the index to log its sets against, and <c>replaced</c> says whether
+    /// it took the original's place or went in after it.
     /// </summary>
     [Function("GymEntrySwap")]
     public Task<IActionResult> SwapEntry(
@@ -500,6 +503,7 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
                         out var expectedEntryCount,
                         out var expectedSetCount,
                         out var to,
+                        out var withSets,
                         out var error))
                 {
                     return GymEndpoint.Invalid(error);
@@ -513,6 +517,7 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
                     expectedEntryCount,
                     expectedSetCount,
                     to,
+                    withSets,
                     token);
 
                 return outcome.Result switch

@@ -102,8 +102,8 @@ it. The source is `gym/exercises.json` in this repository; the
 }
 ```
 
-`group`, `pattern` and `variationOf` are optional and describe what an exercise
-can be swapped for; `gym/README.md` has the rules. Nothing here reads them —
+`group`, `muscles`, `pattern` and `variationOf` are optional and describe what
+an exercise can be swapped for; `gym/README.md` has the rules. Nothing here reads them —
 an entry is a name, and a variation is just another name.
 
 Custom exercise names are not in it and never will be: they are the user's, so
@@ -561,23 +561,33 @@ What it writes depends on whether the exercise was lifted:
   lifted on, and the substitute is **inserted** straight after it. A swap never
   moves a set onto an exercise it was not done on: two lifts' numbers in one
   history is exactly what keeping variations apart is for.
+- **Sets logged, `"withSets": true`** — the sets *were* done on `to`, and were
+  logged under the wrong name: the planned curl was done on the cable because
+  the dumbbells were taken, and nobody swapped before tapping. The exercise is
+  **replaced** in place and its sets go with it, so their history lands on the
+  exercise they were actually lifted on. This is the swap a **finished
+  workout** makes — there is nothing left to log, only a record to correct —
+  and it is what the front end sends from one. Optional and false when absent;
+  anything but a JSON boolean is a 400 rather than a guess.
 
-Either way the substitute carries `swappedFrom`, naming the *original*
+Every shape gives the substitute `swappedFrom`, naming the *original*
 exercise — not the one it directly replaced, so a second swap still points at
 the plan. That is what lets the front end carry the plan's set count across:
-the leg press owes what the squat had left. Replacing an untouched slot with its
-original again clears the field.
+the leg press owes what the squat had left. Putting the original back in place
+clears the field.
 
 **200** `{ok, alreadyApplied, entryIndex, entryCount, replaced, exerciseName}`.
 `entryIndex` is where the substitute now sits — the index to log its sets
-against — and `replaced` says which of the two shapes was written.
+against — and `replaced` says whether it took the original's place or went in
+after it.
 
 `exerciseName`, `expectedEntryCount` and `expectedSetCount` are the guard, and
 none of them is written. The set count is in it because it is what decides the
 shape: a set tapped a moment before the swap and still in flight would
 otherwise land *after* an in-place replace — on the substitute, under a name it
 was not lifted on. With the count stated, the swap that raced it is refused
-instead.
+instead. With `withSets` it is also what makes the swap move exactly the sets
+the caller was looking at.
 
 Read-then-replace under an ETag, like the move. A retry after a lost response
 finds the substitute already in the slot, or already straight after the
