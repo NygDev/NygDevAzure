@@ -474,8 +474,8 @@ public class GymSets(GymStore store, ILogger<GymSets> logger)
     /// stands; one that was lifted keeps every set it has, on the exercise it
     /// was lifted on, and the substitute goes in straight after it. With
     /// <c>withSets</c> the sets were lifted on <c>to</c> all along, so it is
-    /// replaced where it stands and they go with it — the correction a
-    /// finished workout makes. Every shape gives the substitute
+    /// replaced where it stands and they go with it — a correction, made
+    /// from a finished workout or mid-workout. Every shape gives the substitute
     /// <c>swappedFrom</c>, naming the exercise the plan asked for.
     ///
     /// <c>entryIndex</c> in the answer is where the substitute now sits, which

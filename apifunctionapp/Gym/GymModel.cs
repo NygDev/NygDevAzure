@@ -434,8 +434,9 @@ public sealed record GymSession(
     /// name — the planned curl was done on the cable because the dumbbells were
     /// taken, and nobody swapped before logging. It is replaced in place and
     /// its sets go with it, so their history lands on the exercise they were
-    /// actually lifted on. This is what a swap on a finished workout means:
-    /// there is nothing left to log, only a record to correct.</item>
+    /// actually lifted on. It is what a swap on a finished workout always
+    /// means — there is nothing left to log, only a record to correct — and
+    /// what one mid-workout means when the user says so.</item>
     /// </list>
     ///
     /// The substitute's <c>SwappedFrom</c> is the <em>original</em> exercise,

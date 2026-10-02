@@ -345,8 +345,8 @@ internal static class GymRequests
     ///
     /// <c>withSets</c> is optional and false when absent. True says the sets
     /// logged on the exercise were lifted on <c>to</c>, so they go with the
-    /// swap rather than staying behind — the correction a finished workout
-    /// makes when the curls were done on the cable after all.
+    /// swap rather than staying behind — the correction for curls that were
+    /// done on the cable after all, on a finished workout or mid-workout.
     /// </summary>
     public static bool TryReadEntrySwap(
         JsonElement body,

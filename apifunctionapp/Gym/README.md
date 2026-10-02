@@ -565,10 +565,11 @@ What it writes depends on whether the exercise was lifted:
   logged under the wrong name: the planned curl was done on the cable because
   the dumbbells were taken, and nobody swapped before tapping. The exercise is
   **replaced** in place and its sets go with it, so their history lands on the
-  exercise they were actually lifted on. This is the swap a **finished
-  workout** makes — there is nothing left to log, only a record to correct —
-  and it is what the front end sends from one. Optional and false when absent;
-  anything but a JSON boolean is a 400 rather than a guess.
+  exercise they were actually lifted on. The front end always sends it from a
+  **finished workout** — there is nothing left to log, only a record to
+  correct — and mid-workout when the user picks *Move sets too*, or swaps an
+  exercise already swapped away from. Valid on either; optional and false when
+  absent; anything but a JSON boolean is a 400 rather than a guess.
 
 Every shape gives the substitute `swappedFrom`, naming the *original*
 exercise — not the one it directly replaced, so a second swap still points at

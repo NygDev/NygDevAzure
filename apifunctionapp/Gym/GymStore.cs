@@ -1167,8 +1167,8 @@ public sealed class GymStore(Container container)
     /// lifted keeps its sets and gets the substitute inserted after it. So no
     /// set is ever lost, and none is moved unless the caller says the sets were
     /// lifted on the substitute: <paramref name="withSets"/>, which replaces
-    /// the exercise in place and carries its sets across. That is the swap a
-    /// finished workout makes — correcting the name the sets were logged under.
+    /// the exercise in place and carries its sets across — correcting the
+    /// name the sets were logged under, on a finished workout or a draft alike.
     ///
     /// The shape is the client's to state rather than the server's to
     /// discover: <paramref name="expectedSetCount"/> is how many sets the
