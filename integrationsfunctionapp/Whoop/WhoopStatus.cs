@@ -17,8 +17,8 @@ namespace ApiFunctionApp.Whoop;
 /// </summary>
 public class WhoopStatus(Lazy<WhoopClient> whoop, ILogger<WhoopStatus> logger)
 {
-    // Function level: the response carries the account's name and email, and
-    // this is a diagnostic, not something the public site calls.
+    // Function level: the response carries the WHOOP user id and the granted
+    // scopes, and this is a diagnostic, not something the public site calls.
     [Function("WhoopStatus")]
     public async Task<IActionResult> Run(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "whoop/status")] HttpRequest request,

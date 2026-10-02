@@ -69,8 +69,8 @@ internal static class WhoopEndpoint
                 $"""
                 Could not authenticate to Key Vault as the app's managed identity.
 
-                Check that func-nygdev-api still carries the user-assigned identity
-                id-nygdev-api and that MANAGED_IDENTITY_CLIENT_ID matches its client id.
+                Check that func-nygdev-integrations still carries the user-assigned identity
+                id-nygdev-integrations and that MANAGED_IDENTITY_CLIENT_ID matches its client id.
 
                 {ex.Message}
                 """);
@@ -82,8 +82,9 @@ internal static class WhoopEndpoint
 
             var hint = ex.Status switch
             {
-                403 => "id-nygdev-api needs Key Vault Secrets Officer on the vault — officer "
-                    + "rather than a reader role, because the refresh token is written back.",
+                403 => "id-nygdev-integrations needs Key Vault Secrets Officer on the vault — officer "
+                    + "rather than a reader role, because the refresh token is written back. It is "
+                    + "granted out of band; the command is at the end of terraform/consumption.tf.",
                 404 => $"Both '{WhoopSecretStore.ClientSecretName}' and "
                     + $"'{WhoopSecretStore.RefreshTokenName}' have to exist in the vault.",
                 _ => "The vault is reachable but refused the operation.",

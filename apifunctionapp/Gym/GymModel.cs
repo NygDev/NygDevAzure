@@ -89,8 +89,6 @@ internal static class GymLimits
     public const double MaxRpe = 10;
 }
 
-/// <summary>One labelled day of the block. Position in the block is
-/// <c>dayIndex</c>; the label is what the user called it.</summary>
 /// <summary>
 /// One exercise a day prescribes, and how much of it.
 ///

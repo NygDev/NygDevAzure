@@ -222,9 +222,9 @@ public class GpsLocations(GpsFixStore store, ILogger<GpsLocations> logger)
             var hint = ex.StatusCode switch
             {
                 HttpStatusCode.Forbidden =>
-                    "id-nygdev-api needs data-plane read/write on nygdev-cosmos-db; terraform grants it "
-                    + "across the account in terraform/consumption.tf, so a 403 here means the assignment "
-                    + "is missing rather than too narrow.",
+                    "id-nygdev-integrations needs data-plane read/write on db/gps; terraform grants it "
+                    + "on exactly that container in terraform/consumption.tf, so a 403 here means the "
+                    + "assignment is missing.",
                 HttpStatusCode.NotFound =>
                     "db/gps is missing on nygdev-cosmos-db. Terraform holds the container in "
                     + "terraform/db.tf.",

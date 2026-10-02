@@ -28,8 +28,8 @@ public class RunningDashboard(
     RunningDashboardBuilder builder,
     ILogger<RunningDashboard> logger)
 {
-    // Function level, matching WhoopSync: this writes a document, and the
-    // dashboard site reads the result out of Cosmos rather than through here.
+    // Function level, matching WhoopSync: this publishes the blob, and the
+    // dashboard site reads that off the CDN rather than through here.
     [Function("RunningDashboard")]
     public async Task<IActionResult> Run(
         [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = "running/dashboard")]
@@ -59,7 +59,7 @@ public class RunningDashboard(
 
             var hint = ex.Status switch
             {
-                403 => "id-nygdev-api needs Storage Blob Data Contributor on the data container of "
+                403 => "id-nygdev-integrations needs Storage Blob Data Contributor on the data container of "
                     + "nygdevcdn; terraform holds that assignment in terraform/consumption.tf.",
                 404 => "The data container on nygdevcdn is missing, or the blob path is wrong. "
                     + "Terraform holds the container in terraform/cdn.tf.",
@@ -92,7 +92,7 @@ public class RunningDashboard(
                     + "which terraform sets in terraform/db.tf. A code deploy does not carry that: run the "
                     + "Terraform Apply workflow and try again.",
                 HttpStatusCode.Forbidden =>
-                    "id-nygdev-api needs data-plane read/write on db/primary; terraform grants it in "
+                    "id-nygdev-integrations needs data-plane read/write on db/primary; terraform grants it in "
                     + "terraform/consumption.tf.",
                 HttpStatusCode.TooManyRequests =>
                     "The account is throttling. The database is provisioned at 1000 RU/s shared across "

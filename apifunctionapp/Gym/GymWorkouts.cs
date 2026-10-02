@@ -273,7 +273,9 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
                 return GymEndpoint.Invalid(SessionIdHelp(sessionId));
             }
 
-            if (!await store.SubmitAsync(objectId, sessionId, token))
+            var session = await store.SubmitAsync(objectId, sessionId, token);
+
+            if (session is null)
             {
                 return NoSuchSession(sessionId);
             }
@@ -284,7 +286,7 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
 
             try
             {
-                planned = await PlanFromFirstWorkoutAsync(objectId, sessionId, token);
+                planned = await PlanFromFirstWorkoutAsync(objectId, session, token);
             }
             catch (CosmosException ex)
             {
@@ -325,23 +327,17 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
     /// day someone typed, and has nothing to say about a block that was planned
     /// properly in the first place.
     ///
-    /// Three reads and at most one write, all of them after the submit has
-    /// already landed. The plan is read from the block rather than trusted from
-    /// the patch's filter alone so the ordinary case — a planned day, every
-    /// submit after the first — costs a point read and no write at all.
+    /// One read and at most one write, both after the submit has already
+    /// landed — the session itself is the one the submit's patch echoed back.
+    /// The plan is read from the block rather than trusted from the patch's
+    /// filter alone so the ordinary case — a planned day, every submit after
+    /// the first — costs a point read and no write at all.
     /// </summary>
     private async Task<bool> PlanFromFirstWorkoutAsync(
         string objectId,
-        string sessionId,
+        GymSession session,
         CancellationToken cancellationToken)
     {
-        var session = await store.ReadSessionAsync(objectId, sessionId, cancellationToken);
-
-        if (session is null)
-        {
-            return false;
-        }
-
         var plan = session.AsPlan();
 
         if (plan.Count == 0)
@@ -380,7 +376,7 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
                 "Planned day {DayIndex} of {MesoId} from session {SessionId}: {Count} exercises.",
                 session.DayIndex,
                 session.MesoId,
-                sessionId,
+                session.Id,
                 plan.Count);
         }
 

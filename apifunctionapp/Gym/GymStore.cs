@@ -915,8 +915,12 @@ public sealed class GymStore(Container container)
     /// guard needed against a retried submit counting something twice —
     /// <c>set</c> is idempotent, so a resend lands on a value that is already
     /// there.
+    ///
+    /// Null means there is no such session in this user's partition. Otherwise
+    /// the session as it now stands — Cosmos echoes the patched document back
+    /// when asked, so planning a day from it afterwards costs no second read.
     /// </summary>
-    public async Task<bool> SubmitAsync(
+    public async Task<GymSession?> SubmitAsync(
         string objectId,
         string sessionId,
         CancellationToken cancellationToken)
@@ -925,12 +929,12 @@ public sealed class GymStore(Container container)
             sessionId,
             new PartitionKey(objectId),
             [PatchOperation.Set("/status", GymSession.Submitted)],
-            new PatchItemRequestOptions { EnableContentResponseOnWrite = false },
+            new PatchItemRequestOptions { EnableContentResponseOnWrite = true },
             cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            return false;
+            return null;
         }
 
         if (!response.IsSuccessStatusCode)
@@ -938,7 +942,9 @@ public sealed class GymStore(Container container)
             throw Failure(response, $"Submitting session {sessionId} failed.");
         }
 
-        return true;
+        using var document = await JsonDocument.ParseAsync(response.Content, cancellationToken: cancellationToken);
+
+        return GymSession.Read(document.RootElement);
     }
 
     /// <summary>
@@ -1780,8 +1786,9 @@ public sealed class GymStore(Container container)
         });
 
     /// <summary>
-    /// A session at Start: eight keys and an empty entries array, which the
-    /// patches above then append into.
+    /// A whole session, eight keys: what Start creates, with the day's plan as
+    /// entries holding no sets, and what every read-then-replace above writes
+    /// back. The hot-path patches append into the entries it leaves.
     /// </summary>
     private static MemoryStream SerializeSession(string objectId, GymSession session) =>
         Serialize(writer =>

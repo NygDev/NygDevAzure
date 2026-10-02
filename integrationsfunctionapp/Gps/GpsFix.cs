@@ -23,19 +23,6 @@ public readonly record struct GpsFix(
     long TimestampMs)
 {
     /// <summary>
-    /// The document id, and with it the dedupe key.
-    ///
-    /// The phone resends a batch whose response it never saw, so the same fix
-    /// arrives twice and must not be stored twice. <c>ts</c> is unique per fix
-    /// for one device, so keying the document on it makes the write an upsert
-    /// that lands on the same document the second time round. A second phone
-    /// would break that — its fixes could share a millisecond with this one's
-    /// — and would need a device id in the key, which the payload does not
-    /// carry.
-    /// </summary>
-    public string Id => TimestampMs.ToString(CultureInfo.InvariantCulture);
-
-    /// <summary>
     /// <c>ts</c> as a timestamp, stored alongside the raw number so the
     /// container can be read by eye. Epoch milliseconds tell nobody when a fix
     /// was taken without a conversion first.
