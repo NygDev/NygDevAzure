@@ -262,6 +262,60 @@ internal static class GymRequests
     }
 
     /// <summary>
+    /// <c>PUT /api/gym/profile</c> — the lifter's profile, whole.
+    ///
+    /// Every field is optional and the body replaces the profile entirely, so
+    /// leaving a field off, sending null or sending blank all clear it. Whole
+    /// rather than a patch for the reason favourites are: the form holds all
+    /// four fields, the request is then its own retry, and nothing else writes
+    /// them. Bodyweight is a number in kilograms or null; a string would be a
+    /// unit nobody can check.
+    /// </summary>
+    public static bool TryReadProfile(
+        JsonElement body,
+        out LifterProfile profile,
+        out string error)
+    {
+        profile = LifterProfile.Empty;
+
+        if (!GymJson.TryReadOptionalString(body, "experience", GymLimits.MaxTagLength, out var experience, out error)
+            || !GymJson.TryReadOptionalString(body, "goal", GymLimits.MaxProfileTextLength, out var goal, out error)
+            || !GymJson.TryReadOptionalString(body, "injuries", GymLimits.MaxProfileTextLength, out var injuries, out error))
+        {
+            return false;
+        }
+
+        if (experience is not null && !LifterProfile.Experiences.Contains(experience, StringComparer.Ordinal))
+        {
+            error = $"'experience' is '{experience}', expected one of "
+                + $"{string.Join(", ", LifterProfile.Experiences)}, or null.";
+            return false;
+        }
+
+        double? bodyweightKg = null;
+
+        if (body.TryGetProperty("bodyweightKg", out var weight) && weight.ValueKind != JsonValueKind.Null)
+        {
+            if (!GymJson.TryReadDouble(
+                body,
+                "bodyweightKg",
+                GymLimits.MinBodyweightKg,
+                GymLimits.MaxBodyweightKg,
+                out var read,
+                out error))
+            {
+                return false;
+            }
+
+            bodyweightKg = read;
+        }
+
+        profile = new LifterProfile(experience, bodyweightKg, goal, injuries);
+        error = string.Empty;
+        return true;
+    }
+
+    /// <summary>
     /// <c>POST /api/gym/workouts</c> — Start.
     ///
     /// The mesocycle is not in the body and is not meant to be: the server

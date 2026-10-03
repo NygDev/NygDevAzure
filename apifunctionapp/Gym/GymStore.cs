@@ -802,12 +802,33 @@ public sealed class GymStore(Container container)
         return document is null ? ExercisePreferences.Empty : ExercisePreferences.Read(document.RootElement);
     }
 
-    /// <summary>Replaces the favourites, leaving the recent list as it is.</summary>
+    /// <summary>Replaces the favourites, leaving the rest of the document as it is.</summary>
     public Task SetFavoritesAsync(
         string objectId,
         IReadOnlyList<string> favorites,
         CancellationToken cancellationToken) =>
-        WritePreferenceAsync(objectId, "favorites", favorites, cancellationToken);
+        WritePreferenceAsync(
+            objectId,
+            "favorites",
+            favorites,
+            ExercisePreferences.Empty with { Favorites = favorites },
+            cancellationToken);
+
+    /// <summary>
+    /// Replaces the lifter's profile, leaving the two lists as they are. An
+    /// empty profile is still written — as <c>{}</c> — so clearing every field
+    /// is the same patch as filling them in.
+    /// </summary>
+    public Task SetProfileAsync(
+        string objectId,
+        LifterProfile profile,
+        CancellationToken cancellationToken) =>
+        WritePreferenceAsync(
+            objectId,
+            "profile",
+            ProfileValue(profile),
+            ExercisePreferences.Empty with { Profile = profile },
+            cancellationToken);
 
     /// <summary>
     /// Puts a finished workout's exercises at the front of the recent list.
@@ -828,21 +849,33 @@ public sealed class GymStore(Container container)
         }
 
         var preferences = await ReadPreferencesAsync(objectId, cancellationToken);
+        var recent = preferences.RecentAfter(lifted);
 
-        await WritePreferenceAsync(objectId, "recent", preferences.RecentAfter(lifted), cancellationToken);
+        await WritePreferenceAsync(
+            objectId,
+            "recent",
+            recent,
+            ExercisePreferences.Empty with { Recent = recent },
+            cancellationToken);
     }
 
     /// <summary>
-    /// Sets one list on the preferences document: a patch of that field alone,
-    /// so the other list is never rewritten from a stale copy. The first write
-    /// creates the document instead, and a create that loses a race with
-    /// another first write falls back to the patch it would otherwise have
-    /// been.
+    /// Sets one field on the preferences document: a patch of that field
+    /// alone, so the others are never rewritten from a stale copy. The first
+    /// write creates the document instead — as <paramref name="created"/>,
+    /// which holds this field's value and nothing else — and a create that
+    /// loses a race with another first write falls back to the patch it would
+    /// otherwise have been.
+    ///
+    /// <paramref name="value"/> goes through the CosmosClient's own serializer
+    /// — a list of strings, or the dictionaries <see cref="ProfileValue"/>
+    /// builds, for the reason <see cref="DayValues"/> gives.
     /// </summary>
     private async Task WritePreferenceAsync(
         string objectId,
         string field,
-        IReadOnlyList<string> values,
+        object value,
+        ExercisePreferences created,
         CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < 2; attempt++)
@@ -850,7 +883,7 @@ public sealed class GymStore(Container container)
             using (var patched = await container.PatchItemStreamAsync(
                 GymIds.Preferences(objectId),
                 new PartitionKey(objectId),
-                [PatchOperation.Set("/" + field, values)],
+                [PatchOperation.Set("/" + field, value)],
                 new PatchItemRequestOptions { EnableContentResponseOnWrite = false },
                 cancellationToken))
             {
@@ -861,34 +894,31 @@ public sealed class GymStore(Container container)
 
                 if (patched.StatusCode != HttpStatusCode.NotFound)
                 {
-                    throw Failure(patched, $"Saving this user's {field} exercises failed.");
+                    throw Failure(patched, $"Saving this user's {field} failed.");
                 }
             }
 
-            using var payload = SerializePreferences(
-                objectId,
-                field == "favorites" ? values : [],
-                field == "recent" ? values : []);
+            using var payload = SerializePreferences(objectId, created);
 
-            using var created = await container.CreateItemStreamAsync(
+            using var inserted = await container.CreateItemStreamAsync(
                 payload,
                 new PartitionKey(objectId),
                 WriteOptions,
                 cancellationToken);
 
-            if (created.IsSuccessStatusCode)
+            if (inserted.IsSuccessStatusCode)
             {
                 return;
             }
 
-            if (created.StatusCode != HttpStatusCode.Conflict)
+            if (inserted.StatusCode != HttpStatusCode.Conflict)
             {
-                throw Failure(created, $"Saving this user's {field} exercises failed.");
+                throw Failure(inserted, $"Saving this user's {field} failed.");
             }
         }
 
         throw new InvalidOperationException(
-            $"Saving this user's {field} exercises found the preferences document neither present nor "
+            $"Saving this user's {field} found the preferences document neither present nor "
             + "absent twice in a row, which only a concurrent delete could cause and nothing here deletes it.");
     }
 
@@ -2046,12 +2076,12 @@ public sealed class GymStore(Container container)
 
     /// <summary>
     /// The preferences document: both lists, always present, so a patch of
-    /// either one has a property to set.
+    /// either one has a property to set, and the profile only when it says
+    /// something — <see cref="ExercisePreferences.Read"/> reads an absent one
+    /// as empty, and <c>PatchOperation.Set</c> creates the property when the
+    /// first profile is saved.
     /// </summary>
-    private static MemoryStream SerializePreferences(
-        string objectId,
-        IReadOnlyList<string> favorites,
-        IReadOnlyList<string> recent) =>
+    private static MemoryStream SerializePreferences(string objectId, ExercisePreferences preferences) =>
         Serialize(writer =>
         {
             writer.WriteString("id", GymIds.Preferences(objectId));
@@ -2060,7 +2090,7 @@ public sealed class GymStore(Container container)
 
             writer.WriteStartArray("favorites");
 
-            foreach (var name in favorites)
+            foreach (var name in preferences.Favorites)
             {
                 writer.WriteStringValue(name);
             }
@@ -2068,13 +2098,66 @@ public sealed class GymStore(Container container)
             writer.WriteEndArray();
             writer.WriteStartArray("recent");
 
-            foreach (var name in recent)
+            foreach (var name in preferences.Recent)
             {
                 writer.WriteStringValue(name);
             }
 
             writer.WriteEndArray();
+
+            if (!preferences.Profile.IsEmpty)
+            {
+                writer.WritePropertyName("profile");
+                writer.WriteStartObject();
+
+                foreach (var (key, value) in ProfileValue(preferences.Profile))
+                {
+                    switch (value)
+                    {
+                        case string text:
+                            writer.WriteString(key, text);
+                            break;
+                        case double number:
+                            writer.WriteNumber(key, number);
+                            break;
+                    }
+                }
+
+                writer.WriteEndObject();
+            }
         });
+
+    /// <summary>
+    /// A profile as a patch value — a dictionary, for the reason
+    /// <see cref="DayValues"/> gives, with unknown fields left off rather than
+    /// written as null, the way <see cref="LifterProfile.Read"/> reads them.
+    /// </summary>
+    private static Dictionary<string, object> ProfileValue(LifterProfile profile)
+    {
+        var value = new Dictionary<string, object>();
+
+        if (profile.Experience is not null)
+        {
+            value["experience"] = profile.Experience;
+        }
+
+        if (profile.BodyweightKg is not null)
+        {
+            value["bodyweightKg"] = profile.BodyweightKg.Value;
+        }
+
+        if (profile.Goal is not null)
+        {
+            value["goal"] = profile.Goal;
+        }
+
+        if (profile.Injuries is not null)
+        {
+            value["injuries"] = profile.Injuries;
+        }
+
+        return value;
+    }
 
     /// <summary>
     /// A custom exercise. Optional fields are left off rather than written as

@@ -105,6 +105,23 @@ internal static class GymLimits
     public const int MaxRecent = 20;
 
     /// <summary>
+    /// A profile's free text — the goal, and the injuries — long enough for a
+    /// couple of sentences, short enough that it is a note rather than a diary.
+    /// The coaching export pastes it into a chat, which is where the length
+    /// stops being free.
+    /// </summary>
+    public const int MaxProfileTextLength = 400;
+
+    /// <summary>
+    /// Bodyweight, kilograms. The bounds are a unit check, as
+    /// <see cref="MaxWeightKg"/> is — pounds typed where kilograms were meant
+    /// still land inside them, which is the client's problem to label.
+    /// </summary>
+    public const double MinBodyweightKg = 20;
+
+    public const double MaxBodyweightKg = 400;
+
+    /// <summary>
     /// Kilograms. The upper bound is past any lift a human has recorded and is
     /// there to catch a unit mistake — pounds sent where kilograms were meant
     /// stays inside it, but a stray multiplication does not.
@@ -386,13 +403,19 @@ public sealed record CustomExercise(
 /// starred nothing and finished nothing since this existed simply has no
 /// document.
 /// </summary>
-public sealed record ExercisePreferences(IReadOnlyList<string> Favorites, IReadOnlyList<string> Recent)
+public sealed record ExercisePreferences(
+    IReadOnlyList<string> Favorites,
+    IReadOnlyList<string> Recent,
+    LifterProfile Profile)
 {
-    public static readonly ExercisePreferences Empty = new([], []);
+    public static readonly ExercisePreferences Empty = new([], [], LifterProfile.Empty);
 
     public static ExercisePreferences Read(JsonElement document) => new(
         GymDocument.List(document, "favorites", element => element.GetString() ?? string.Empty),
-        GymDocument.List(document, "recent", element => element.GetString() ?? string.Empty));
+        GymDocument.List(document, "recent", element => element.GetString() ?? string.Empty),
+        document.TryGetProperty("profile", out var profile) && profile.ValueKind == JsonValueKind.Object
+            ? LifterProfile.Read(profile)
+            : LifterProfile.Empty);
 
     /// <summary>
     /// The lists after a workout: what it lifted, in the order it was lifted,
@@ -405,6 +428,72 @@ public sealed record ExercisePreferences(IReadOnlyList<string> Favorites, IReadO
             .Distinct(StringComparer.Ordinal)
             .Take(GymLimits.MaxRecent)
             .ToArray();
+}
+
+/// <summary>
+/// What a coach should know about the lifter that no session records: how long
+/// they have trained, what they weigh, what the block is for, and what hurts.
+///
+/// Every field is optional, because the profile exists for one reader — the
+/// coaching export gymbro writes — and an empty one simply leaves that export's
+/// closing section as the placeholder it was. Stored as <c>profile</c> on the
+/// preferences document, beside the favourites, and for the same reason they
+/// are there rather than on the pointer: nothing else rewrites that document
+/// wholesale. Written by <c>PUT /gym/profile</c> and read back on
+/// <c>GET /gym/mesocycles</c>, the planner's one opening read.
+///
+/// <c>Experience</c> is one of <see cref="Experiences"/> rather than free text,
+/// so a screen can offer it as chips and a reader can rely on the spelling.
+/// </summary>
+public sealed record LifterProfile(
+    string? Experience,
+    double? BodyweightKg,
+    string? Goal,
+    string? Injuries)
+{
+    public static readonly LifterProfile Empty = new(null, null, null, null);
+
+    /// <summary>The experience levels a profile may name, as the client spells them.</summary>
+    public static readonly IReadOnlyList<string> Experiences = ["beginner", "intermediate", "advanced"];
+
+    public bool IsEmpty => Experience is null && BodyweightKg is null && Goal is null && Injuries is null;
+
+    public static LifterProfile Read(JsonElement element) => new(
+        GymDocument.OptionalString(element, "experience"),
+        GymDocument.OptionalDouble(element, "bodyweightKg"),
+        GymDocument.OptionalString(element, "goal"),
+        GymDocument.OptionalString(element, "injuries"));
+
+    /// <summary>
+    /// The wire shape: unknown fields left off rather than sent as null, the
+    /// way a custom exercise's are. An empty profile is <c>{}</c>.
+    /// </summary>
+    public object ToResponse()
+    {
+        var response = new Dictionary<string, object>();
+
+        if (Experience is not null)
+        {
+            response["experience"] = Experience;
+        }
+
+        if (BodyweightKg is not null)
+        {
+            response["bodyweightKg"] = BodyweightKg.Value;
+        }
+
+        if (Goal is not null)
+        {
+            response["goal"] = Goal;
+        }
+
+        if (Injuries is not null)
+        {
+            response["injuries"] = Injuries;
+        }
+
+        return response;
+    }
 }
 
 /// <summary>

@@ -215,12 +215,15 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
             var blocks = await listing;
             var preferences = await preferring;
 
+            // The profile rides along too, for the planner's coaching export;
+            // /current does not carry it, since nothing on the phone reads it.
             return new OkObjectResult(new
             {
                 ok = true,
                 mesocycles = blocks.Select(block => block.ToResponse()).ToArray(),
                 favorites = preferences.Favorites,
                 recent = preferences.Recent,
+                profile = preferences.Profile.ToResponse(),
             });
         });
 
