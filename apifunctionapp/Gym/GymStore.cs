@@ -786,6 +786,113 @@ public sealed class GymStore(Container container)
     }
 
     // -----------------------------------------------------------------------
+    // Favourites and recently used
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// The user's favourites and recently used exercises, in one point read.
+    /// A missing document is the empty lists, not a failure.
+    /// </summary>
+    public async Task<ExercisePreferences> ReadPreferencesAsync(
+        string objectId,
+        CancellationToken cancellationToken)
+    {
+        using var document = await ReadDocumentAsync(objectId, GymIds.Preferences(objectId), cancellationToken);
+
+        return document is null ? ExercisePreferences.Empty : ExercisePreferences.Read(document.RootElement);
+    }
+
+    /// <summary>Replaces the favourites, leaving the recent list as it is.</summary>
+    public Task SetFavoritesAsync(
+        string objectId,
+        IReadOnlyList<string> favorites,
+        CancellationToken cancellationToken) =>
+        WritePreferenceAsync(objectId, "favorites", favorites, cancellationToken);
+
+    /// <summary>
+    /// Puts a finished workout's exercises at the front of the recent list.
+    ///
+    /// A read and a patch, not a transaction. Two workouts submitted in the
+    /// same instant could each write a list missing the other's exercises, and
+    /// the next workout puts them back; a lock would cost more than the order
+    /// of a picker section is worth.
+    /// </summary>
+    public async Task RecordRecentAsync(
+        string objectId,
+        IReadOnlyList<string> lifted,
+        CancellationToken cancellationToken)
+    {
+        if (lifted.Count == 0)
+        {
+            return;
+        }
+
+        var preferences = await ReadPreferencesAsync(objectId, cancellationToken);
+
+        await WritePreferenceAsync(objectId, "recent", preferences.RecentAfter(lifted), cancellationToken);
+    }
+
+    /// <summary>
+    /// Sets one list on the preferences document: a patch of that field alone,
+    /// so the other list is never rewritten from a stale copy. The first write
+    /// creates the document instead, and a create that loses a race with
+    /// another first write falls back to the patch it would otherwise have
+    /// been.
+    /// </summary>
+    private async Task WritePreferenceAsync(
+        string objectId,
+        string field,
+        IReadOnlyList<string> values,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using (var patched = await container.PatchItemStreamAsync(
+                GymIds.Preferences(objectId),
+                new PartitionKey(objectId),
+                [PatchOperation.Set("/" + field, values)],
+                new PatchItemRequestOptions { EnableContentResponseOnWrite = false },
+                cancellationToken))
+            {
+                if (patched.IsSuccessStatusCode)
+                {
+                    return;
+                }
+
+                if (patched.StatusCode != HttpStatusCode.NotFound)
+                {
+                    throw Failure(patched, $"Saving this user's {field} exercises failed.");
+                }
+            }
+
+            using var payload = SerializePreferences(
+                objectId,
+                field == "favorites" ? values : [],
+                field == "recent" ? values : []);
+
+            using var created = await container.CreateItemStreamAsync(
+                payload,
+                new PartitionKey(objectId),
+                WriteOptions,
+                cancellationToken);
+
+            if (created.IsSuccessStatusCode)
+            {
+                return;
+            }
+
+            if (created.StatusCode != HttpStatusCode.Conflict)
+            {
+                throw Failure(created, $"Saving this user's {field} exercises failed.");
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Saving this user's {field} exercises found the preferences document neither present nor "
+            + "absent twice in a row, which only a concurrent delete could cause and nothing here deletes it.");
+    }
+
+    // -----------------------------------------------------------------------
     // Custom exercises
     // -----------------------------------------------------------------------
 
@@ -1935,6 +2042,38 @@ public sealed class GymStore(Container container)
             writer.WriteString("type", GymIds.TemplateType);
             writer.WriteString("name", name);
             WritePlan(writer, plan);
+        });
+
+    /// <summary>
+    /// The preferences document: both lists, always present, so a patch of
+    /// either one has a property to set.
+    /// </summary>
+    private static MemoryStream SerializePreferences(
+        string objectId,
+        IReadOnlyList<string> favorites,
+        IReadOnlyList<string> recent) =>
+        Serialize(writer =>
+        {
+            writer.WriteString("id", GymIds.Preferences(objectId));
+            writer.WriteString("objectId", objectId);
+            writer.WriteString("type", GymIds.PreferencesType);
+
+            writer.WriteStartArray("favorites");
+
+            foreach (var name in favorites)
+            {
+                writer.WriteStringValue(name);
+            }
+
+            writer.WriteEndArray();
+            writer.WriteStartArray("recent");
+
+            foreach (var name in recent)
+            {
+                writer.WriteStringValue(name);
+            }
+
+            writer.WriteEndArray();
         });
 
     /// <summary>

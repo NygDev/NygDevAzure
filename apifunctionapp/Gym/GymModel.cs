@@ -93,6 +93,18 @@ internal static class GymLimits
     public const int MaxMusclesPerExercise = 3;
 
     /// <summary>
+    /// Starred exercises. A hundred is past anything a picker section can be
+    /// scanned at, and the list is sent whole on every change.
+    /// </summary>
+    public const int MaxFavorites = 100;
+
+    /// <summary>
+    /// How many recently used exercises are remembered: two or three workouts'
+    /// worth, which is what "recent" means at the top of a picker.
+    /// </summary>
+    public const int MaxRecent = 20;
+
+    /// <summary>
     /// Kilograms. The upper bound is past any lift a human has recorded and is
     /// there to catch a unit mistake — pounds sent where kilograms were meant
     /// stays inside it, but a stray multiplication does not.
@@ -355,6 +367,44 @@ public sealed record CustomExercise(
 
         return response;
     }
+}
+
+/// <summary>
+/// The exercises a user reaches for: the ones they starred, and the ones they
+/// lifted lately. Both are names, as everything that refers to an exercise is,
+/// so a favourite covers the exercise's whole history and survives its
+/// description being deleted.
+///
+/// A document of its own rather than two fields on the pointer document, and
+/// not for tidiness: the pointer is written with a whole-document upsert every
+/// time the current block changes — create, switch, a delete that repoints —
+/// and every one of those would have wiped the lists. Here nothing else writes,
+/// so each list is patched alone.
+///
+/// <c>Favorites</c> are in the order they were starred; <c>Recent</c> is most
+/// recent first, written by Submit. Absent reads as empty — a user who has
+/// starred nothing and finished nothing since this existed simply has no
+/// document.
+/// </summary>
+public sealed record ExercisePreferences(IReadOnlyList<string> Favorites, IReadOnlyList<string> Recent)
+{
+    public static readonly ExercisePreferences Empty = new([], []);
+
+    public static ExercisePreferences Read(JsonElement document) => new(
+        GymDocument.List(document, "favorites", element => element.GetString() ?? string.Empty),
+        GymDocument.List(document, "recent", element => element.GetString() ?? string.Empty));
+
+    /// <summary>
+    /// The lists after a workout: what it lifted, in the order it was lifted,
+    /// ahead of whatever was there, each name once, and no longer than
+    /// <see cref="GymLimits.MaxRecent"/>.
+    /// </summary>
+    public IReadOnlyList<string> RecentAfter(IReadOnlyList<string> lifted) =>
+        lifted
+            .Concat(Recent)
+            .Distinct(StringComparer.Ordinal)
+            .Take(GymLimits.MaxRecent)
+            .ToArray();
 }
 
 /// <summary>

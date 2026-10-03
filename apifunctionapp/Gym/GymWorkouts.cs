@@ -302,6 +302,8 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
                 planned = false;
             }
 
+            await RecordRecentAsync(objectId, session, token);
+
             return new OkObjectResult(new
             {
                 ok = true,
@@ -310,6 +312,40 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
                 planned,
             });
         });
+
+    /// <summary>
+    /// Puts what this workout lifted at the front of the recently used list.
+    ///
+    /// Here rather than on the set-tap, deliberately: a set is the one hot path
+    /// in this API and stays a single patch with nothing in front of it. Submit
+    /// happens once a workout, and "recent" only needs to be as fresh as the
+    /// last finished one. An exercise added and never lifted is not recent.
+    ///
+    /// Downstream of the submit and unable to undo it, like planning the day:
+    /// a failure is logged and the workout still answers submitted. Resubmitting
+    /// a session — correcting one from History ends without a submit, so this is
+    /// a retry — records it again, which leaves the list as it was.
+    /// </summary>
+    private async Task RecordRecentAsync(string objectId, GymSession session, CancellationToken cancellationToken)
+    {
+        var lifted = session.Entries
+            .Where(entry => entry.Sets.Count > 0)
+            .Select(entry => entry.ExerciseName)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        try
+        {
+            await store.RecordRecentAsync(objectId, lifted, cancellationToken);
+        }
+        catch (Exception ex) when (ex is CosmosException or InvalidOperationException)
+        {
+            logger.LogWarning(
+                ex,
+                "Recording session {SessionId}'s exercises as recently used failed after it was submitted.",
+                session.Id);
+        }
+    }
 
     /// <summary>
     /// Plans an unplanned day from the workout just logged against it.

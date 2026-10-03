@@ -42,12 +42,14 @@ internal static class GymIds
     public const string SessionType = "session";
     public const string TemplateType = "template";
     public const string ExerciseType = "exercise";
+    public const string PreferencesType = "preferences";
 
     private const string UserPrefix = "user_";
     private const string MesocyclePrefix = "meso_";
     private const string SessionPrefix = "session_";
     private const string TemplatePrefix = "template_";
     private const string ExercisePrefix = "exercise_";
+    private const string PreferencesPrefix = "preferences_";
 
     /// <summary>
     /// The date format a session is keyed on: ISO, and never anything else.
@@ -70,6 +72,13 @@ internal static class GymIds
     private static readonly DateOnly OldestSessionDate = new(2020, 1, 1);
 
     public static string User(string objectId) => UserPrefix + objectId;
+
+    /// <summary>
+    /// The user's exercise preferences — favourites and recently used — one
+    /// document per user, built from the principal like the pointer, so reading
+    /// it is a point read with nothing looked up first.
+    /// </summary>
+    public static string Preferences(string objectId) => PreferencesPrefix + objectId;
 
     public static string Mesocycle(string mesoId) => MesocyclePrefix + mesoId;
 

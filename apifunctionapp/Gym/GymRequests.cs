@@ -231,6 +231,37 @@ internal static class GymRequests
     }
 
     /// <summary>
+    /// <c>PUT /api/gym/favorites</c> — the whole list of starred exercises.
+    ///
+    /// Whole rather than one star at a time, because a star toggled on one
+    /// device and another toggled elsewhere is the only race here, and losing
+    /// one of them is a preference to tap again rather than anything logged.
+    /// The field is required, unlike an optional list elsewhere: an absent one
+    /// reading as empty would make a malformed request clear every favourite.
+    /// </summary>
+    public static bool TryReadFavorites(
+        JsonElement body,
+        out IReadOnlyList<string> favorites,
+        out string error)
+    {
+        favorites = [];
+
+        if (!body.TryGetProperty("favorites", out var property) || property.ValueKind != JsonValueKind.Array)
+        {
+            error = "'favorites' is missing or is not an array. Send the whole list, [] to clear it.";
+            return false;
+        }
+
+        return GymJson.TryReadStringList(
+            body,
+            "favorites",
+            GymLimits.MaxFavorites,
+            GymLimits.MaxExerciseNameLength,
+            out favorites,
+            out error);
+    }
+
+    /// <summary>
     /// <c>POST /api/gym/workouts</c> — Start.
     ///
     /// The mesocycle is not in the body and is not meant to be: the server

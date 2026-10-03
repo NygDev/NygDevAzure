@@ -36,6 +36,10 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
     /// A null mesocycle is a first run rather than an error: nobody has planned
     /// a block yet, and the Plan tab is where they do. Answering 404 for it
     /// would make the app's opening screen an error path.
+    ///
+    /// The favourites and recently used exercises ride along: one more point
+    /// read, issued beside the pointer's so it adds nothing to the wait, and
+    /// the logger's picker then needs no call of its own.
     /// </summary>
     [Function("GymMesocyclesCurrent")]
     public Task<IActionResult> Current(
@@ -43,19 +47,29 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
         CancellationToken cancellationToken) =>
         GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
         {
+            var preferring = store.ReadPreferencesAsync(objectId, token);
             var mesoId = await store.ReadCurrentMesoIdAsync(objectId, token);
 
             if (mesoId is null)
             {
-                return new OkObjectResult(new { ok = true, mesocycle = (object?)null, sessions = Array.Empty<object>() });
+                var first = await preferring;
+
+                return new OkObjectResult(new
+                {
+                    ok = true,
+                    mesocycle = (object?)null,
+                    sessions = Array.Empty<object>(),
+                    favorites = first.Favorites,
+                    recent = first.Recent,
+                });
             }
 
             var reading = store.ReadMesocycleAsync(objectId, mesoId, token);
             var listing = store.ListSessionsAsync(objectId, mesoId, token);
 
-            // WhenAll rather than two awaits, so a failure in one does not
-            // leave the other's exception unobserved.
-            await Task.WhenAll(reading, listing);
+            // WhenAll rather than separate awaits, so a failure in one does
+            // not leave another's exception unobserved.
+            await Task.WhenAll(reading, listing, preferring);
 
             var meso = await reading;
 
@@ -79,12 +93,15 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
             }
 
             var sessions = await listing;
+            var preferences = await preferring;
 
             return new OkObjectResult(new
             {
                 ok = true,
                 mesocycle = meso.ToResponse(),
                 sessions = sessions.Select(session => session.ToResponse()).ToArray(),
+                favorites = preferences.Favorites,
+                recent = preferences.Recent,
             });
         });
 
@@ -187,12 +204,23 @@ public class GymMesocycles(GymStore store, ILogger<GymMesocycles> logger)
         CancellationToken cancellationToken) =>
         GymEndpoint.RunAsync(request, logger, cancellationToken, async (objectId, token) =>
         {
-            var blocks = await store.ListMesocyclesAsync(objectId, token);
+            // The favourites and recently used exercises, beside the list
+            // rather than after it, for the planner's picker — the same
+            // ride-along /current gives the logger.
+            var listing = store.ListMesocyclesAsync(objectId, token);
+            var preferring = store.ReadPreferencesAsync(objectId, token);
+
+            await Task.WhenAll(listing, preferring);
+
+            var blocks = await listing;
+            var preferences = await preferring;
 
             return new OkObjectResult(new
             {
                 ok = true,
                 mesocycles = blocks.Select(block => block.ToResponse()).ToArray(),
+                favorites = preferences.Favorites,
+                recent = preferences.Recent,
             });
         });
 

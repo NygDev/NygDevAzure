@@ -181,12 +181,18 @@ Everything Today and the block map need, in one call.
       "week": 2, "dayIndex": 1, "status": "submitted",
       "exerciseCount": 3, "setCount": 15, "volumeKg": 8760, "avgRpe": 7.6
     }
-  ]
+  ],
+  "favorites": ["Bench Press", "Landmine Press"],
+  "recent": ["Squat", "Romanian Deadlift", "Leg Press"]
 }
 ```
 
 `"mesocycle": null` with an empty `sessions` is a **first run**, not an error —
 nobody has planned a block yet. Sessions come back newest first.
+
+`favorites` and `recent` are the picker's: see **Favourites and recently used**
+below. They ride along here, read beside the pointer, so the logger needs no
+call of its own for them; both are always present, and empty is ordinary.
 
 ### `POST /gym/mesocycles`
 
@@ -273,12 +279,16 @@ Every block this user has planned, newest first — the Plan tab's block list.
       "sessionCount": 14,
       "submittedCount": 13
     }
-  ]
+  ],
+  "favorites": ["Bench Press"],
+  "recent": ["Squat"]
 }
 ```
 
 An empty array is a **first run**, the same as `"mesocycle": null` on
 `/current`. Sorted by id, which is a ULID, so newest-first costs nothing.
+`favorites` and `recent` are the same two lists `/current` carries, here for
+the planner.
 
 The two counts are there so the delete below can say what it is about to take.
 Volume is deliberately not — it needs the sets, and the sets are the expensive
@@ -765,6 +775,38 @@ a given day.
 
 A client that reloads the block after submitting does not need to read the field
 at all — the day's new plan is on `/mesocycles/current` like any other.
+
+Submit also puts the exercises the workout **lifted** — entries with at least
+one set, in the order they were logged — at the front of the user's recently
+used list. On submit rather than on the set-tap, so the hot path stays one patch;
+"recent" only has to be as fresh as the last finished workout. Like the plan, it
+runs after the submit has landed and a failure in it is logged, not answered.
+
+### Favourites and recently used
+
+Two lists of exercise names on one document per user, `preferences_{objectId}`:
+`favorites`, the ones the user starred, in the order they were starred; and
+`recent`, the exercises of the last few finished workouts, most recent first, at
+most 20. Names, as every reference to an exercise is — so a favourite covers the
+exercise's whole history, built-in or the user's own, and survives its
+description being deleted.
+
+A document of their own rather than fields on the `user_` pointer, because the
+pointer is replaced wholesale every time the current block changes and would
+wipe them. Nothing reads them by route: they ride along on `GET
+/gym/mesocycles/current` and `GET /gym/mesocycles`. `recent` has no route at
+all — Submit writes it.
+
+#### `PUT /gym/favorites`
+
+```jsonc
+{ "favorites": ["Bench Press", "Landmine Press"] }
+```
+
+The whole list, `[]` to clear it — a missing field is a 400 rather than an
+empty list, so a malformed body cannot clear every star. At most 100, no name
+twice. **200** `{ok, favorites}`. Two devices starring at once means one of
+the two stars is lost; it is a preference, to tap again, and not worth a lock.
 
 ### `DELETE /gym/workouts/{id}`
 
