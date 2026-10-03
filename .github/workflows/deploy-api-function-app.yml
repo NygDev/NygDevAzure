@@ -16,9 +16,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The NuGet cache is keyed on the lock file, so a run whose packages did
+      # not change restores from the cache instead of from nuget.org.
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
+          cache: true
+          cache-dependency-path: apifunctionapp/packages.lock.json
 
       - name: Publish
         run: dotnet publish apifunctionapp/ApiFunctionApp.csproj -c Release -o publish

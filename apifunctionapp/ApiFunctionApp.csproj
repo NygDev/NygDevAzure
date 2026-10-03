@@ -12,6 +12,16 @@
          loading ICU at startup, which is time a quarter-core instance spends
          before the first request can be answered. -->
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- packages.lock.json pins every package, transitive ones included, and
+         is what the deploy workflow keys its NuGet cache on — so a restore
+         that has nothing new to fetch is answered from the cache.
+
+         RuntimeIdentifiers (plural) makes every restore include the linux-x64
+         graph that publishing uses, without making a local build
+         RID-specific. Without it the lock file has one shape after a local
+         restore and another after a publish, and each rewrites the other. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RuntimeIdentifiers>linux-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <!-- Cold start, and publish-only so a local build and func start stay
