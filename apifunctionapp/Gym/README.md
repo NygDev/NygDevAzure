@@ -117,7 +117,9 @@ an exercise can be swapped for; `gym/README.md` has the rules. Nothing here read
 an entry is a name, and a variation is just another name.
 
 Custom exercise names are not in it and never will be: they are the user's, so
-they post inline with the entry.
+they post inline with the entry. A user can *describe* one of their own — its
+equipment, group, muscles and family — through `/gym/exercises` below, and the
+front ends merge those into this list; the entry still holds only the name.
 
 ## The built-in day templates are not here either
 
@@ -394,6 +396,67 @@ mesocycle. **200** with `{ok, template}`.
 
 Both of these answer **404 `no_such_template`**, which after a lost response on
 a delete is the retry finding the first one finished.
+
+### Custom exercises
+
+An exercise of the user's own, in the shipped library's shape so a client can
+put it beside the CDN's list without translating it:
+
+```jsonc
+{
+  "id": "exercise_3f9a…",
+  "name": "Landmine Press",
+  "equipment": "Bar",
+  "group": "Shoulders",
+  "muscles": ["Front Delts", "Chest", "Triceps"],
+  "variationOf": "Overhead Press"
+}
+```
+
+Only `name` is required; the rest are optional and absent reads as unknown,
+exactly as in the library. Their vocabularies — the seven groups, the fourteen
+muscles, the equipment list — are the library's and are not checked here, since
+this API has never read that file; a value outside them simply matches nothing.
+At most three muscles, main one first.
+
+**It is a description, not a reference.** Plans and sessions store an exercise
+by name, as they always have, and nothing on them points at this document. So
+describing a name already used in a hundred sessions describes all hundred, and
+deleting the description touches none of them — the name stays and reads as an
+undescribed custom name again. A typed name in a picker is still a complete
+answer without any of this.
+
+**The name is the identity, and it cannot change.** The id is `exercise_` and a
+hash of the name with case and spacing folded, so "landmine press" and
+"Landmine  Press" are one exercise, a second create of the same name is refused by Cosmos
+itself with no query in front of it, and a create retried after a lost response
+cannot make a copy. Renaming would leave every session that used the old name
+describing nothing; a different name is a different exercise.
+
+#### `GET /gym/exercises`
+
+`{ok: true, exercises: [...]}`, sorted by name. Empty is ordinary.
+
+#### `POST /gym/exercises`
+
+The record without `id`. **201** with `{ok, exercise}`.
+
+**409 `exercise_exists`** for a name already described — also what a retried
+create gets, so read the list rather than report it. Whether the name collides
+with the *shipped* library is the client's to check. **409 `exercise_limit`** at
+200.
+
+#### `PUT /gym/exercises/{exerciseId}`
+
+The whole record again, `name` included. The name has to be the one the id was
+made from; a different one is a **400** saying so rather than a rename quietly
+ignored. **200** with `{ok, exercise}`.
+
+#### `DELETE /gym/exercises/{exerciseId}`
+
+**200** `{ok, id, deleted: true}`. Nothing cascades; see above.
+
+Both answer **404 `no_such_exercise`**.
 
 ### `POST /gym/workouts` — Start
 
@@ -712,7 +775,11 @@ Removes a workout — the answer to the duplicate a cell can now collect.
 
 ## Deliberately absent
 
-- **`GET /exercises`** — see above; it is a CDN file.
+- **`GET /exercises`** — see above; the shipped library is a CDN file. What
+  *is* here is `/gym/exercises`, the user's own descriptions, which a client
+  merges into it.
+- **Renaming a custom exercise.** The name is what plans and sessions hold; see
+  Custom exercises.
 - **Copying a block.** There is no copy route and does not need to be one:
   `POST /gym/mesocycles` already takes a name, a week count and day labels, so
   copying is the client sending back the shape it is looking at. The new block
@@ -745,7 +812,7 @@ Removes a workout — the answer to the duplicate a cell can now collect.
 | 400 | `invalid_json`, `invalid_request` | The body, or a route or query value. `message` names the field, what arrived and what was expected. |
 | 401 | *(empty body)* | Easy Auth turned the token away — none, expired, or for another audience. Sign in again. |
 | 401 | `not_signed_in` | No validated principal reached the code. With the gate on this is `func start` without `GYM_LOCAL_OBJECT_ID`, or Easy Auth switched off. |
-| 404 | `no_such_workout`, `no_such_mesocycle`, `no_such_template` | Not in this user's log. |
+| 404 | `no_such_workout`, `no_such_mesocycle`, `no_such_template`, `no_such_exercise` | Not in this user's log. |
 | 409 | `count_mismatch` | Stale client state. Carries `expected` and `actual`; re-read and retry. Nothing was written. |
 | 409 | `no_such_entry` | The entry index is not in the session. |
 | 409 | `entry_not_empty` | The exercise still holds logged sets. Delete those first. |
@@ -753,6 +820,8 @@ Removes a workout — the answer to the duplicate a cell can now collect.
 | 409 | `session_full` | A swap would insert a 41st exercise. Nothing was written. |
 | 409 | `no_current_mesocycle`, `date_full` | See Start, above. |
 | 409 | `template_limit` | 50 saved day templates. Delete one to save another. |
+| 409 | `exercise_exists` | A custom exercise with that name (ignoring case and spacing) is already described. Also what a retried create gets. |
+| 409 | `exercise_limit` | 200 custom exercises. Delete one to describe another. |
 | 500 | `unreadable_document`, `dangling_mesocycle` | A stored document does not match what the code writes. Not retryable. |
 | 502 | `storage_error` | Cosmos refused. `message` carries the hint for which cause. |
 | 503 | `timed_out` | Over the ten second budget. Every write here is safe to retry. |

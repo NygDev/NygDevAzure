@@ -173,6 +173,64 @@ internal static class GymRequests
     }
 
     /// <summary>
+    /// <c>POST /api/gym/exercises</c> and <c>PUT /api/gym/exercises/{id}</c> —
+    /// describing an exercise of your own, and re-describing it.
+    ///
+    /// One body for both, and the whole record each time, as a template is: the
+    /// screen that edits one holds all of it. <c>name</c> is in the PUT body too
+    /// even though it cannot change — the endpoint checks it against the id, so
+    /// a client that thinks it is renaming is told so rather than having the
+    /// new name silently ignored.
+    ///
+    /// Every field but the name is optional. The vocabularies — the seven
+    /// groups, the fourteen muscles, the equipment list — are the shipped
+    /// library's and are not checked here: this API has never read the library,
+    /// and a value outside them is a description that matches nothing, which is
+    /// the library's own rule for a misspelled muscle. The client offers them
+    /// as choices rather than a text field.
+    /// </summary>
+    public static bool TryReadExercise(
+        JsonElement body,
+        out CustomExercise exercise,
+        out string error)
+    {
+        exercise = null!;
+
+        if (!GymJson.TryReadString(body, "name", GymLimits.MaxExerciseNameLength, out var name, out error)
+            || !GymJson.TryReadOptionalString(body, "equipment", GymLimits.MaxTagLength, out var equipment, out error)
+            || !GymJson.TryReadOptionalString(body, "group", GymLimits.MaxTagLength, out var group, out error)
+            || !GymJson.TryReadOptionalString(
+                body,
+                "variationOf",
+                GymLimits.MaxExerciseNameLength,
+                out var variationOf,
+                out error)
+            || !GymJson.TryReadStringList(
+                body,
+                "muscles",
+                GymLimits.MaxMusclesPerExercise,
+                GymLimits.MaxTagLength,
+                out var muscles,
+                out error))
+        {
+            return false;
+        }
+
+        // A family is one level deep and has a root. An exercise that is a
+        // variation of itself is neither, and the swap sheet would offer it as
+        // its own alternative.
+        if (variationOf is not null && string.Equals(variationOf, name, StringComparison.OrdinalIgnoreCase))
+        {
+            error = $"'variationOf' is '{variationOf}', which is this exercise. Name the movement it "
+                + "is a variation of — the regular one — or leave it out.";
+            return false;
+        }
+
+        exercise = new CustomExercise(GymIds.Exercise(name), name, equipment, group, muscles, variationOf);
+        return true;
+    }
+
+    /// <summary>
     /// <c>POST /api/gym/workouts</c> — Start.
     ///
     /// The mesocycle is not in the body and is not meant to be: the server
@@ -726,6 +784,104 @@ internal static class GymJson
 
         value = text;
         error = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// A text field that may be left off. Absent, null and blank all read as
+    /// null — "not known" — rather than as an empty string a screen would have
+    /// to tell apart from a value.
+    /// </summary>
+    public static bool TryReadOptionalString(
+        JsonElement body,
+        string name,
+        int maxLength,
+        out string? value,
+        out string error)
+    {
+        value = null;
+        error = string.Empty;
+
+        if (!body.TryGetProperty(name, out var property) || property.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (property.ValueKind != JsonValueKind.String)
+        {
+            error = $"'{name}' is {property.ValueKind}, expected a string or null.";
+            return false;
+        }
+
+        var text = property.GetString()!.Trim();
+
+        if (text.Length > maxLength)
+        {
+            error = $"'{name}' is {text.Length} characters, over the {maxLength} allowed.";
+            return false;
+        }
+
+        value = text.Length == 0 ? null : text;
+        return true;
+    }
+
+    /// <summary>
+    /// A short list of words that may be left off, which reads as empty.
+    /// Duplicates are refused rather than dropped: a list that names the same
+    /// muscle twice was meant to name a different one.
+    /// </summary>
+    public static bool TryReadStringList(
+        JsonElement body,
+        string name,
+        int maxCount,
+        int maxLength,
+        out IReadOnlyList<string> values,
+        out string error)
+    {
+        values = [];
+        error = string.Empty;
+
+        if (!body.TryGetProperty(name, out var property) || property.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (property.ValueKind != JsonValueKind.Array)
+        {
+            error = $"'{name}' is {property.ValueKind}, expected an array of strings.";
+            return false;
+        }
+
+        var read = new List<string>();
+
+        foreach (var element in property.EnumerateArray())
+        {
+            var text = element.ValueKind == JsonValueKind.String ? element.GetString()!.Trim() : null;
+
+            if (string.IsNullOrEmpty(text) || text.Length > maxLength)
+            {
+                error = $"'{name}' holds {element.GetRawText()}, expected a non-empty string of at "
+                    + $"most {maxLength} characters.";
+                return false;
+            }
+
+            if (read.Contains(text, StringComparer.OrdinalIgnoreCase))
+            {
+                error = $"'{name}' names '{text}' twice.";
+                return false;
+            }
+
+            read.Add(text);
+        }
+
+        if (read.Count > maxCount)
+        {
+            error = $"'{name}' has {read.Count} entries, over the {maxCount} allowed — what it is "
+                + "for, main one first, not everything that works during it.";
+            return false;
+        }
+
+        values = read;
         return true;
     }
 

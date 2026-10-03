@@ -140,6 +140,20 @@ public sealed class GymStore(Container container)
         """;
 
     /// <summary>
+    /// Every custom exercise this user has described.
+    ///
+    /// Unordered on purpose. The id is a hash of the name, so ordering by it
+    /// would be ordering by nothing, and ordering by <c>c.name</c> would need
+    /// an index this container does not keep for a list of at most
+    /// <see cref="GymLimits.MaxExercisesPerUser"/> — sorted in memory instead.
+    /// </summary>
+    private const string ExercisesQuery = """
+        SELECT c.id, c.name, c.equipment, c.group, c.muscles, c.variationOf
+        FROM c
+        WHERE c.type = @type
+        """;
+
+    /// <summary>
     /// The ids of one block's sessions, for the cascade behind a block delete.
     ///
     /// Ids alone: this feeds a list of delete operations, so anything else on
@@ -766,6 +780,144 @@ public sealed class GymStore(Container container)
         if (!response.IsSuccessStatusCode)
         {
             throw Failure(response, $"Deleting day template {templateId} failed.");
+        }
+
+        return true;
+    }
+
+    // -----------------------------------------------------------------------
+    // Custom exercises
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Every exercise this user has described, by name. One single-partition
+    /// query on an indexed path; sorted here — see <see cref="ExercisesQuery"/>.
+    /// </summary>
+    public async Task<IReadOnlyList<CustomExercise>> ListExercisesAsync(
+        string objectId,
+        CancellationToken cancellationToken)
+    {
+        var exercises = new List<CustomExercise>();
+
+        await RunQueryAsync(
+            objectId,
+            new QueryDefinition(ExercisesQuery).WithParameter("@type", GymIds.ExerciseType),
+            "Reading this user's custom exercises failed.",
+            document => exercises.Add(CustomExercise.Read(document)),
+            cancellationToken);
+
+        exercises.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+
+        return exercises;
+    }
+
+    /// <summary>
+    /// Describes a new exercise.
+    ///
+    /// The cap is counted in front of the write, as a template's is, and for
+    /// the same reason that race is not worth a transaction. Uniqueness is not
+    /// counted at all: the id is the name's (see <see cref="GymIds.Exercise"/>),
+    /// so a second exercise with the same name is Cosmos refusing a duplicate
+    /// id, which also makes a retried create harmless.
+    /// </summary>
+    public async Task<ExerciseCreation> CreateExerciseAsync(
+        string objectId,
+        CustomExercise exercise,
+        CancellationToken cancellationToken)
+    {
+        var count = 0;
+
+        // The template count's query: it counts documents of one type, and
+        // the type is the parameter.
+        await RunQueryAsync(
+            objectId,
+            new QueryDefinition(TemplateCountQuery).WithParameter("@type", GymIds.ExerciseType),
+            "Counting this user's custom exercises failed.",
+            document => count += document.GetInt32(),
+            cancellationToken);
+
+        if (count >= GymLimits.MaxExercisesPerUser)
+        {
+            return ExerciseCreation.Limit;
+        }
+
+        using var payload = SerializeExercise(objectId, exercise);
+
+        using var response = await container.CreateItemStreamAsync(
+            payload,
+            new PartitionKey(objectId),
+            WriteOptions,
+            cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.Conflict)
+        {
+            return ExerciseCreation.Exists;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw Failure(response, $"Saving the custom exercise '{exercise.Name}' failed.");
+        }
+
+        return ExerciseCreation.Created;
+    }
+
+    /// <summary>
+    /// Re-describes an exercise in place. A replace, so a missing id answers
+    /// 404 by itself with no read in front of it — the template's arrangement.
+    /// The caller has already checked the name still hashes to the id, so this
+    /// can only change the description, never which exercise it describes.
+    /// </summary>
+    public async Task<bool> ReplaceExerciseAsync(
+        string objectId,
+        CustomExercise exercise,
+        CancellationToken cancellationToken)
+    {
+        using var payload = SerializeExercise(objectId, exercise);
+
+        using var response = await container.ReplaceItemStreamAsync(
+            payload,
+            exercise.Id,
+            new PartitionKey(objectId),
+            WriteOptions,
+            cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return false;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw Failure(response, $"Re-saving custom exercise {exercise.Id} failed.");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Removes a description. False means it was not there. Nothing cascades:
+    /// plans and sessions hold the name, not this document, so they keep it.
+    /// </summary>
+    public async Task<bool> DeleteExerciseAsync(
+        string objectId,
+        string exerciseId,
+        CancellationToken cancellationToken)
+    {
+        using var response = await container.DeleteItemStreamAsync(
+            exerciseId,
+            new PartitionKey(objectId),
+            WriteOptions,
+            cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return false;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw Failure(response, $"Deleting custom exercise {exerciseId} failed.");
         }
 
         return true;
@@ -1786,6 +1938,47 @@ public sealed class GymStore(Container container)
         });
 
     /// <summary>
+    /// A custom exercise. Optional fields are left off rather than written as
+    /// null, which is how the shipped library spells "not known" and how
+    /// <see cref="CustomExercise.Read"/> reads it back.
+    /// </summary>
+    private static MemoryStream SerializeExercise(string objectId, CustomExercise exercise) =>
+        Serialize(writer =>
+        {
+            writer.WriteString("id", exercise.Id);
+            writer.WriteString("objectId", objectId);
+            writer.WriteString("type", GymIds.ExerciseType);
+            writer.WriteString("name", exercise.Name);
+
+            if (exercise.Equipment is not null)
+            {
+                writer.WriteString("equipment", exercise.Equipment);
+            }
+
+            if (exercise.Group is not null)
+            {
+                writer.WriteString("group", exercise.Group);
+            }
+
+            if (exercise.Muscles.Count > 0)
+            {
+                writer.WriteStartArray("muscles");
+
+                foreach (var muscle in exercise.Muscles)
+                {
+                    writer.WriteStringValue(muscle);
+                }
+
+                writer.WriteEndArray();
+            }
+
+            if (exercise.VariationOf is not null)
+            {
+                writer.WriteString("variationOf", exercise.VariationOf);
+            }
+        });
+
+    /// <summary>
     /// A whole session, eight keys: what Start creates, with the day's plan as
     /// entries holding no sets, and what every read-then-replace above writes
     /// back. The hot-path patches append into the entries it leaves.
@@ -2151,3 +2344,14 @@ public enum EditSetResult
 /// the caller must re-read to see past.
 /// </summary>
 public readonly record struct EditSetOutcome(EditSetResult Result, GymSession? Session);
+
+/// <summary>
+/// What <see cref="GymStore.CreateExerciseAsync"/> did: wrote it, found one
+/// with that name already, or found the account at its cap.
+/// </summary>
+public enum ExerciseCreation
+{
+    Created,
+    Exists,
+    Limit,
+}

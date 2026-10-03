@@ -71,6 +71,28 @@ internal static class GymLimits
     public const int MaxTemplatesPerUser = 50;
 
     /// <summary>
+    /// How many custom exercises one user may describe, for the same reason as
+    /// <see cref="MaxTemplatesPerUser"/>: the shipped library is fifty-odd, so
+    /// two hundred of your own is a client creating in a loop rather than a
+    /// gym, and the list is one unpaged query.
+    /// </summary>
+    public const int MaxExercisesPerUser = 200;
+
+    /// <summary>
+    /// A custom exercise's equipment, group, and each muscle. Short words in
+    /// the shipped library — "Dumbbell", "Posterior", "Side Delts" — so this
+    /// is a bound on a typo rather than on a vocabulary.
+    /// </summary>
+    public const int MaxTagLength = 40;
+
+    /// <summary>
+    /// What an exercise trains, main muscle first. Three, as the shipped
+    /// library's rule has it: what the exercise is <em>for</em>, not every
+    /// muscle that works during it.
+    /// </summary>
+    public const int MaxMusclesPerExercise = 3;
+
+    /// <summary>
     /// Kilograms. The upper bound is past any lift a human has recorded and is
     /// there to catch a unit mistake — pounds sent where kilograms were meant
     /// stays inside it, but a stray multiplication does not.
@@ -255,6 +277,84 @@ public sealed record DayTemplate(string Id, string Name, IReadOnlyList<PlannedEx
         name = Name,
         plan = Plan.Select(exercise => exercise.ToResponse()).ToArray(),
     };
+}
+
+/// <summary>
+/// An exercise of the user's own, described the way the shipped library
+/// describes one: equipment, the muscle group it is planned against, what it
+/// trains, and the family it belongs to.
+///
+/// <b>It is a description, not a reference.</b> Plans and sessions store an
+/// exercise by name, as they always have, and nothing on them points at this
+/// document. That is what keeps everything already logged valid, and it is why
+/// the name cannot change: renaming the record would leave every session that
+/// used the old name describing an exercise that no longer exists, and every
+/// chart split in two. A different name is a different exercise — create it.
+/// Deleting one likewise touches no plan and no workout: the name stays where
+/// it was used and reads as an undescribed custom name again, which is what it
+/// was before the record existed.
+///
+/// The front ends merge these into the library they already read, so the
+/// muscle-group tallies, the equipment chip and the swap suggestions treat a
+/// custom exercise exactly as they treat a shipped one. The library is the
+/// CDN's and is the same for every account; these are the one part of it that
+/// is somebody's, which is why they are here.
+///
+/// Every field but the name is optional, and absent reads as unknown — the
+/// same rule the shipped library follows.
+/// </summary>
+public sealed record CustomExercise(
+    string Id,
+    string Name,
+    string? Equipment,
+    string? Group,
+    IReadOnlyList<string> Muscles,
+    string? VariationOf)
+{
+    public static CustomExercise Read(JsonElement document) => new(
+        GymDocument.String(document, "id"),
+        GymDocument.String(document, "name"),
+        GymDocument.OptionalString(document, "equipment"),
+        GymDocument.OptionalString(document, "group"),
+        GymDocument.List(document, "muscles", element => element.GetString() ?? string.Empty),
+        GymDocument.OptionalString(document, "variationOf"));
+
+    /// <summary>
+    /// The wire shape: the library's own field names, so a client can put one
+    /// of these in the list beside the shipped exercises without translating
+    /// it. Unknown fields are left off rather than sent as null, as the
+    /// library leaves them off.
+    /// </summary>
+    public object ToResponse()
+    {
+        var response = new Dictionary<string, object>
+        {
+            ["id"] = Id,
+            ["name"] = Name,
+        };
+
+        if (Equipment is not null)
+        {
+            response["equipment"] = Equipment;
+        }
+
+        if (Group is not null)
+        {
+            response["group"] = Group;
+        }
+
+        if (Muscles.Count > 0)
+        {
+            response["muscles"] = Muscles;
+        }
+
+        if (VariationOf is not null)
+        {
+            response["variationOf"] = VariationOf;
+        }
+
+        return response;
+    }
 }
 
 /// <summary>

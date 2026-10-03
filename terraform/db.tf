@@ -110,9 +110,9 @@ resource "azurerm_cosmosdb_sql_container" "primary" {
 }
 
 # The gym logger's container: one user's training block, sessions and sets.
-# Three document types told apart by /type — user, mesocycle, session — with
-# entries and sets embedded in the session rather than stored as documents of
-# their own. GymStore in the api app is the only writer, and the only identity
+# Document types told apart by /type — user, mesocycle, session, and the user's
+# own day templates and exercise descriptions — with entries and sets embedded
+# in the session rather than stored as documents of their own. GymStore in the api app is the only writer, and the only identity
 # that can reach this container at all: api_cosmos in terraform/consumption.tf
 # is scoped to it by name, and no other grant on the account includes it.
 #

@@ -15,7 +15,11 @@ the front end — one request, cached hard, no function invocation and no token.
 The `gym_exercise_library_url` output is the URL.
 
 Custom exercise names are not in here and never will be: they are the user's,
-so they post inline with the entry and live on the session document.
+so they post inline with the entry and live on the session document. A user can
+describe their own in this file's shape — equipment, group, muscles,
+`variationOf` — through `/gym/exercises` (see `apifunctionapp/Gym/README.md`),
+and the front ends merge those into this list, so a custom exercise counts
+toward gymbro's tally and shows in the swap sheet like a shipped one.
 
 An exercise is `{name, equipment}` and, optionally, four fields that describe
 what it is a substitute for. The front end reads them to suggest a swap when the

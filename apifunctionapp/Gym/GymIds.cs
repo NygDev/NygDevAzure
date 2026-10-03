@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Text;
 
 namespace ApiFunctionApp.Gym;
 
@@ -28,6 +29,11 @@ namespace ApiFunctionApp.Gym;
 /// are generated here, because nothing about either one is unique enough to
 /// name it by. A template's name least of all — it is renameable, and two of
 /// them may share one.
+///
+/// A custom exercise goes the other way. Its name <em>is</em> its identity —
+/// plans and sessions store exercises by name, so two records with one name
+/// would be two descriptions of the same history — and its id is derived from
+/// that name. See <see cref="Exercise"/>.
 /// </summary>
 internal static class GymIds
 {
@@ -35,11 +41,13 @@ internal static class GymIds
     public const string MesocycleType = "mesocycle";
     public const string SessionType = "session";
     public const string TemplateType = "template";
+    public const string ExerciseType = "exercise";
 
     private const string UserPrefix = "user_";
     private const string MesocyclePrefix = "meso_";
     private const string SessionPrefix = "session_";
     private const string TemplatePrefix = "template_";
+    private const string ExercisePrefix = "exercise_";
 
     /// <summary>
     /// The date format a session is keyed on: ISO, and never anything else.
@@ -176,6 +184,39 @@ internal static class GymIds
     public static string NewTemplateId() => TemplatePrefix + NewUlid();
 
     /// <summary>
+    /// A custom exercise's id, from its name: <c>exercise_</c> and the first
+    /// 128 bits of a SHA-256 over the name as it is compared — lowercased, with
+    /// every run of whitespace one space.
+    ///
+    /// Derived rather than generated because the name is the identity. Plans
+    /// and sessions store an exercise by name, so a second record called
+    /// "Cable Crunch" would be a second description of the one history, and
+    /// which of them a chart believed would be an accident. With the id built
+    /// from the name, a create of a name that already exists is a 409 from
+    /// Cosmos itself — uniqueness costs no query and no index on <c>name</c>,
+    /// which this container does not keep — and a create retried after a lost
+    /// response cannot make a second copy.
+    ///
+    /// A hash rather than a slug of the name: names are typed on a Norwegian
+    /// phone, and a slug that dropped every letter outside ASCII would make
+    /// "Knebøy" and "Kneby" the same exercise. Case and spacing are folded
+    /// because "cable crunch" and "Cable  Crunch" are one exercise misspelled,
+    /// not two.
+    /// </summary>
+    public static string Exercise(string name)
+    {
+        var folded = string.Join(
+            ' ',
+            name.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .ToLowerInvariant();
+
+        Span<byte> hash = stackalloc byte[32];
+        SHA256.HashData(Encoding.UTF8.GetBytes(folded), hash);
+
+        return ExercisePrefix + Convert.ToHexStringLower(hash[..16]);
+    }
+
+    /// <summary>
     /// A ULID, lowercase Crockford base32.
     ///
     /// 48 bits of millisecond timestamp followed by 80 bits of randomness, so
@@ -297,4 +338,12 @@ internal static class GymIds
     /// </summary>
     public static bool IsTemplateId(string? id) =>
         IsWellFormed(id) && id!.StartsWith(TemplatePrefix, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether a route segment names a custom exercise document and nothing
+    /// else — the same guard as <see cref="IsTemplateId"/>, for the same
+    /// reason: the id reaches Cosmos as a write or delete key as it arrived.
+    /// </summary>
+    public static bool IsExerciseId(string? id) =>
+        IsWellFormed(id) && id!.StartsWith(ExercisePrefix, StringComparison.Ordinal);
 }
