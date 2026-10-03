@@ -31,6 +31,16 @@ before any function runs, so that 401 is not JSON. Treat any 401 as "sign in
 again", whatever its body. The CORS headers are on it, so a browser can read
 the status.
 
+**Preflights are not cached, and cannot be made to be.** Every authenticated
+call carries `Authorization`, so the browser sends an `OPTIONS` first, and the
+answer has no `Access-Control-Max-Age` — so it sends one again before nearly
+every set-tap. That is the platform, not this code: the App Service CORS module
+answers every preflight before Easy Auth and before any function runs, and
+`site_config.cors` has no max-age setting to give it. Moving CORS into the app
+does not get round it either — an `OPTIONS` the platform module does not answer
+reaches Easy Auth, which turns it away with the same empty 401 as any call with
+no token (checked: an `OPTIONS` with no `Origin` gets exactly that). Leave it.
+
 **The user is the token.** Nothing takes a user id — the Entra object id off the
 validated principal is the Cosmos partition key, and it is never read from a
 route, a query string or a body.
