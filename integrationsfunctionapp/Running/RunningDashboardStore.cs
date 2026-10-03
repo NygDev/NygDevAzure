@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Azure.Storage.Blobs;
@@ -52,8 +53,19 @@ public sealed class RunningDashboardStore(BlobClient blob)
 
     public async Task WriteAsync(RunningDashboardDocument document, CancellationToken cancellationToken)
     {
+        // Stored gzipped and served with Content-Encoding: gzip — 12.6 kB of
+        // JSON is about 2.4 kB on the wire, on every page load. Blob storage
+        // neither compresses on the way out nor negotiates: it sends the bytes
+        // and the header it holds to whoever asks. That is fine because the
+        // only reader is a browser, which decodes gzip before fetch() hands
+        // over the body; nothing in this repo reads the blob back.
         using var payload = new MemoryStream();
-        await JsonSerializer.SerializeAsync(payload, document, DocumentJson, cancellationToken);
+
+        await using (var gzip = new GZipStream(payload, CompressionLevel.SmallestSize, leaveOpen: true))
+        {
+            await JsonSerializer.SerializeAsync(gzip, document, DocumentJson, cancellationToken);
+        }
+
         payload.Position = 0;
 
         // Headers set on the upload rather than patched afterwards. A blob
@@ -69,6 +81,7 @@ public sealed class RunningDashboardStore(BlobClient blob)
                 HttpHeaders = new BlobHttpHeaders
                 {
                     ContentType = "application/json; charset=utf-8",
+                    ContentEncoding = "gzip",
                     CacheControl = CacheControl,
                 },
             },

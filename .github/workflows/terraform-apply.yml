@@ -63,6 +63,18 @@ jobs:
           key: ${{ runner.os }}-tf-${{ hashFiles('**/.terraform.lock.hcl') }}
           restore-keys: ${{ runner.os }}-tf-
 
+      # The two gym blobs are uploaded gzipped (see terraform/cdn.tf). The
+      # readable JSON in gym/ is the source of truth; this makes the copy
+      # terraform uploads and takes content_md5 from. -n drops the name and
+      # timestamp, so unchanged JSON gzips to unchanged bytes and the blobs are
+      # not rewritten on every apply.
+      - name: 'Gzip the CDN JSON'
+        run: |
+          mkdir -p gym/dist
+          for f in exercises templates; do
+            gzip -n -9 -c "gym/$f.json" > "gym/dist/$f.json.gz"
+          done
+
       - name: 'Terraform Init'
         working-directory: terraform
         run: terraform init

@@ -51,6 +51,27 @@ resource "azurerm_storage_container" "data" {
 # the local file from the uploaded blob, and a reworded exercise would sit in
 # the repo without ever reaching the CDN.
 #
+# What is uploaded is a gzipped copy, served with Content-Encoding: gzip: 8.5
+# kB of JSON is 1.1 kB on the wire, on every cold load of both front ends. Blob
+# storage does not compress on the way out, and it does not negotiate either —
+# it sends the stored bytes and the stored header to whoever asks — which is
+# fine here because the only readers are browsers, and every browser decodes
+# gzip before fetch() hands over the body. A reader that cannot (a script
+# without automatic decompression) would get gzip bytes; there is none.
+#
+# The copy is made by the "Gzip the CDN JSON" step in terraform-apply.yml, into
+# gym/dist/, which is gitignored: the readable file stays the source of truth
+# and the compressed one is a build output. `gzip -n` leaves out the name and
+# timestamp, so the same JSON gzips to the same bytes and content_md5 — taken
+# from the gzipped file, since that is what the blob holds — changes only when
+# the JSON does. A plan run by hand needs the same step first:
+#
+#   mkdir -p gym/dist && for f in exercises templates; do
+#     gzip -n -9 -c gym/$f.json > gym/dist/$f.json.gz; done
+#
+# Without it, filemd5 below fails on the missing file — loudly, which is the
+# point: falling back to the plain JSON would upload it under a gzip header.
+#
 # One thing to know before the first apply: this is the only data-plane
 # resource in this configuration. The container above and everything else are
 # Resource Manager calls, but writing a blob is not, and the azurerm provider
@@ -69,13 +90,16 @@ resource "azurerm_storage_blob" "gym_exercises" {
   storage_container_id = azurerm_storage_container.data.id
 
   type        = "Block"
-  source      = "${path.module}/../gym/exercises.json"
-  content_md5 = filemd5("${path.module}/../gym/exercises.json")
+  source      = "${path.module}/../gym/dist/exercises.json.gz"
+  content_md5 = filemd5("${path.module}/../gym/dist/exercises.json.gz")
 
   # Without this the blob is served as application/octet-stream, which a
   # browser fetch().json() still parses but which makes the URL useless to open
   # by hand — it downloads rather than displays.
   content_type = "application/json"
+
+  # What the stored bytes are; see above. A browser undoes it transparently.
+  content_encoding = "gzip"
 
   # A day, because the library changes only on a deploy and the front end
   # should not re-fetch it on every cold load. Not longer: the front end has no
@@ -103,16 +127,20 @@ resource "azurerm_storage_blob" "gym_exercises" {
 # into the Plan tab's local draft, which saves with the block. So editing this
 # file changes what a new day can be filled with and never touches a block
 # somebody already filled.
+#
+# Gzipped like the exercise library, by the same workflow step and for the
+# same reason: 7 kB of JSON is 0.6 kB on the wire.
 resource "azurerm_storage_blob" "gym_templates" {
   name = "gym-templates.json"
 
   storage_container_id = azurerm_storage_container.data.id
 
   type        = "Block"
-  source      = "${path.module}/../gym/templates.json"
-  content_md5 = filemd5("${path.module}/../gym/templates.json")
+  source      = "${path.module}/../gym/dist/templates.json.gz"
+  content_md5 = filemd5("${path.module}/../gym/dist/templates.json.gz")
 
-  content_type = "application/json"
+  content_type     = "application/json"
+  content_encoding = "gzip"
 
   # The same day the exercise library gets, and for the same reason — these two
   # files are fetched together on a cold load and change on the same deploys.

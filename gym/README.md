@@ -124,3 +124,9 @@ The API the front end calls for everything else is documented in
 Editing it is a `terraform apply` — the blob's `content_md5` changes, and the
 provider reuploads. Bumping `version` is not load-bearing; it is there so a
 cached copy can say which one it is.
+
+What is uploaded is a gzipped copy, served with `Content-Encoding: gzip` (about
+an eighth of the bytes; browsers decode it before the page sees it). The apply
+workflow makes it into `gym/dist/` with `gzip -n`; a `terraform plan` run by
+hand needs the same step first — the command is in the comment above the
+blobs in `terraform/cdn.tf`. These files stay the source of truth.
