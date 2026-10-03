@@ -281,14 +281,16 @@ Every block this user has planned, newest first — the Plan tab's block list.
     }
   ],
   "favorites": ["Bench Press"],
-  "recent": ["Squat"]
+  "recent": ["Squat"],
+  "profile": { "experience": "intermediate", "bodyweightKg": 82 }
 }
 ```
 
 An empty array is a **first run**, the same as `"mesocycle": null` on
 `/current`. Sorted by id, which is a ULID, so newest-first costs nothing.
 `favorites` and `recent` are the same two lists `/current` carries, here for
-the planner.
+the planner. `profile` is the lifter's profile (see below), `{}` until one is
+saved; `/current` does not carry it, since nothing on the phone reads it.
 
 The two counts are there so the delete below can say what it is about to take.
 Volume is deliberately not — it needs the sets, and the sets are the expensive
@@ -807,6 +809,35 @@ The whole list, `[]` to clear it — a missing field is a 400 rather than an
 empty list, so a malformed body cannot clear every star. At most 100, no name
 twice. **200** `{ok, favorites}`. Two devices starring at once means one of
 the two stars is lost; it is a preference, to tap again, and not worth a lock.
+
+### The lifter's profile
+
+What a coach reading the log should know about the person that no session
+records: how long they have trained, what they weigh, what the block is for,
+and what hurts. It exists for one reader — the coaching export gymbro writes,
+which pre-fills its *Goals and context* section from it — and lives as
+`profile` on the same `preferences_{objectId}` document, for the same reason
+the lists do: nothing else rewrites that document wholesale, so each field is
+patched alone. It rides along on `GET /gym/mesocycles` as `{}` until saved.
+
+#### `PUT /gym/profile`
+
+```jsonc
+{
+  "experience": "intermediate",   // "beginner" | "intermediate" | "advanced", or null
+  "bodyweightKg": 82,             // 20–400, or null
+  "goal": "Add 10 kg to the squat without the knee flaring up",   // up to 400 characters
+  "injuries": "Left knee: no deep leg press"                       // up to 400 characters
+}
+```
+
+Every field is optional, and the body **replaces the whole profile**: a field
+left off, sent as null or sent blank is cleared. Whole rather than a patch
+because the form holds all four fields, so the request is its own retry.
+`experience` is a closed vocabulary so a screen can offer it as chips and a
+reader can rely on the spelling; `bodyweightKg` is a number, never a string,
+because a string would be a unit nobody can check. **200** `{ok, profile}`,
+unknown fields left off.
 
 ### `DELETE /gym/workouts/{id}`
 
