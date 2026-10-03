@@ -192,7 +192,9 @@ renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate=false;
 renderer.outputEncoding=THREE.sRGBEncoding;
 const scene=new THREE.Scene();
-const camera=new THREE.PerspectiveCamera(38,1,0.1,400);
+// Depth precision goes with near/far: the orbit never comes closer than 3 m, and fog hides everything past 110 m,
+// so a 0.5 m near plane gives five times the precision of the old 0.1 m, which matters on phone GPUs.
+const camera=new THREE.PerspectiveCamera(38,1,0.5,250);
 const controls=new THREE.OrbitControls(camera,canvas);
 controls.enableDamping=!reduce; controls.dampingFactor=0.12; controls.maxPolarAngle=Math.PI*0.495;
 controls.minDistance=3; controls.maxDistance=90;
@@ -228,18 +230,22 @@ function box(x0,z0,x1,z1,y0,y1,mat,name){
   g.translate((x0+x1)/2,(y0+y1)/2,(z0+z1)/2);
   return fin(new THREE.Mesh(g,mat),name);
 }
-// a sloped slab: outline in plan, top surface y=top(x,z), vertical thickness t; top uses mats[0], underside and edges mats[1]
-function slab(outline,top,t,mats,name){
+// a sloped slab: outline in plan, top surface y=top(x,z), vertical thickness t; top uses mats[0], underside and edges mats[1].
+// Every face points out of the solid, so the materials can stay single-sided and the .glb gets correct normals.
+// topEdges lists outline edges (by the index of their first point) whose edge face takes the top material instead: the
+// edges along a ridge or valley, where another slab covers the face. Phone GPUs have depth buffers coarse enough that such
+// a face bleeds through the slab above it as a dotted line; in the roof's own colour that goes unseen.
+function slab(outline,top,t,mats,name,topEdges=[]){
   const pts=outline.map(([x,z])=>new THREE.Vector2(x,z));
-  const tris=THREE.ShapeUtils.triangulateShape(pts,[]);
-  const P=[]; const v=(i,dy)=>{const [x,z]=outline[i];P.push(x,top(x,z)+dy,z);};
-  tris.forEach(([a,b,c])=>{v(a,0);v(b,0);v(c,0);});
-  const n0=P.length/3;
-  tris.forEach(([a,b,c])=>{v(a,-t);v(c,-t);v(b,-t);});
-  outline.forEach((_,i)=>{const j=(i+1)%outline.length; v(i,0);v(j,0);v(j,-t); v(i,0);v(j,-t);v(i,-t);});
+  const tris=THREE.ShapeUtils.triangulateShape(pts,[]);   // in the x–z plane these triangles face down whatever the outline's winding
+  const ccw=THREE.ShapeUtils.area(pts)>0;                  // side quads face outward only for an anticlockwise outline in (x,z)
+  const T=[], K=[]; const v=(A,i,dy)=>{const [x,z]=outline[i];A.push(x,top(x,z)+dy,z);};
+  tris.forEach(([a,b,c])=>{v(T,a,0);v(T,c,0);v(T,b,0);});
+  tris.forEach(([a,b,c])=>{v(K,a,-t);v(K,b,-t);v(K,c,-t);});
+  outline.forEach((_,i)=>{const j=(i+1)%outline.length, [p,q]=ccw?[i,j]:[j,i], A=topEdges.includes(i)?T:K; v(A,p,0);v(A,q,0);v(A,q,-t); v(A,p,0);v(A,q,-t);v(A,p,-t);});
   const mk=(arr,mat,nm)=>{const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(arr,3)); g.computeVertexNormals(); return fin(new THREE.Mesh(g,mat),nm);};
   const grp=new THREE.Group(); grp.name=name;
-  grp.add(mk(P.slice(0,n0*3),mats[0],name+' tekking'),mk(P.slice(n0*3),mats[1],name+' kant'));
+  grp.add(mk(T,mats[0],name+' tekking'),mk(K,mats[1],name+' kant'));
   return grp;
 }
 function subdivide(pts,xs,zs){
@@ -280,8 +286,8 @@ function set(){return{wall:std('#ffffff',{vertexColors:true}),glass:std('#8FB9CE
 const MAT={gf:set(),loft:set(),ark:set(),ext:set(),
   slab:std('#BEC2BD'),stair:std('#C79E70',{roughness:.8}),terrace:std('#A07E5A',{roughness:.85}),
   rail:std('#8C7258'),chimney:std('#2E3133',{roughness:.7}),stove:std('#33393B',{roughness:.6}),ground:std('#B3BCB2',{roughness:1}),
-  tile:std('#232527',{roughness:.75,side:THREE.DoubleSide}),shingle:std('#7B4B3A',{roughness:.85,side:THREE.DoubleSide}),
-  fascia:std('#F4F3EF',{roughness:.7,side:THREE.DoubleSide}),red:std('#A3312A')};
+  tile:std('#232527',{roughness:.75}),shingle:std('#7B4B3A',{roughness:.85}),
+  fascia:std('#F4F3EF',{roughness:.7}),red:std('#A3312A')};
 
 // ---------- groups ----------
 const site=new THREE.Group(); site.name='Tomt';
@@ -303,7 +309,7 @@ site.add(box(tx0,tz0,tx1,tz1,-0.25,-0.06,MAT.terrace,'Terrasse'));
 const SH={xw:6.3,xr:6.93,xe:tx1,z0:HS.zS,z1:tz1,ridge:3.63,kw:Math.tan(38*Math.PI/180),ke:Math.tan(46*Math.PI/180),t:0.14};
 SH.top=(x)=>x<=SH.xr?SH.ridge-SH.kw*(SH.xr-x):SH.ridge-SH.ke*(x-SH.xr);
 SH.under=(x)=>SH.top(x)-SH.t;
-MAT.wood=std('#9A6B45',{roughness:.8,side:THREE.DoubleSide}); MAT.rafter=std('#7E5536',{roughness:.8});
+MAT.wood=std('#9A6B45',{roughness:.8}); MAT.rafter=std('#7E5536',{roughness:.8});
 // slatted railing along the west and south edges, stopping at the lounge; 0.92 m above the deck, as measured
 function railing(ax,az,bx,bz,tag){
   const L=Math.hypot(bx-ax,bz-az), n=Math.max(1,Math.round(L/1.4)), t=0.045, alongX=Math.abs(bx-ax)>Math.abs(bz-az);
@@ -315,12 +321,14 @@ function railing(ax,az,bx,bz,tag){
 }
 railing(tx0,tz0+0.05,tx0,tz1,'V'); railing(tx0,tz1,SH.xw,tz1,'S');
 const shedRoof=new THREE.Group(); shedRoof.name='Overbygg tak'; site.add(shedRoof);
-shedRoof.add(slab([[SH.xw-0.25,SH.z0],[SH.xr,SH.z0],[SH.xr,SH.z1+0.25],[SH.xw-0.25,SH.z1+0.25]],SH.top,SH.t,[MAT.shingle,MAT.wood],'Overbygg tak vest'));
-shedRoof.add(slab([[SH.xr,SH.z0],[SH.xe+0.25,SH.z0],[SH.xe+0.25,SH.z1+0.25],[SH.xr,SH.z1+0.25]],SH.top,SH.t,[MAT.shingle,MAT.wood],'Overbygg tak øst'));
-// white bargeboards on the south gable and fascia on the west eave
-shedRoof.add(slab([[SH.xw-0.25,SH.z1+0.2],[SH.xr,SH.z1+0.2],[SH.xr,SH.z1+0.27],[SH.xw-0.25,SH.z1+0.27]],(x)=>SH.top(x)+0.02,0.24,[MAT.fascia,MAT.fascia],'Vindski vest'));
-shedRoof.add(slab([[SH.xr,SH.z1+0.2],[SH.xe+0.25,SH.z1+0.2],[SH.xe+0.25,SH.z1+0.27],[SH.xr,SH.z1+0.27]],(x)=>SH.top(x)+0.02,0.24,[MAT.fascia,MAT.fascia],'Vindski øst'));
-shedRoof.add(slab([[SH.xw-0.3,SH.z0],[SH.xw-0.23,SH.z0],[SH.xw-0.23,SH.z1+0.27],[SH.xw-0.3,SH.z1+0.27]],()=>SH.top(SH.xw-0.25)+0.03,0.12,[MAT.fascia,MAT.fascia],'Takrenne vest'));
+shedRoof.add(slab([[SH.xw-0.25,SH.z0],[SH.xr,SH.z0],[SH.xr,SH.z1+0.25],[SH.xw-0.25,SH.z1+0.25]],SH.top,SH.t,[MAT.shingle,MAT.wood],'Overbygg tak vest',[1]));
+shedRoof.add(slab([[SH.xr,SH.z0],[SH.xe+0.25,SH.z0],[SH.xe+0.25,SH.z1+0.25],[SH.xr,SH.z1+0.25]],SH.top,SH.t,[MAT.shingle,MAT.wood],'Overbygg tak øst',[3]));
+shedRoof.add(box(SH.xr-0.06,SH.z0,SH.xr+0.06,SH.z1+0.25,SH.ridge-0.10,SH.ridge+0.02,MAT.shingle,'Mønekam overbygg'));
+// white bargeboards on the south gable and a gutter on the west eave, fixed to the slab's edges rather than let into it
+// (an overlap of 2 cm z-fights with the shingles on a phone)
+shedRoof.add(slab([[SH.xw-0.25,SH.z1+0.25],[SH.xr,SH.z1+0.25],[SH.xr,SH.z1+0.32],[SH.xw-0.25,SH.z1+0.32]],(x)=>SH.top(x)+0.02,0.24,[MAT.fascia,MAT.fascia],'Vindski vest'));
+shedRoof.add(slab([[SH.xr,SH.z1+0.25],[SH.xe+0.25,SH.z1+0.25],[SH.xe+0.25,SH.z1+0.32],[SH.xr,SH.z1+0.32]],(x)=>SH.top(x)+0.02,0.24,[MAT.fascia,MAT.fascia],'Vindski øst'));
+shedRoof.add(slab([[SH.xw-0.32,SH.z0],[SH.xw-0.25,SH.z0],[SH.xw-0.25,SH.z1+0.32],[SH.xw-0.32,SH.z1+0.32]],()=>SH.top(SH.xw-0.25)+0.03,0.12,[MAT.fascia,MAT.fascia],'Takrenne vest'));
 // exposed rafters every 0.6 m and a beam across the long slope
 for(let z=SH.z0+0.35;z<SH.z1-0.05;z+=0.6){
   shedRoof.add(slab([[SH.xw-0.2,z-0.035],[SH.xr,z-0.035],[SH.xr,z+0.035],[SH.xw-0.2,z+0.035]],(x)=>SH.under(x),0.16,[MAT.rafter,MAT.rafter],'Sperr V '+z.toFixed(1)));
@@ -332,7 +340,8 @@ function panel(pts,z0,d,mat,name){
   const g=new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([x,y])=>new THREE.Vector2(x,y))),{depth:d,bevelEnabled:false});
   g.translate(0,0,z0); return fin(new THREE.Mesh(g,mat),name);
 }
-const U=SH.under, xH=HS.xE;
+// the walls run 4 cm up into the roof slab rather than stopping exactly at its underside, so the two never z-fight
+const U=(x)=>SH.under(x)+0.04, xH=HS.xE;
 // south end: open from the corner post to under the ridge, closed under the long slope
 const southPts=[[SH.xr,-0.25],[SH.xe,-0.25],[SH.xe,U(SH.xe)],[SH.xr,U(SH.xr)]];
 site.add(panel(southPts,SH.z1-0.1,0.1,MAT.red,'Overbygg vegg sør'));
@@ -345,7 +354,7 @@ site.add(panel(northPts.map(([x,y])=>[x,Math.max(y,-0.06)]),SH.z0+0.1,0.02,MAT.w
 site.add(box(SH.xe-0.12,SH.z0,SH.xe,SH.z1,-0.25,U(SH.xe),MAT.red,'Overbygg vegg øst'));
 site.add(box(SH.xe-0.14,SH.z0+0.1,SH.xe-0.12,SH.z1-0.12,-0.06,U(SH.xe),MAT.wood,'Overbygg panel øst'));
 // corner post at the open south-west corner
-site.add(box(SH.xw-0.05,SH.z1-0.12,SH.xw+0.07,SH.z1,-0.06,U(SH.xw),MAT.fascia,'Overbygg stolpe'));
+site.add(box(SH.xw-0.05,SH.z1-0.12,SH.xw+0.07,SH.z1,-0.06,U(SH.xw+0.07),MAT.fascia,'Overbygg stolpe'));
 
 // detached double garage: 6.0 × 7.0 m inside, walls about 2.0 m with the ridge 2.2 m above them (1994 drawing), placed from
 // the 1:500 map. Red cladding, a tiled roof with the ridge along x, 0.42 m eaves and 0.4 m gable overhangs, a 5 m door
@@ -363,8 +372,9 @@ function gable(xa,d,zc,hw,yb,yt,mat,name){   // triangle in the z–y plane, ext
   garage.add(prism([{outer:[[x0,z0],[x1,z0],[x1,z1],[x0,z1]],holes:[[[x0+w,z0+w],[x0+w,z1-w],[x1-w,z1-w],[x1-w,z0+w]]]}],y,GA.wall,MAT.garage,'Garasje vegger'));
   garage.add(gable(x0,w,GA.zc,GA.hw,eave,apex,MAT.garage,'Garasje gavl vest'), gable(x1-w,w,GA.zc,GA.hw,eave,apex,MAT.garage,'Garasje gavl øst'));
   const rx0=x0-GA.gov, rx1=x1+GA.gov, rz0=z0-GA.ov, rz1=z1+GA.ov;
-  garage.add(slab([[rx0,rz0],[rx1,rz0],[rx1,GA.zc],[rx0,GA.zc]],GA.top,GA.t+0.05,[MAT.tile,MAT.fascia],'Garasje tak nord'));
-  garage.add(slab([[rx0,GA.zc],[rx1,GA.zc],[rx1,rz1],[rx0,rz1]],GA.top,GA.t+0.05,[MAT.tile,MAT.fascia],'Garasje tak sør'));
+  garage.add(slab([[rx0,rz0],[rx1,rz0],[rx1,GA.zc],[rx0,GA.zc]],GA.top,GA.t+0.05,[MAT.tile,MAT.fascia],'Garasje tak nord',[2]));
+  garage.add(slab([[rx0,GA.zc],[rx1,GA.zc],[rx1,rz1],[rx0,rz1]],GA.top,GA.t+0.05,[MAT.tile,MAT.fascia],'Garasje tak sør',[0]));
+  { const ry=GA.top(x0,GA.zc); garage.add(box(rx0,GA.zc-0.09,rx1,GA.zc+0.09,ry-0.12,ry+0.03,MAT.tile,'Mønestein garasje')); }
   // sectional door (new in 2025), about 5.0 × 2.2 m, nearer the south corner as in the photo
   garage.add(box(x1-0.01,GA.zc-2.35,x1+0.04,GA.zc+2.65,y,y+2.2,MAT.gtrim,'Garasjeport'));
   // south side: a door at the west end and two windows
@@ -475,18 +485,28 @@ const cb=(x,z,y0,y1,grp,mat,n)=>{const w=0.14,p=0.03;
 // ---------- roof ----------
 const vx=(z)=>R.Ea+R.k*(R.hw-Math.abs(z-R.zc))-R.E+HS.xW;   // valley line between dormer and main roof
 const zA=AK.zN-R.arkOv, zB=AK.zS+R.arkOv, xe=HS.xW-R.ov, zn=HS.zN-R.gov, zs=HS.zS+R.gov;
-// A 0.25 m slab per slope carries the tiles out to the eaves and verges. Inside the walls a second slab, just under it,
-// makes up the full 0.5 m build-up; it starts 2 cm inside the wall faces so its edges stay hidden in the walls.
+// A 0.25 m slab per slope carries the tiles out to the eaves and verges. Inside the walls a second slab, directly under it,
+// makes up the full 0.5 m build-up; it starts 2 cm inside the wall faces so its edges stay hidden in the walls. Its top
+// sits flush with the tile slab's underside: a build earlier had it 1 cm under the tiles, and phone GPUs, with their
+// coarser depth buffers, drew that white slab through the dark roof as diagonal stripes.
 const tw=(x)=>R.E+(x-HS.xW), te=(x)=>R.E+(HS.xE-x), wx=HS.xW+0.02, ex=HS.xE-0.02, nz=HS.zN+0.02, sz=HS.zS-0.02;
+// At the valley the main slab and the dormer slabs run 12 cm past each other, each tucked under the other's surface, and
+// the edge faces along the ridge and the valley are in the tile colour (see slab), so no white seam can show there.
+const lap=0.12;
 const roofParts=[
   // the main roof is cut away only between the dormer walls; the dormer's overhang sits above it
-  slab([[xe,zn],[R.rx,zn],[R.rx,zs],[xe,zs],[xe,AK.zS],[vx(AK.zS),AK.zS],[vx(R.zc),R.zc],[vx(AK.zN),AK.zN],[xe,AK.zN]],tw,R.to,[MAT.tile,MAT.fascia],'Tak vest'),
-  slab([[R.rx,zn],[HS.xE+R.ov,zn],[HS.xE+R.ov,zs],[R.rx,zs]],te,R.to,[MAT.tile,MAT.fascia],'Tak øst'),
-  slab([[wx,nz],[R.rx,nz],[R.rx,sz],[wx,sz],[wx,AK.zS],[vx(AK.zS),AK.zS],[vx(R.zc),R.zc],[vx(AK.zN),AK.zN],[wx,AK.zN]],(x)=>tw(x)-0.01,R.t-0.01,[MAT.fascia,MAT.fascia],'Takoppbygg vest'),
-  slab([[R.rx,nz],[ex,nz],[ex,sz],[R.rx,sz]],(x)=>te(x)-0.01,R.t-0.01,[MAT.fascia,MAT.fascia],'Takoppbygg øst'),
-  slab([[R.arkFront,R.zc],[R.arkFront,zA],[vx(zA),zA],[vx(R.zc),R.zc]],(x,z)=>R.Ea+R.k*(R.hw-(R.zc-z)),R.ta,[MAT.tile,MAT.fascia],'Ark nord'),
-  slab([[R.arkFront,R.zc],[vx(R.zc),R.zc],[vx(zB),zB],[R.arkFront,zB]],(x,z)=>R.Ea+R.k*(R.hw-(z-R.zc)),R.ta,[MAT.tile,MAT.fascia],'Ark sør')];
+  slab([[xe,zn],[R.rx,zn],[R.rx,zs],[xe,zs],[xe,AK.zS],[vx(AK.zS)-lap,AK.zS],[vx(R.zc)-lap,R.zc],[vx(AK.zN)-lap,AK.zN],[xe,AK.zN]],tw,R.to,[MAT.tile,MAT.fascia],'Tak vest',[1,5,6]),
+  slab([[R.rx,zn],[HS.xE+R.ov,zn],[HS.xE+R.ov,zs],[R.rx,zs]],te,R.to,[MAT.tile,MAT.fascia],'Tak øst',[3]),
+  slab([[wx,nz],[R.rx,nz],[R.rx,sz],[wx,sz],[wx,AK.zS],[vx(AK.zS),AK.zS],[vx(R.zc),R.zc],[vx(AK.zN),AK.zN],[wx,AK.zN]],(x)=>tw(x)-R.to,R.t-R.to,[MAT.fascia,MAT.fascia],'Takoppbygg vest'),
+  slab([[R.rx,nz],[ex,nz],[ex,sz],[R.rx,sz]],(x)=>te(x)-R.to,R.t-R.to,[MAT.fascia,MAT.fascia],'Takoppbygg øst'),
+  slab([[R.arkFront,R.zc],[R.arkFront,zA],[vx(zA)+lap,zA],[vx(R.zc)+lap,R.zc]],(x,z)=>R.Ea+R.k*(R.hw-(R.zc-z)),R.ta,[MAT.tile,MAT.fascia],'Ark nord',[2,3]),
+  slab([[R.arkFront,R.zc],[vx(R.zc)+lap,R.zc],[vx(zB)+lap,zB],[R.arkFront,zB]],(x,z)=>R.Ea+R.k*(R.hw-(z-R.zc)),R.ta,[MAT.tile,MAT.fascia],'Ark sør',[0,1])];
 roofParts.forEach(g=>{roof.add(g); g.traverse(m=>{if(m.isMesh){m.userData.occluder=true;occluders.push(m);}});});
+// ridge tiles. The two slopes' white edge faces meet edge-on along each ridge, and seen from above that seam draws as a
+// dotted light line; a cap in the tile colour covers it (the garage and lounge get theirs where their roofs are built)
+const ridgeY=tw(R.rx), arkRidgeY=R.Ea+R.k*R.hw;
+roof.add(box(R.rx-0.09,zn,R.rx+0.09,zs,ridgeY-0.12,ridgeY+0.03,MAT.tile,'Mønestein'));
+roof.add(box(R.arkFront,R.zc-0.09,vx(R.zc),R.zc+0.09,arkRidgeY-0.12,arkRidgeY+0.03,MAT.tile,'Mønestein ark'));
 
 // ---------- fireplace (Stue photos; no furniture) ----------
 // Stone-clad column where the sketch draws the flue, stone on the north wall behind the stove, a rendered corner

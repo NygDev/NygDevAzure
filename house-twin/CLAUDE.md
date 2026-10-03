@@ -87,6 +87,7 @@ The unit is metres. x = plan right (roughly ESE), z = plan down (roughly SSW), y
 
 ## Rules
 
+- **Keep hidden faces well clear of visible ones.** Phone GPUs have much coarser depth buffers than a desktop, so two surfaces a centimetre or two apart z-fight at viewing distance. A white build-up slab 1 cm under the roof tiles once showed through as diagonal stripes on a phone. Where parts meet, either run the hidden part a few centimetres into the visible one (walls into roof slabs) or keep it entirely outside (bargeboards against the slab edge), and never leave a different colour just under a surface. Where two slabs meet along a ridge or valley, overlap them and pass the shared edges in `slab()`'s `topEdges`, which gives those edge faces the roof colour. `slab()` builds outward-facing solids, so its materials stay single-sided.
 - **Build real geometry; don't rely on render-time clipping.** Loft, dormer and eave walls are cut to the roof with `trimmedPrism`/`lowerTop`. Clipping planes are only for the "Cut walls at 1.2 m" view. Anything clipped at render time pokes through the roof in the .glb.
 - **One material per mesh.** Multi-material meshes lose their materials in the glTF export. `slab()` returns a group of two meshes for this reason.
 - **Carve walls in copies.** When you carve walls in `build.py`, work on a copy (see `t1w`/`t1s`). Room areas come from flood-filling the uncarved mask, and carving the original merges rooms.
