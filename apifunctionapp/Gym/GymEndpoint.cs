@@ -86,9 +86,12 @@ internal static class GymEndpoint
                     "db/gym is missing on nygdev-cosmos-db. Terraform holds the container in "
                     + "terraform/db.tf.",
                 HttpStatusCode.BadRequest =>
-                    "Cosmos refused the operation itself. If this is a query, the likely cause is a "
+                    "Cosmos refused the operation itself. If this is a query, the likely causes are a "
                     + "filter on a path the container's indexing policy does not cover — it is opt-in, "
-                    + "and adding a path is a terraform change in terraform/db.tf.",
+                    + "and adding a path is a terraform change in terraform/db.tf — or a property named "
+                    + "with a reserved word (group, value, top, …) reached as c.name rather than "
+                    + "c[\"name\"]. This response's 'detail' field is Cosmos's own message and "
+                    + "names which.",
                 HttpStatusCode.TooManyRequests =>
                     "The account is throttling and the SDK's retries did not outlast it. db is "
                     + "provisioned at 1000 RU/s shared across primary, gps and gym.",
