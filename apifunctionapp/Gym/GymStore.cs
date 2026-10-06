@@ -146,9 +146,15 @@ public sealed class GymStore(Container container)
     /// would be ordering by nothing, and ordering by <c>c.name</c> would need
     /// an index this container does not keep for a list of at most
     /// <see cref="GymLimits.MaxExercisesPerUser"/> — sorted in memory instead.
+    ///
+    /// <c>c["group"]</c> rather than <c>c.group</c>: GROUP is a reserved word
+    /// in Cosmos SQL, and the dotted form is a syntax error — a 400 on every
+    /// list, which the endpoint reports as an indexing problem because that is
+    /// what a 400 on a query usually is. Bracket notation reaches the property
+    /// regardless, and the projected field is still named <c>group</c>.
     /// </summary>
     private const string ExercisesQuery = """
-        SELECT c.id, c.name, c.equipment, c.group, c.muscles, c.variationOf
+        SELECT c.id, c.name, c.equipment, c["group"], c.muscles, c.variationOf
         FROM c
         WHERE c.type = @type
         """;
