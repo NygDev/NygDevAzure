@@ -110,7 +110,7 @@ public sealed class SessionCountTests(CosmosFixture cosmos) : IClassFixture<Cosm
     {
         var mesoId = await NewBlockAsync();
         var sessionId = (await StartAsync(mesoId, Day, "Bench Press")).Session!.Id;
-        await Store.AppendSetAsync(objectId, sessionId, 0, 0, new WorkSet(100, 5, null), default);
+        await LogSetDirectlyAsync(mesoId, Day, "Bench Press");
 
         var session = await Store.SubmitAsync(objectId, sessionId, default);
 
@@ -150,13 +150,12 @@ public sealed class SessionCountTests(CosmosFixture cosmos) : IClassFixture<Cosm
 
         // The set lands between the delete's read and its batch, so the first
         // batch fails its ETag and the delete has to read and try again.
-        cosmos.Interceptor.Before(
-            Interceptor.IsBatch,
-            async () => Assert.Equal(
-                PatchResult.Applied,
-                (await Store.AppendSetAsync(objectId, sessionId, 0, 0, new WorkSet(100, 5, null), default)).Result));
+        var retried = false;
+        cosmos.Interceptor.Before(Interceptor.IsBatch, () => LogSetDirectlyAsync(mesoId, Day, "Bench Press"));
+        cosmos.Interceptor.Before(Interceptor.IsBatch, () => Task.FromResult(retried = true));
 
         Assert.True(await Store.DeleteSessionAsync(objectId, sessionId, default));
+        Assert.True(retried, "The first delete batch should have failed its ETag and been sent again.");
         Assert.Null(await Store.ReadSessionAsync(objectId, sessionId, default));
         Assert.Equal((0, 0), await ListedCountsAsync(mesoId));
     }
@@ -192,7 +191,7 @@ public sealed class SessionCountTests(CosmosFixture cosmos) : IClassFixture<Cosm
     {
         var mesoId = await NewBlockAsync();
         var sessionId = (await StartAsync(mesoId, Day, "Bench Press", "Squat")).Session!.Id;
-        await Store.AppendSetAsync(objectId, sessionId, 0, 0, new WorkSet(100, 5, null), default);
+        await LogSetDirectlyAsync(mesoId, Day, "Bench Press", "Squat");
         await Store.SubmitAsync(objectId, sessionId, default);
 
         await Store.EditSetAsync(objectId, sessionId, 0, 0, "Bench Press", 1, new WorkSet(102.5, 5, 8), default);
@@ -331,6 +330,32 @@ public sealed class SessionCountTests(CosmosFixture cosmos) : IClassFixture<Cosm
             dayIndex = 0,
             status,
             entries = Array.Empty<object>(),
+        }));
+
+    /// <summary>
+    /// A draft with one set logged on its first exercise, written whole.
+    ///
+    /// Stands in for <see cref="GymStore.AppendSetAsync"/>, whose filter
+    /// predicate — <c>ARRAY_LENGTH(c.entries[0].sets)</c> — the vNext emulator
+    /// refuses with a 400 that real Cosmos does not. What these tests need from
+    /// a set-tap is what it does to the document and its ETag, and this does
+    /// the same.
+    /// </summary>
+    private Task LogSetDirectlyAsync(string mesoId, DateOnly date, params string[] exercises) =>
+        cosmos.UpsertRawAsync(objectId, JsonSerializer.Serialize(new
+        {
+            id = GymSessionId(date),
+            objectId,
+            type = "session",
+            mesoId,
+            week = 1,
+            dayIndex = 0,
+            status = GymSession.Draft,
+            entries = exercises.Select((name, index) => new
+            {
+                exerciseName = name,
+                sets = index == 0 ? new object[] { new { weightKg = 100, reps = 5 } } : [],
+            }),
         }));
 
     private async Task<(int Sessions, int Submitted)> ListedCountsAsync(string mesoId)

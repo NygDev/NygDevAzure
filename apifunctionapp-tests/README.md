@@ -29,3 +29,13 @@ write to land between a read and the batch that follows it. `Interceptor` is a
 Cosmos `RequestHandler` in the test client's pipeline. It runs that competing
 write just before the next matching request goes out, so the production code
 needs no test hooks.
+
+## Emulator caveats
+
+- The vNext emulator returns a 400 for the set-tap's filter predicate
+  (`ARRAY_LENGTH(c.entries[0].sets)`), which real Cosmos accepts. So tests that
+  need a logged set write it straight to the document instead of calling
+  `AppendSetAsync`. This file's tests don't cover the set-tap itself.
+- The classic Linux emulator (`azure-cosmos-emulator:latest`) starts its
+  partitions but never serves on 8081 in this repository's cloud sessions. Use
+  vNext.
