@@ -56,16 +56,21 @@ public sealed class GymStore(Container container)
         """;
 
     /// <summary>
-    /// Every block this user has planned, newest first.
+    /// Every block this user has planned, newest first, with how many sessions
+    /// each holds.
     ///
     /// The sort is on <c>c.id</c> and that is not incidental: a mesocycle id is
     /// a ULID behind a constant prefix, so lexical order is creation order, and
     /// newest-first costs the range index the system already keeps on id. It is
     /// the same trick the session query plays with ISO dates, and the same
     /// reason the data model leaves <c>createdAt</c> off the document.
+    ///
+    /// The counters are only projected, never filtered or sorted on, so they
+    /// need nothing from the indexing policy — which is opt-in, and leaves them
+    /// out.
     /// </summary>
     private const string MesocyclesQuery = """
-        SELECT c.id, c.name, c.weeks, c.days
+        SELECT c.id, c.name, c.weeks, c.days, c.sessionCount, c.submittedCount, c.countsVerified
         FROM c
         WHERE c.type = @type
         ORDER BY c.id DESC
@@ -73,6 +78,13 @@ public sealed class GymStore(Container container)
 
     /// <summary>
     /// Which block every session belongs to, and whether it is finished.
+    ///
+    /// <b>No longer run.</b> The block list reads counters stored on each
+    /// mesocycle instead — see <see cref="MesocycleCounts"/> — because this
+    /// query, small as its projection is, still loads every session the user
+    /// has ever logged, and GROUP BY is not answered from the index. It stays
+    /// only until the counters are verified in production; then this constant
+    /// and this comment go.
     ///
     /// Two small fields per session and deliberately not a third: the block
     /// list needs counts, and <c>c.entries</c> — the sets, the bulk of the
@@ -94,6 +106,21 @@ public sealed class GymStore(Container container)
         FROM c
         WHERE c.type = @type
         GROUP BY c.mesoId, c.status
+        """;
+
+    /// <summary>
+    /// How many of one block's sessions are in each status — what the stored
+    /// counters on a block written before they existed are set from, once.
+    ///
+    /// Bounded where <see cref="SessionOwnersQuery"/> was not: filtered on
+    /// <c>mesoId</c>, so it reads one block's sessions — 480 at the outside —
+    /// and comes back as two rows at most.
+    /// </summary>
+    private const string BlockSessionCountsQuery = """
+        SELECT c.status, COUNT(1) AS sessions
+        FROM c
+        WHERE c.type = @type AND c.mesoId = @mesoId
+        GROUP BY c.status
         """;
 
     /// <summary>
@@ -162,11 +189,12 @@ public sealed class GymStore(Container container)
     /// <summary>
     /// The ids of one block's sessions, for the cascade behind a block delete.
     ///
-    /// Ids alone: this feeds a list of delete operations, so anything else on
-    /// the document would be read and thrown away.
+    /// Ids and status alone: this feeds a list of delete operations, and the
+    /// status is what says which of the block's counters each delete takes
+    /// one off. Anything else on the document would be read and thrown away.
     /// </summary>
     private const string SessionIdsQuery = """
-        SELECT c.id
+        SELECT c.id, c.status
         FROM c
         WHERE c.type = @type AND c.mesoId = @mesoId
         """;
@@ -179,6 +207,17 @@ public sealed class GymStore(Container container)
     /// 480 documents rather than 48.
     /// </summary>
     private const int MaxBatchOperations = 100;
+
+    /// <summary>
+    /// How many times a block written before the counters existed is counted
+    /// before the list gives up on storing the answer for now.
+    ///
+    /// Each retry is a session write landing between the count and the store —
+    /// someone logging in that block at that moment — so three in a row is a
+    /// workout in progress rather than bad luck, and the next list can try
+    /// again.
+    /// </summary>
+    private const int MaxCountAttempts = 3;
 
     /// <summary>
     /// How many sessions one calendar date may hold before the API stops
@@ -410,17 +449,20 @@ public sealed class GymStore(Container container)
     /// <summary>
     /// Every block this user has planned, with what is in each.
     ///
-    /// Three reads for the whole screen: the pointer, one query for the blocks
-    /// and one for the sessions that belong to them. The second is unfiltered
-    /// and counts every block in a pass, because the alternative — a count
-    /// query per block — is a round trip per row on the one screen guaranteed
-    /// to have several.
+    /// Two reads for the whole screen: the pointer, and one query for the
+    /// blocks that carries each block's counters with it. What it no longer
+    /// does is count — that was a second query over every session the user had
+    /// ever logged, and its cost grew with every workout.
     ///
-    /// The three are issued together rather than one after another. None of
-    /// them reads what another writes — the pointer is a point read, and the
-    /// two queries fill lists of their own — so what the sequential form bought
-    /// was three round trips for a screen that needs one. The CosmosClient is a
-    /// singleton built to be shared, and every call here is single-partition.
+    /// The two are issued together rather than one after another. Neither
+    /// reads what the other writes — the pointer is a point read, and the query
+    /// fills a list of its own — so the sequential form bought two round trips
+    /// for a screen that needs one. The CosmosClient is a singleton built to be
+    /// shared, and every call here is single-partition.
+    ///
+    /// A block written before the counters existed is counted here, once, and
+    /// the answer stored on it — see <see cref="VerifyCountsAsync"/>. That is a
+    /// one-off cost per old block; every list after it is the two reads.
     ///
     /// A user with no blocks gets an empty list rather than a failure. That is
     /// the same first run <c>ReadCurrentMesoIdAsync</c> answers null for.
@@ -429,9 +471,7 @@ public sealed class GymStore(Container container)
         string objectId,
         CancellationToken cancellationToken)
     {
-        var blocks = new List<Mesocycle>();
-        var total = new Dictionary<string, int>(StringComparer.Ordinal);
-        var submitted = new Dictionary<string, int>(StringComparer.Ordinal);
+        var blocks = new List<(Mesocycle Block, MesocycleCounts Counts)>();
 
         var pointer = ReadCurrentMesoIdAsync(objectId, cancellationToken);
 
@@ -439,43 +479,172 @@ public sealed class GymStore(Container container)
             objectId,
             new QueryDefinition(MesocyclesQuery).WithParameter("@type", GymIds.MesocycleType),
             "Reading this user's mesocycles failed.",
-            document => blocks.Add(Mesocycle.Read(document)),
+            document => blocks.Add((Mesocycle.Read(document), MesocycleCounts.Read(document))),
             cancellationToken);
 
-        var counting = RunQueryAsync(
-            objectId,
-            new QueryDefinition(SessionOwnersQuery).WithParameter("@type", GymIds.SessionType),
-            "Counting this user's sessions failed.",
-            document =>
-            {
-                var mesoId = GymDocument.String(document, "mesoId");
-                var count = GymDocument.Int32(document, "sessions");
-
-                total[mesoId] = total.GetValueOrDefault(mesoId) + count;
-
-                if (GymDocument.String(document, "status") == GymSession.Submitted)
-                {
-                    submitted[mesoId] = submitted.GetValueOrDefault(mesoId) + count;
-                }
-            },
-            cancellationToken);
-
-        // WhenAll rather than three awaits, so that a failure in one does not
-        // leave the other two's exceptions unobserved. The pointer goes last
-        // because WhenAll rethrows the first fault in argument order, and a
+        // WhenAll rather than two awaits, so that a failure in one does not
+        // leave the other's exception unobserved. The pointer goes last
+        // because WhenAll rethrows the first fault in argument order, and the
         // query's message names the read that broke where the pointer's is the
         // same for every screen that reads it.
-        await Task.WhenAll(listing, counting, pointer);
+        await Task.WhenAll(listing, pointer);
 
         var currentMesoId = await pointer;
 
-        return blocks
-            .Select(block => new MesocycleSummary(
-                block,
-                block.Id == currentMesoId,
-                total.GetValueOrDefault(block.Id),
-                submitted.GetValueOrDefault(block.Id)))
+        // Concurrently, for the same reason as above. It is a list of one or
+        // two on the first open after the counters shipped, and empty on every
+        // open after that.
+        var verifying = blocks
+            .Where(entry => !entry.Counts.Verified)
+            .Select(entry => VerifyCountsAsync(objectId, entry.Block.Id, cancellationToken))
             .ToArray();
+
+        var verified = (await Task.WhenAll(verifying))
+            .Where(result => result is not null)
+            .ToDictionary(result => result!.Value.MesoId, result => result!.Value.Counts, StringComparer.Ordinal);
+
+        return blocks
+            .Where(entry => entry.Counts.Verified || verified.ContainsKey(entry.Block.Id))
+            .Select(entry =>
+            {
+                var counts = entry.Counts.Verified ? entry.Counts : verified[entry.Block.Id];
+
+                return new MesocycleSummary(
+                    entry.Block,
+                    entry.Block.Id == currentMesoId,
+                    counts.Sessions,
+                    counts.Submitted);
+            })
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Counts one block written before the counters existed, and stores the
+    /// answer on it.
+    ///
+    /// Such a block is not at zero. Every session written to it since the
+    /// counters shipped has incremented them, so they hold a partial count —
+    /// which is why <c>countsVerified</c> exists and why nothing trusts them
+    /// until it is true. This overwrites the partial numbers with absolute
+    /// ones.
+    ///
+    /// The ETag is what keeps that from racing a workout. Every session write
+    /// that moves a counter writes the block in the same batch, so the block's
+    /// ETag changes whenever the count could have; storing under the ETag read
+    /// <em>before</em> counting means a session written mid-count fails the
+    /// store with a 412 rather than being overwritten by a count that missed
+    /// it. A 412 is answered by counting again.
+    ///
+    /// Null means the block is gone — deleted between the list and here — and
+    /// it is dropped from the answer. If the count keeps losing the race, the
+    /// latest count is the answer for this list and nothing is stored, so the
+    /// next list tries again.
+    /// </summary>
+    private async Task<(string MesoId, MesocycleCounts Counts)?> VerifyCountsAsync(
+        string objectId,
+        string mesoId,
+        CancellationToken cancellationToken)
+    {
+        MesocycleCounts counted = default;
+
+        for (var attempt = 0; attempt < MaxCountAttempts; attempt++)
+        {
+            var (stored, etag) = await ReadCountsWithETagAsync(objectId, mesoId, cancellationToken);
+
+            if (stored is not { } current)
+            {
+                return null;
+            }
+
+            if (current.Verified)
+            {
+                // Another list got here first, or this is a retry after a 412
+                // that was that list's store.
+                return (mesoId, current);
+            }
+
+            var sessions = 0;
+            var submitted = 0;
+
+            await RunQueryAsync(
+                objectId,
+                new QueryDefinition(BlockSessionCountsQuery)
+                    .WithParameter("@type", GymIds.SessionType)
+                    .WithParameter("@mesoId", mesoId),
+                $"Counting the sessions of mesocycle {mesoId} failed.",
+                document =>
+                {
+                    var count = GymDocument.Int32(document, "sessions");
+
+                    sessions += count;
+
+                    if (GymDocument.String(document, "status") == GymSession.Submitted)
+                    {
+                        submitted += count;
+                    }
+                },
+                cancellationToken);
+
+            counted = new MesocycleCounts(sessions, submitted, Verified: true);
+
+            using var response = await container.PatchItemStreamAsync(
+                GymIds.Mesocycle(mesoId),
+                new PartitionKey(objectId),
+                [
+                    PatchOperation.Set("/sessionCount", sessions),
+                    PatchOperation.Set("/submittedCount", submitted),
+                    PatchOperation.Set("/countsVerified", true),
+                ],
+                new PatchItemRequestOptions { IfMatchEtag = etag, EnableContentResponseOnWrite = false },
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                return (mesoId, counted);
+            }
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                return null;
+            }
+
+            if (response.StatusCode != HttpStatusCode.PreconditionFailed)
+            {
+                throw Failure(response, $"Storing the session counts of mesocycle {mesoId} failed.");
+            }
+        }
+
+        return (mesoId, counted with { Verified = false });
+    }
+
+    /// <summary>
+    /// A block's stored counters and the ETag they were read under, for
+    /// <see cref="VerifyCountsAsync"/>. Null counters mean there is no such
+    /// block.
+    /// </summary>
+    private async Task<(MesocycleCounts? Counts, string? ETag)> ReadCountsWithETagAsync(
+        string objectId,
+        string mesoId,
+        CancellationToken cancellationToken)
+    {
+        using var response = await container.ReadItemStreamAsync(
+            GymIds.Mesocycle(mesoId),
+            new PartitionKey(objectId),
+            cancellationToken: cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return (null, null);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw Failure(response, $"Reading mesocycle {mesoId} failed.");
+        }
+
+        using var document = await JsonDocument.ParseAsync(response.Content, cancellationToken: cancellationToken);
+
+        return (MesocycleCounts.Read(document.RootElement), response.Headers.ETag);
     }
 
     /// <summary>
@@ -544,6 +713,12 @@ public sealed class GymStore(Container container)
     /// so this is batches of 100 applied in order. Each batch is atomic; the
     /// sequence is resumable rather than atomic, which the ordering above is
     /// what makes acceptable.
+    ///
+    /// Each batch is 99 sessions and one patch to the block taking them off its
+    /// counters, rather than 100 sessions. A finished cascade deletes the
+    /// counters with the block and would not need it; an interrupted one leaves
+    /// a block that still lists, and without the patch it would list with the
+    /// count it had before the delete started.
     /// </summary>
     public async Task<MesocycleDeletion> DeleteMesocycleAsync(
         string objectId,
@@ -556,6 +731,7 @@ public sealed class GymStore(Container container)
         }
 
         var sessionIds = new List<string>();
+        var submitted = new List<bool>();
 
         await RunQueryAsync(
             objectId,
@@ -563,24 +739,33 @@ public sealed class GymStore(Container container)
                 .WithParameter("@type", GymIds.SessionType)
                 .WithParameter("@mesoId", mesoId),
             $"Reading the sessions of mesocycle {mesoId} failed.",
-            document => sessionIds.Add(GymDocument.String(document, "id")),
+            document =>
+            {
+                sessionIds.Add(GymDocument.String(document, "id"));
+                submitted.Add(GymDocument.String(document, "status") == GymSession.Submitted);
+            },
             cancellationToken);
 
         var partition = new PartitionKey(objectId);
+        const int sessionsPerBatch = MaxBatchOperations - 1;
 
-        for (var offset = 0; offset < sessionIds.Count; offset += MaxBatchOperations)
+        for (var offset = 0; offset < sessionIds.Count; offset += sessionsPerBatch)
         {
             // Indexed rather than Skip().Take().ToArray(): that form re-walks
             // the list from the front for every chunk and allocates the chunk
             // to walk it, which on a full block — 480 sessions, five batches —
             // is work bought for nothing.
-            var length = Math.Min(MaxBatchOperations, sessionIds.Count - offset);
+            var length = Math.Min(sessionsPerBatch, sessionIds.Count - offset);
             var batch = container.CreateTransactionalBatch(partition);
+            var submittedInBatch = 0;
 
             for (var i = offset; i < offset + length; i++)
             {
                 batch.DeleteItem(sessionIds[i]);
+                submittedInBatch += submitted[i] ? 1 : 0;
             }
+
+            batch.PatchItem(GymIds.Mesocycle(mesoId), CountChange(-length, -submittedInBatch));
 
             using var response = await batch.ExecuteAsync(cancellationToken);
 
@@ -1101,8 +1286,16 @@ public sealed class GymStore(Container container)
     /// suffix.</item>
     /// </list>
     ///
+    /// The create and the block's <c>sessionCount</c> going up are one
+    /// transactional batch, so they cannot come apart. That is also what keeps
+    /// the collision handling above safe for the counter: a 409 on the create
+    /// fails the whole batch, so a retried Start that resumes its own draft
+    /// counts it once, however many times it is sent.
+    ///
     /// A null session in the result means the date is full, which is a client
-    /// that has lost the id it was given rather than a real training day.
+    /// that has lost the id it was given rather than a real training day — or,
+    /// with <see cref="SessionCreation.BlockMissing"/>, that the block was
+    /// deleted between the endpoint reading it and this write.
     /// </summary>
     public async Task<SessionCreation> CreateSessionAsync(
         string objectId,
@@ -1126,18 +1319,22 @@ public sealed class GymStore(Container container)
             var session = new GymSession(sessionId, mesoId, week, dayIndex, GymSession.Draft, seed);
 
             using var payload = SerializeSession(objectId, session);
-            using var response = await container.CreateItemStreamAsync(
-                payload,
-                new PartitionKey(objectId),
-                WriteOptions,
-                cancellationToken);
+            using var response = await container.CreateTransactionalBatch(new PartitionKey(objectId))
+                .CreateItemStream(payload)
+                .PatchItem(GymIds.Mesocycle(mesoId), CountChange(sessions: 1, submitted: 0))
+                .ExecuteAsync(cancellationToken);
 
             if (response.IsSuccessStatusCode)
             {
                 return new SessionCreation(session, Resumed: false);
             }
 
-            if (response.StatusCode != HttpStatusCode.Conflict)
+            if (OperationStatus(response, 1) == HttpStatusCode.NotFound)
+            {
+                return SessionCreation.NoBlock;
+            }
+
+            if (OperationStatus(response, 0) != HttpStatusCode.Conflict)
             {
                 throw Failure(response, $"Starting session {sessionId} failed.");
             }
@@ -1203,13 +1400,24 @@ public sealed class GymStore(Container container)
     }
 
     /// <summary>
-    /// Flips a draft to submitted: one patch, on one document.
+    /// Flips a draft to submitted, and counts it on its block.
     ///
-    /// That it is this small is the payoff for not denormalising a block map
-    /// onto the mesocycle. There is no second document to keep in step, and no
-    /// guard needed against a retried submit counting something twice —
-    /// <c>set</c> is idempotent, so a resend lands on a value that is already
-    /// there.
+    /// The patch to the session and the increment of the block's
+    /// <c>submittedCount</c> are one transactional batch, and that is what
+    /// answers the obvious worry about a stored count — drift. They are in the
+    /// same partition, so they land together or not at all; there is no state
+    /// in which the session is submitted and the block does not know.
+    ///
+    /// A retried submit must still count once, and a bare <c>set</c> would not
+    /// do that on its own: it is idempotent, but the increment beside it is
+    /// not. So the patch carries a filter predicate — it applies only while the
+    /// session is still a draft — and a resend that finds it already submitted
+    /// fails the whole batch with a 412, increment included. That 412 is the
+    /// retry case, and it answers with the session as it stands, the same as
+    /// the first attempt would have.
+    ///
+    /// The read in front is what names the block to count against, and it
+    /// answers the common resend without writing anything at all.
     ///
     /// Null means there is no such session in this user's partition. Otherwise
     /// the session as it now stands — Cosmos echoes the patched document back
@@ -1220,59 +1428,177 @@ public sealed class GymStore(Container container)
         string sessionId,
         CancellationToken cancellationToken)
     {
-        using var response = await container.PatchItemStreamAsync(
-            sessionId,
-            new PartitionKey(objectId),
-            [PatchOperation.Set("/status", GymSession.Submitted)],
-            new PatchItemRequestOptions { EnableContentResponseOnWrite = true },
+        var session = await ReadSessionAsync(objectId, sessionId, cancellationToken);
+
+        if (session is null || session.Status == GymSession.Submitted)
+        {
+            return session;
+        }
+
+        using var response = await WriteCountedAsync(
+            objectId,
+            session.MesoId,
+            batch => batch.PatchItem(
+                sessionId,
+                [PatchOperation.Set("/status", GymSession.Submitted)],
+                new TransactionalBatchPatchItemRequestOptions
+                {
+                    FilterPredicate = $"FROM c WHERE c.status = '{GymSession.Draft}'",
+                    EnableContentResponseOnWrite = true,
+                }),
+            CountChange(sessions: 0, submitted: 1),
             cancellationToken);
 
-        if (response.StatusCode == HttpStatusCode.NotFound)
+        if (response.IsSuccessStatusCode)
         {
-            return null;
+            if (response[0].ResourceStream is not { } content)
+            {
+                return await ReadSessionAsync(objectId, sessionId, cancellationToken);
+            }
+
+            using var document = await JsonDocument.ParseAsync(content, cancellationToken: cancellationToken);
+
+            return GymSession.Read(document.RootElement);
         }
 
-        if (!response.IsSuccessStatusCode)
+        return OperationStatus(response, 0) switch
         {
-            throw Failure(response, $"Submitting session {sessionId} failed.");
-        }
+            // Submitted by something else between the read and the batch — a
+            // resend racing the original. Nothing was counted twice.
+            HttpStatusCode.PreconditionFailed =>
+                await ReadSessionAsync(objectId, sessionId, cancellationToken),
 
-        using var document = await JsonDocument.ParseAsync(response.Content, cancellationToken: cancellationToken);
+            // Deleted in the same gap.
+            HttpStatusCode.NotFound => null,
 
-        return GymSession.Read(document.RootElement);
+            _ => throw Failure(response, $"Submitting session {sessionId} failed."),
+        };
     }
 
     /// <summary>
-    /// Deletes a session outright.
+    /// Deletes a session outright, and takes it off its block's counters.
     ///
     /// The one destructive operation in the app, and it exists because the data
     /// model chose duplicates over overwrites: a cell can collect two sessions
     /// logged on different days, so there has to be a way to remove the one
     /// that was a mistake. Nothing else deletes anything.
+    ///
+    /// The read in front says which counters to take one off — a submitted
+    /// session comes off both, a draft only off <c>sessionCount</c> — and the
+    /// delete is guarded on the ETag that read returned, so the status the
+    /// decision was made on is the status that was deleted. A set logged in
+    /// between changes the ETag too, which is harmless: the 412 it causes is
+    /// answered by reading again and deleting once more.
     /// </summary>
     public async Task<bool> DeleteSessionAsync(
         string objectId,
         string sessionId,
         CancellationToken cancellationToken)
     {
-        using var response = await container.DeleteItemStreamAsync(
-            sessionId,
-            new PartitionKey(objectId),
-            WriteOptions,
-            cancellationToken);
-
-        if (response.StatusCode == HttpStatusCode.NotFound)
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            return false;
+            var (session, etag) = await ReadSessionWithETagAsync(objectId, sessionId, cancellationToken);
+
+            if (session is null)
+            {
+                return false;
+            }
+
+            using var response = await WriteCountedAsync(
+                objectId,
+                session.MesoId,
+                batch => batch.DeleteItem(
+                    sessionId,
+                    new TransactionalBatchItemRequestOptions { IfMatchEtag = etag }),
+                CountChange(sessions: -1, submitted: session.Status == GymSession.Submitted ? -1 : 0),
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                return true;
+            }
+
+            switch (OperationStatus(response, 0))
+            {
+                case HttpStatusCode.NotFound:
+                    return false;
+
+                case HttpStatusCode.PreconditionFailed:
+                    continue;
+
+                default:
+                    throw Failure(response, $"Deleting session {sessionId} failed.");
+            }
         }
 
-        if (!response.IsSuccessStatusCode)
-        {
-            throw Failure(response, $"Deleting session {sessionId} failed.");
-        }
-
-        return true;
+        throw new CosmosException(
+            $"Deleting session {sessionId} failed: it changed twice while it was being deleted, which "
+            + "is a workout being logged into it on another device. Nothing was deleted; try again.",
+            HttpStatusCode.PreconditionFailed,
+            subStatusCode: 0,
+            activityId: string.Empty,
+            requestCharge: 0);
     }
+
+    /// <summary>
+    /// One write to a session, in the same transactional batch as the change
+    /// it makes to its block's counters — the block patch always second, so
+    /// the session's own result is always at index 0.
+    ///
+    /// A block that is not there is the one case where the counters are
+    /// dropped rather than the write refused. That is a session left behind by
+    /// a block delete it raced, and refusing to delete or submit it would make
+    /// it impossible to clean up; with no block, there is nothing to count
+    /// against. Start does not come through here, because a session started
+    /// in a block that has gone should not exist at all.
+    /// </summary>
+    private async Task<TransactionalBatchResponse> WriteCountedAsync(
+        string objectId,
+        string mesoId,
+        Func<TransactionalBatch, TransactionalBatch> write,
+        IReadOnlyList<PatchOperation> counts,
+        CancellationToken cancellationToken)
+    {
+        var partition = new PartitionKey(objectId);
+
+        var response = await write(container.CreateTransactionalBatch(partition))
+            .PatchItem(GymIds.Mesocycle(mesoId), counts)
+            .ExecuteAsync(cancellationToken);
+
+        if (response.IsSuccessStatusCode || OperationStatus(response, 1) != HttpStatusCode.NotFound)
+        {
+            return response;
+        }
+
+        response.Dispose();
+
+        return await write(container.CreateTransactionalBatch(partition)).ExecuteAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// The patch that moves a block's counters, as one operation per counter
+    /// that changes.
+    /// </summary>
+    private static PatchOperation[] CountChange(int sessions, int submitted) =>
+        (sessions, submitted) switch
+        {
+            (0, _) => [PatchOperation.Increment("/submittedCount", submitted)],
+            (_, 0) => [PatchOperation.Increment("/sessionCount", sessions)],
+            _ =>
+            [
+                PatchOperation.Increment("/sessionCount", sessions),
+                PatchOperation.Increment("/submittedCount", submitted),
+            ],
+        };
+
+    /// <summary>
+    /// What one operation in a batch answered. A failed batch reports the
+    /// operation that failed with its own status and every other one as 424;
+    /// a batch refused as a whole — throttled, say — carries no per-operation
+    /// results, and its own status stands for all of them.
+    /// </summary>
+    private static HttpStatusCode OperationStatus(TransactionalBatchResponse response, int index) =>
+        index < response.Count ? response[index].StatusCode : response.StatusCode;
 
     /// <summary>
     /// Drags one exercise from one position to another.
@@ -2050,6 +2376,14 @@ public sealed class GymStore(Container container)
             writer.WriteString("name", name);
             writer.WriteNumber("weeks", weeks);
 
+            // A new block holds nothing, and says so: written here, the
+            // counters are right from the first session on, and the list never
+            // has to count this block the way it counts one from before they
+            // existed.
+            writer.WriteNumber("sessionCount", 0);
+            writer.WriteNumber("submittedCount", 0);
+            writer.WriteBoolean("countsVerified", true);
+
             writer.WriteStartArray("days");
 
             foreach (var day in days)
@@ -2379,9 +2713,17 @@ public readonly record struct MesocycleDeletion(
 
 /// <summary>
 /// What Start did: the session to log into, and whether it was already open.
-/// A null session means the date has as many sessions as it is allowed.
+/// A null session means the date has as many sessions as it is allowed, or —
+/// with <c>BlockMissing</c> — that there was no block left to file it under.
 /// </summary>
-public readonly record struct SessionCreation(GymSession? Session, bool Resumed);
+public readonly record struct SessionCreation(GymSession? Session, bool Resumed, bool BlockMissing = false)
+{
+    /// <summary>
+    /// The block the session was to be filed under was deleted between the
+    /// endpoint reading it and the create. Nothing was written.
+    /// </summary>
+    public static SessionCreation NoBlock => new(null, Resumed: false, BlockMissing: true);
+}
 
 /// <summary>How a guarded patch ended.</summary>
 public enum PatchResult

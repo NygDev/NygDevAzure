@@ -213,6 +213,11 @@ public readonly record struct MesoDay(int DayIndex, string Label, IReadOnlyList<
 /// live, and two fields asserting one fact drift apart. No <c>createdAt</c> —
 /// nothing reads it, Cosmos records <c>_ts</c> anyway, and the id is a ULID so
 /// creation order is in it regardless.
+///
+/// The document carries one thing this record does not: the block's session
+/// counters, which only the Plan tab's list reads. They are
+/// <see cref="MesocycleCounts"/>, read separately, so that nothing which edits
+/// or answers with the plan can carry a stale copy of them back.
 /// </summary>
 public sealed record Mesocycle(string Id, string Name, int Weeks, IReadOnlyList<MesoDay> Days)
 {
@@ -240,10 +245,10 @@ public sealed record Mesocycle(string Id, string Name, int Weeks, IReadOnlyList<
 /// The counts are what make the two destructive actions on that screen
 /// answerable — "delete this block" has to be able to say what goes with it,
 /// and a row that reads "5 weeks · 4 days · 12 logged" is the difference
-/// between recognising a block and guessing at it. They are counted rather
-/// than stored, from a query that projects <c>mesoId</c> and <c>status</c> and
-/// nothing else: no <c>entries</c>, so listing every block costs a fraction of
-/// what reading one of them does.
+/// between recognising a block and guessing at it. They are stored on the
+/// block rather than counted — see <see cref="MesocycleCounts"/> — so listing
+/// every block costs the one query that lists them, however many workouts the
+/// user has ever logged.
 ///
 /// Volume is deliberately not here. It needs the sets, and the sets are the
 /// expensive half of a session document — the delete confirmation fetches it
@@ -266,6 +271,39 @@ public readonly record struct MesocycleSummary(
         sessionCount = SessionCount,
         submittedCount = SubmittedCount,
     };
+}
+
+/// <summary>
+/// How many sessions a block holds and how many of those are submitted, as
+/// stored on the mesocycle document.
+///
+/// Stored rather than counted because counting is the one query here that
+/// grows with a user's whole history: every session they have ever logged,
+/// read to be counted, on every open of the Plan tab. Stored, they cannot
+/// drift, because every write that adds, submits or removes a session moves
+/// the counter in the same transactional batch — a session and its block
+/// share a partition, so the two land together or not at all.
+///
+/// <c>Verified</c> is false on a block written before the counters existed.
+/// Those blocks still pick up increments from the writes since, so the
+/// numbers on them are partial until <see cref="GymStore.ListMesocyclesAsync"/>
+/// counts the block once and stores the absolute values. An absent property
+/// reads as zero and as unverified, which is exactly what such a block is.
+/// </summary>
+public readonly record struct MesocycleCounts(int Sessions, int Submitted, bool Verified)
+{
+    public static MesocycleCounts Read(JsonElement document) => new(
+        OptionalInt32(document, "sessionCount"),
+        OptionalInt32(document, "submittedCount"),
+        document.TryGetProperty("countsVerified", out var verified)
+            && verified.ValueKind == JsonValueKind.True);
+
+    private static int OptionalInt32(JsonElement document, string name) =>
+        document.TryGetProperty(name, out var property)
+        && property.ValueKind == JsonValueKind.Number
+        && property.TryGetInt32(out var value)
+            ? value
+            : 0;
 }
 
 /// <summary>
