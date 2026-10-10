@@ -1893,27 +1893,31 @@ public sealed class GymStore(Container container)
     // -----------------------------------------------------------------------
 
     /// <summary>
-    /// A point read of a document that cannot exist, for what it costs the
-    /// client rather than for what it finds.
+    /// A metadata read of the container, for what it costs the client rather
+    /// than for what it finds.
     ///
     /// The first operation through a CosmosClient pays for everything behind
-    /// it: a managed-identity token, the account's and the container's
-    /// metadata, and the JIT of the request path. <see cref="GymWarmup"/>
-    /// spends that here, at worker startup, instead of inside a request.
+    /// it: a managed-identity token, the account's metadata, the container's
+    /// properties and partition key ranges, and the JIT of the request path.
+    /// <see cref="GymWarmup"/> spends that here, at worker startup, instead of
+    /// inside a request.
     ///
-    /// The partition is not an object id — those are GUIDs, see
-    /// <see cref="GymPrincipal"/> — so this reads nobody's data. A 404 is the
-    /// expected answer, and one RU is the whole bill.
+    /// Feed ranges rather than a read of the container itself, because they
+    /// fill the caches a point read actually consults. In gateway mode the SDK
+    /// resolves the container through its collection cache and the partition
+    /// key's range through its routing map before sending a document request
+    /// (GatewayStoreModel.TryResolvePartitionKeyRangeAsync), and
+    /// GetFeedRangesAsync loads both. ReadContainerStreamAsync would answer 200
+    /// too, but leave both caches cold for the first request to fill.
+    ///
+    /// Metadata only, so it reads no document and leaves no 404 in the
+    /// account's diagnostics. The identity's grant on db/gym, the built-in
+    /// Data Contributor role, carries readMetadata — the same permission every
+    /// point read already needs to load those caches. Throws a CosmosException
+    /// on failure, as the typed SDK calls do.
     /// </summary>
-    public async Task<HttpStatusCode> WarmUpAsync(CancellationToken cancellationToken)
-    {
-        using var response = await container.ReadItemStreamAsync(
-            "warmup",
-            new PartitionKey("warmup"),
-            cancellationToken: cancellationToken);
-
-        return response.StatusCode;
-    }
+    public async Task WarmUpAsync(CancellationToken cancellationToken) =>
+        await container.GetFeedRangesAsync(cancellationToken);
 
     // -----------------------------------------------------------------------
     // Reading and writing raw documents

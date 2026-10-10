@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using System.Net;
+using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -42,23 +42,21 @@ internal sealed class GymWarmup(IServiceProvider services, ILogger<GymWarmup> lo
 
         try
         {
-            var status = await services.GetRequiredService<GymStore>().WarmUpAsync(stoppingToken);
-            var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            await services.GetRequiredService<GymStore>().WarmUpAsync(stoppingToken);
 
-            if (status == HttpStatusCode.NotFound)
-            {
-                logger.LogInformation("Warmed the Cosmos client in {Elapsed:0} ms.", elapsed);
-            }
-            else
-            {
-                // Anything but the expected 404 is the first request's failure
-                // arriving early — a 403 is the role assignment on db/gym —
-                // and worth seeing before a user trips over it.
-                logger.LogWarning(
-                    "Cosmos answered the warm-up read with {Status} after {Elapsed:0} ms.",
-                    (int)status,
-                    elapsed);
-            }
+            logger.LogInformation(
+                "Warmed the Cosmos client in {Elapsed:0} ms.",
+                Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+        }
+        // A refusal is the first request's failure arriving early — a 403 is
+        // the role assignment on db/gym, a 404 the container gone — and worth
+        // seeing before a user trips over it.
+        catch (CosmosException ex) when (!stoppingToken.IsCancellationRequested)
+        {
+            logger.LogWarning(
+                "Cosmos answered the warm-up read with {Status} after {Elapsed:0} ms.",
+                (int)ex.StatusCode,
+                Stopwatch.GetElapsedTime(started).TotalMilliseconds);
         }
         // Everything but shutdown, including a stray TaskCanceledException from
         // an HTTP timeout underneath. An exception escaping ExecuteAsync stops
