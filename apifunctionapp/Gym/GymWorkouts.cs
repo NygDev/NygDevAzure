@@ -111,6 +111,16 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
                     seed,
                     token);
 
+                if (creation.BlockMissing)
+                {
+                    return GymEndpoint.Failure(
+                        HttpStatusCode.Conflict,
+                        "mesocycle_deleted",
+                        $"Mesocycle {mesoId} was deleted while this workout was being started, so "
+                        + "nothing was written. Read the current block again with "
+                        + "GET /api/gym/mesocycles/current before starting another.");
+                }
+
                 if (creation.Session is not { } session)
                 {
                     return GymEndpoint.Failure(
@@ -246,15 +256,16 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
         });
 
     /// <summary>
-    /// Finish and submit: one patch setting the status — and, for a day that
-    /// plans nothing, the workout that was just finished becoming its plan.
+    /// Finish and submit: the status set, and the block's submitted count with
+    /// it — and, for a day that plans nothing, the workout that was just
+    /// finished becoming its plan.
     ///
-    /// The submit itself stays one idempotent patch on one document, which is
-    /// the payoff for keeping the block map a query rather than a denormalised
-    /// field on the mesocycle. What follows it is a separate decision about a
-    /// separate document, and it is deliberately downstream of the write that
-    /// matters: the session is submitted before any of it runs, and nothing it
-    /// finds can un-submit it.
+    /// The submit itself is one idempotent transaction: the session and its
+    /// block's counter together, guarded so a resend counts nothing twice — see
+    /// <see cref="GymStore.SubmitAsync"/>. What follows it is a separate
+    /// decision about the plan, and it is deliberately downstream of the write
+    /// that matters: the session is submitted before any of it runs, and
+    /// nothing it finds can un-submit it.
     ///
     /// <c>planned</c> in the response says whether the day was written. It is
     /// false on almost every submit — the day was already planned, by hand or

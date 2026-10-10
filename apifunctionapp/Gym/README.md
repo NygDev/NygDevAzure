@@ -494,6 +494,8 @@ No `mesoId`: the server reads the user's current block and checks `week` and
   This is Start tapped twice, or an app returning from the background.
 - **409 `no_current_mesocycle`** — plan a block first.
 - **409 `date_full`** — ten sessions on one date; a client that lost its id.
+- **409 `mesocycle_deleted`** — the block was deleted, on another device,
+  while Start was running. Nothing was written; re-read `/current`.
 
 `workout` is the full session shape below.
 
@@ -891,7 +893,7 @@ Removes a workout — the answer to the duplicate a cell can now collect.
 | 409 | `entry_not_empty` | The exercise still holds logged sets. Delete those first. |
 | 409 | `entry_conflict` | The session does not match the guard of a removal, a swap or a set edit. Re-read and try again. |
 | 409 | `session_full` | A swap would insert a 41st exercise. Nothing was written. |
-| 409 | `no_current_mesocycle`, `date_full` | See Start, above. |
+| 409 | `no_current_mesocycle`, `date_full`, `mesocycle_deleted` | See Start, above. |
 | 409 | `template_limit` | 50 saved day templates. Delete one to save another. |
 | 409 | `exercise_exists` | A custom exercise with that name (ignoring case and spacing) is already described. Also what a retried create gets. |
 | 409 | `exercise_limit` | 200 custom exercises. Delete one to describe another. |

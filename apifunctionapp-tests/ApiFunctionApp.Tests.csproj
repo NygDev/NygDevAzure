@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Integration tests for GymStore against a real Cosmos endpoint — the
+       emulator, in practice. They are skipped unless GYM_TEST_COSMOS_ENDPOINT
+       is set; see README.md beside this file.
+
+       A sibling of apifunctionapp rather than a folder inside it: the function
+       app's project globs every .cs file under its own directory, and the
+       deploy workflow publishes that project. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../apifunctionapp/ApiFunctionApp.csproj" />
+  </ItemGroup>
+
+</Project>
