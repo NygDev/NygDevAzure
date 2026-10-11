@@ -454,27 +454,17 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
 
             logger.LogInformation("Submitted session {SessionId}.", sessionId);
 
-            bool planned;
+            // Side by side rather than one after the other. Neither reads what
+            // the other writes — one is the block document, the other the
+            // preferences document — and each is a read and maybe a write, so
+            // in sequence they were up to four round trips on the one call a
+            // finished workout waits on. Neither throws past its own catch.
+            var planning = PlanDayAsync(objectId, session, token);
+            var recording = RecordRecentAsync(objectId, session, token);
 
-            try
-            {
-                planned = await PlanFromFirstWorkoutAsync(objectId, session, token);
-            }
-            catch (CosmosException ex)
-            {
-                // The workout is submitted; this is the part nobody asked for.
-                // Answering 502 here would tell a client its session failed to
-                // submit when it did not, and the day is still plannable by
-                // hand or by the next workout logged against it.
-                logger.LogWarning(
-                    ex,
-                    "Planning the day from session {SessionId} failed after it was submitted.",
-                    sessionId);
+            await Task.WhenAll(planning, recording);
 
-                planned = false;
-            }
-
-            await RecordRecentAsync(objectId, session, token);
+            var planned = await planning;
 
             return new OkObjectResult(new
             {
@@ -484,6 +474,31 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
                 planned,
             });
         });
+
+    /// <summary>
+    /// <see cref="PlanFromFirstWorkoutAsync"/>, with a failure logged and
+    /// answered as "not planned".
+    /// </summary>
+    private async Task<bool> PlanDayAsync(string objectId, GymSession session, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await PlanFromFirstWorkoutAsync(objectId, session, cancellationToken);
+        }
+        catch (CosmosException ex)
+        {
+            // The workout is submitted; this is the part nobody asked for.
+            // Answering 502 here would tell a client its session failed to
+            // submit when it did not, and the day is still plannable by
+            // hand or by the next workout logged against it.
+            logger.LogWarning(
+                ex,
+                "Planning the day from session {SessionId} failed after it was submitted.",
+                session.Id);
+
+            return false;
+        }
+    }
 
     /// <summary>
     /// Puts what this workout lifted at the front of the recently used list.
