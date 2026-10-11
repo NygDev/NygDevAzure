@@ -182,8 +182,8 @@ internal static class GymRequests
     /// a client that thinks it is renaming is told so rather than having the
     /// new name silently ignored.
     ///
-    /// Every field but the name is optional. The vocabularies — the seven
-    /// groups, the fourteen muscles, the equipment list — are the shipped
+    /// Every field but the name is optional. The vocabularies — the eight
+    /// groups, the fifteen muscles, the equipment list — are the shipped
     /// library's and are not checked here: this API has never read the library,
     /// and a value outside them is a description that matches nothing, which is
     /// the library's own rule for a misspelled muscle. The client offers them

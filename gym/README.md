@@ -30,7 +30,7 @@ machine you wanted has eight people waiting for it:
 | `variationOf` | The same movement, done another way. Names the family's root — the "regular" one | `Preacher Curl` → `Bicep Curl` |
 | `pattern` | The job the movement does, so different exercises can stand in for each other | `horizontal-push`, `hinge`, `curl` |
 | `muscles` | What it trains, main muscle first, one to three of them | `Chin-up` → `["Lats", "Biceps", "Upper Back"]` |
-| `group` | The muscle group it is planned against — one of gymbro's seven | `Chest`, `Posterior` |
+| `group` | The muscle group it is planned against — one of gymbro's eight | `Chest`, `Posterior`, `Core` |
 
 All four are optional and absent reads as unknown, so a library without them —
 an older cached copy, or the app's bundled fallback from before them — still
@@ -48,8 +48,8 @@ library too old to carry `muscles`.
 `muscles` is a short list on purpose — what the exercise is *for*, not every
 muscle that works during it — and its vocabulary is a closed one: Chest, Front
 Delts, Side Delts, Rear Delts, Triceps, Biceps, Forearms, Lats, Upper Back,
-Lower Back, Quads, Glutes, Hamstrings, Calves. A name spelled differently is a
-muscle that matches nothing.
+Lower Back, Quads, Glutes, Hamstrings, Calves, Abs. A name spelled differently
+is a muscle that matches nothing.
 
 The logger bundles a copy of this file as its offline fallback
 (`sites/gym/src/lib/library.ts` in nygdevweb), because a gym with no signal is

@@ -426,7 +426,7 @@ put it beside the CDN's list without translating it:
 ```
 
 Only `name` is required; the rest are optional and absent reads as unknown,
-exactly as in the library. Their vocabularies — the seven groups, the fourteen
+exactly as in the library. Their vocabularies — the eight groups, the fifteen
 muscles, the equipment list — are the library's and are not checked here, since
 this API has never read that file; a value outside them simply matches nothing.
 At most three muscles, main one first.

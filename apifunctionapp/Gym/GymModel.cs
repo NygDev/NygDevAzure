@@ -72,7 +72,7 @@ internal static class GymLimits
 
     /// <summary>
     /// How many custom exercises one user may describe, for the same reason as
-    /// <see cref="MaxTemplatesPerUser"/>: the shipped library is fifty-odd, so
+    /// <see cref="MaxTemplatesPerUser"/>: the shipped library is about a hundred, so
     /// two hundred of your own is a client creating in a loop rather than a
     /// gym, and the list is one unpaged query.
     /// </summary>
