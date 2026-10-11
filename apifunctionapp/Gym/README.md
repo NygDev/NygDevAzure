@@ -499,6 +499,39 @@ No `mesoId`: the server reads the user's current block and checks `week` and
 
 `workout` is the full session shape below.
 
+#### A freestanding workout
+
+```jsonc
+{ "date": "2026-09-03", "freestanding": true, "exercises": ["Bench Press", "Barbell Row"] }
+```
+
+A workout in **no block**, for a lifter who does not train in blocks: no
+effort ramping across weeks and no deload at the end. It is the same session
+in every other respect. Sets, entries, swaps, edits, submit and delete all work
+on it unchanged, by the same routes.
+
+- No pointer is read, so it works for someone who has never planned a block
+  and works the same for someone who has. `no_current_mesocycle` and
+  `mesocycle_deleted` cannot happen here.
+- `week` and `dayIndex` are **refused** alongside `freestanding: true`, and a
+  block start still requires them. It is a flag rather than their absence so
+  that a block client which dropped its week gets a 400, not a workout filed
+  outside its block.
+- `exercises` is optional: names to open the session with and no sets against
+  them, the way a planned day seeds a block's. It is the client's to fill,
+  usually from a day template it already holds (saved or built-in), and is at
+  most 20 names with none repeated. It is refused on a block start, whose seed
+  comes from the day's plan.
+- Resume and suffix follow the same rule as a block start. A freestanding draft
+  already open on this date comes back `resumed: true` and is not re-seeded.
+  Anything else on the date, including a block's draft, means this is another
+  workout, so it gets `_2`.
+
+The session has `freestanding: true` and **no** `mesoId`, `week` or `dayIndex`.
+Those keys are left off rather than sent as null. Submit plans nothing from it,
+because there is no day to plan. It does still count toward recently used. No
+block's counters move for it, and a block delete cannot reach it.
+
 ### `GET /gym/workouts/{sessionId}`
 
 The workout detail screen, and how a client resyncs after a `409`.
@@ -578,6 +611,40 @@ nobody ever lifted anything.
 The only caller is the chart. Nothing on a session's totals says which exercise
 the volume came from, so a lift charted across a block cannot be drawn from the
 block map alone — and that question is the whole reason this parameter exists.
+
+### `GET /gym/workouts?from=&to=`
+
+Every session logged between two dates, both days included, newest first:
+freestanding sessions and sessions in any block, side by side. This is History
+for a lifter who does not train in blocks. The block route above finds sessions
+only by their block, so this is the only list that can see a freestanding one.
+
+```jsonc
+{
+  "ok": true,
+  "from": "2026-08-01",
+  "to": "2026-09-03",
+  "sessions": [
+    { "id": "session_2026-09-03_2", "freestanding": true, "status": "submitted",
+      "exerciseCount": 2, "setCount": 8, "volumeKg": 4200, "avgRpe": 8 },
+    { "id": "session_2026-09-03", "mesoId": "01k4…", "week": 2, "dayIndex": 1,
+      "status": "submitted", "exerciseCount": 3, "setCount": 15, "volumeKg": 8760, "avgRpe": 7.6 }
+  ]
+}
+```
+
+A session in a block carries its `mesoId`, `week` and `dayIndex`. A
+freestanding one carries `freestanding: true` and none of the three.
+`&include=entries` works as it does above.
+
+Both dates are `YYYY-MM-DD` in the phone's timezone, which is the same date
+Start files a workout under, and both are required. The range is at most **366
+days**, so ask a year at a time. `mesoId` alongside a range is a **400** rather
+than a filter: the two are different lists.
+
+The filter is a range on the session id, which is `session_` and the date. That
+makes it a range on Cosmos's system index on `id` next to the `/type` equality
+the policy already covers, so nothing new is indexed.
 
 ### `POST /gym/workouts/{id}/entries` — the picker
 
@@ -893,7 +960,7 @@ Removes a workout — the answer to the duplicate a cell can now collect.
 | 409 | `entry_not_empty` | The exercise still holds logged sets. Delete those first. |
 | 409 | `entry_conflict` | The session does not match the guard of a removal, a swap or a set edit. Re-read and try again. |
 | 409 | `session_full` | A swap would insert a 41st exercise. Nothing was written. |
-| 409 | `no_current_mesocycle`, `date_full`, `mesocycle_deleted` | See Start, above. |
+| 409 | `no_current_mesocycle`, `date_full`, `mesocycle_deleted` | See Start, above. A freestanding start can only get `date_full`. |
 | 409 | `template_limit` | 50 saved day templates. Delete one to save another. |
 | 409 | `exercise_exists` | A custom exercise with that name (ignoring case and spacing) is already described. Also what a retried create gets. |
 | 409 | `exercise_limit` | 200 custom exercises. Delete one to describe another. |

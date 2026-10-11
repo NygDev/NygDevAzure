@@ -56,6 +56,29 @@ public sealed class GymStore(Container container)
         """;
 
     /// <summary>
+    /// Every session logged between two dates, newest first, whichever block it
+    /// was in or none — History for someone who does not train in blocks.
+    ///
+    /// A range on <c>c.id</c> rather than a filter on the absence of
+    /// <c>mesoId</c>, and the id is what makes that cheap: it is
+    /// <c>session_</c> and an ISO date, so a date range is a range on the
+    /// system index on id, beside the equality on /type the policy already
+    /// covers. Nothing new has to be indexed. <c>NOT IS_DEFINED(c.mesoId)</c>
+    /// would have answered only half the question anyway: a lifter who used to
+    /// run blocks and stopped wants one history, not two.
+    ///
+    /// The upper bound is exclusive and is the day <em>after</em> the range,
+    /// because a second session on the last day is <c>session_…_2</c>, which
+    /// sorts after the bare date and before the next one.
+    /// </summary>
+    private const string SessionsBetweenQuery = """
+        SELECT c.id, c.mesoId, c.week, c.dayIndex, c.status, c.entries
+        FROM c
+        WHERE c.type = @type AND c.id >= @from AND c.id < @until
+        ORDER BY c.id DESC
+        """;
+
+    /// <summary>
     /// Every block this user has planned, newest first, with how many sessions
     /// each holds.
     ///
@@ -1296,13 +1319,19 @@ public sealed class GymStore(Container container)
     /// that has lost the id it was given rather than a real training day — or,
     /// with <see cref="SessionCreation.BlockMissing"/>, that the block was
     /// deleted between the endpoint reading it and this write.
+    ///
+    /// A null <paramref name="mesoId"/> starts a freestanding session, with no
+    /// week and no day. There is no block to count it on, so the batch is the
+    /// create alone. The collision rule is the same: a freestanding draft on
+    /// this date is resumed, and anything else — including a draft in a block —
+    /// is another workout and gets the next suffix.
     /// </summary>
     public async Task<SessionCreation> CreateSessionAsync(
         string objectId,
         DateOnly date,
-        string mesoId,
-        int week,
-        int dayIndex,
+        string? mesoId,
+        int? week,
+        int? dayIndex,
         IReadOnlyList<SessionEntry> seed,
         CancellationToken cancellationToken)
     {
@@ -1319,17 +1348,22 @@ public sealed class GymStore(Container container)
             var session = new GymSession(sessionId, mesoId, week, dayIndex, GymSession.Draft, seed);
 
             using var payload = SerializeSession(objectId, session);
-            using var response = await container.CreateTransactionalBatch(new PartitionKey(objectId))
-                .CreateItemStream(payload)
-                .PatchItem(GymIds.Mesocycle(mesoId), CountChange(sessions: 1, submitted: 0))
-                .ExecuteAsync(cancellationToken);
+            var batch = container.CreateTransactionalBatch(new PartitionKey(objectId))
+                .CreateItemStream(payload);
+
+            if (mesoId is not null)
+            {
+                batch = batch.PatchItem(GymIds.Mesocycle(mesoId), CountChange(sessions: 1, submitted: 0));
+            }
+
+            using var response = await batch.ExecuteAsync(cancellationToken);
 
             if (response.IsSuccessStatusCode)
             {
                 return new SessionCreation(session, Resumed: false);
             }
 
-            if (OperationStatus(response, 1) == HttpStatusCode.NotFound)
+            if (mesoId is not null && OperationStatus(response, 1) == HttpStatusCode.NotFound)
             {
                 return SessionCreation.NoBlock;
             }
@@ -1394,6 +1428,35 @@ public sealed class GymStore(Container container)
                 .WithParameter("@mesoId", mesoId),
             $"Reading the sessions of mesocycle {mesoId} failed.",
             document => sessions.Add(SessionSummary.Read(document, withEntries)),
+            cancellationToken);
+
+        return sessions;
+    }
+
+    /// <summary>
+    /// Every session logged from <paramref name="from"/> to
+    /// <paramref name="to"/>, both days included, newest first — block and
+    /// freestanding alike, each summary naming its block when it has one. See
+    /// <see cref="SessionsBetweenQuery"/>. The endpoint bounds the range, which
+    /// is what keeps this one page of a few hundred small documents at most.
+    /// </summary>
+    public async Task<IReadOnlyList<SessionSummary>> ListSessionsBetweenAsync(
+        string objectId,
+        DateOnly from,
+        DateOnly to,
+        CancellationToken cancellationToken,
+        bool withEntries = false)
+    {
+        var sessions = new List<SessionSummary>();
+
+        await RunQueryAsync(
+            objectId,
+            new QueryDefinition(SessionsBetweenQuery)
+                .WithParameter("@type", GymIds.SessionType)
+                .WithParameter("@from", GymIds.SessionOnDate(from, 1))
+                .WithParameter("@until", GymIds.SessionOnDate(to.AddDays(1), 1)),
+            $"Reading the sessions from {from:yyyy-MM-dd} to {to:yyyy-MM-dd} failed.",
+            document => sessions.Add(SessionSummary.Read(document, withEntries, withBlock: true)),
             cancellationToken);
 
         return sessions;
@@ -1551,15 +1614,24 @@ public sealed class GymStore(Container container)
     /// it impossible to clean up; with no block, there is nothing to count
     /// against. Start does not come through here, because a session started
     /// in a block that has gone should not exist at all.
+    ///
+    /// A freestanding session — a null <paramref name="mesoId"/> — has no block
+    /// and no counters, so its write goes as a batch of one. Still a batch, so
+    /// the caller reads the session's result at index 0 either way.
     /// </summary>
     private async Task<TransactionalBatchResponse> WriteCountedAsync(
         string objectId,
-        string mesoId,
+        string? mesoId,
         Func<TransactionalBatch, TransactionalBatch> write,
         IReadOnlyList<PatchOperation> counts,
         CancellationToken cancellationToken)
     {
         var partition = new PartitionKey(objectId);
+
+        if (mesoId is null)
+        {
+            return await write(container.CreateTransactionalBatch(partition)).ExecuteAsync(cancellationToken);
+        }
 
         var response = await write(container.CreateTransactionalBatch(partition))
             .PatchItem(GymIds.Mesocycle(mesoId), counts)
@@ -2555,9 +2627,16 @@ public sealed class GymStore(Container container)
             writer.WriteString("id", session.Id);
             writer.WriteString("objectId", objectId);
             writer.WriteString("type", GymIds.SessionType);
-            writer.WriteString("mesoId", session.MesoId);
-            writer.WriteNumber("week", session.Week);
-            writer.WriteNumber("dayIndex", session.DayIndex);
+            // All three or none — a freestanding session has no block, so no
+            // cell in one. Left off rather than written as null, so the block
+            // queries' `c.mesoId = @mesoId` cannot match one.
+            if (session.MesoId is { } mesoId)
+            {
+                writer.WriteString("mesoId", mesoId);
+                writer.WriteNumber("week", session.Week!.Value);
+                writer.WriteNumber("dayIndex", session.DayIndex!.Value);
+            }
+
             writer.WriteString("status", session.Status);
 
             writer.WriteStartArray("entries");

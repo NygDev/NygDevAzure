@@ -614,12 +614,21 @@ public sealed record SessionEntry(string ExerciseName, IReadOnlyList<WorkSet> Se
 /// it is <c>meso.days[dayIndex].label</c>, the mesocycle is loaded on every
 /// screen anyway, and a copy here would leave old sessions showing a day's old
 /// name after it was renamed in the Plan tab.
+///
+/// <b>A freestanding session has none of the three.</b> It is a workout logged
+/// by someone who does not train in blocks — no ramp of effort across weeks and
+/// no deload at the end, just the session — so there is no cell for it to sit
+/// in and nothing to say about one. The three are absent together or present
+/// together; a document with some of them is not one this code wrote, and
+/// reads as the 500 every other mismatched document does. Absent rather than a
+/// sentinel block id, so nothing that filters on <c>mesoId</c> can pick one up
+/// by accident, and a block delete's cascade cannot reach it.
 /// </summary>
 public sealed record GymSession(
     string Id,
-    string MesoId,
-    int Week,
-    int DayIndex,
+    string? MesoId,
+    int? Week,
+    int? DayIndex,
     string Status,
     IReadOnlyList<SessionEntry> Entries)
 {
@@ -627,13 +636,20 @@ public sealed record GymSession(
 
     public const string Submitted = "submitted";
 
-    public static GymSession Read(JsonElement document) => new(
-        GymDocument.String(document, "id"),
-        GymDocument.String(document, "mesoId"),
-        GymDocument.Int32(document, "week"),
-        GymDocument.Int32(document, "dayIndex"),
-        GymDocument.String(document, "status"),
-        GymDocument.List(document, "entries", SessionEntry.Read));
+    public bool IsFreestanding => MesoId is null;
+
+    public static GymSession Read(JsonElement document)
+    {
+        var mesoId = GymDocument.OptionalString(document, "mesoId");
+
+        return new GymSession(
+            GymDocument.String(document, "id"),
+            mesoId,
+            mesoId is null ? GymDocument.Absent(document, "week") : GymDocument.Int32(document, "week"),
+            mesoId is null ? GymDocument.Absent(document, "dayIndex") : GymDocument.Int32(document, "dayIndex"),
+            GymDocument.String(document, "status"),
+            GymDocument.List(document, "entries", SessionEntry.Read));
+    }
 
     public SessionTotals Totals() => SessionTotals.Of(Entries);
 
@@ -757,16 +773,31 @@ public sealed record GymSession(
                 })
             .ToArray();
 
-    public object ToResponse() => new
-    {
-        id = Id,
-        mesoId = MesoId,
-        week = Week,
-        dayIndex = DayIndex,
-        status = Status,
-        entries = Entries.Select(entry => entry.ToResponse()).ToArray(),
-        totals = Totals().ToResponse(),
-    };
+    /// <summary>
+    /// The wire shape. A freestanding session leaves <c>mesoId</c>,
+    /// <c>week</c> and <c>dayIndex</c> off rather than sending them as null,
+    /// the way an unswapped entry leaves off <c>swappedFrom</c>; its
+    /// <c>freestanding: true</c> is what a client branches on.
+    /// </summary>
+    public object ToResponse() => IsFreestanding
+        ? new
+        {
+            id = Id,
+            freestanding = true,
+            status = Status,
+            entries = Entries.Select(entry => entry.ToResponse()).ToArray(),
+            totals = Totals().ToResponse(),
+        }
+        : new
+        {
+            id = Id,
+            mesoId = MesoId,
+            week = Week,
+            dayIndex = DayIndex,
+            status = Status,
+            entries = Entries.Select(entry => entry.ToResponse()).ToArray(),
+            totals = Totals().ToResponse(),
+        };
 }
 
 /// <summary>
@@ -839,14 +870,20 @@ public readonly record struct SessionTotals(
 /// already walks every set in it, so the cost of answering with them is the
 /// bytes on the wire and nothing else. See <see cref="GymWorkouts.List"/> for
 /// what that replaces.
+///
+/// <see cref="MesoId"/> is read only by the date-range list, which can return
+/// sessions from several blocks and freestanding ones beside them. The block's
+/// own list knows which block it asked for and does not project it. A summary
+/// of a freestanding session has no week, no day and no block.
 /// </summary>
 public readonly record struct SessionSummary(
     string Id,
-    int Week,
-    int DayIndex,
+    int? Week,
+    int? DayIndex,
     string Status,
     SessionTotals Totals,
-    IReadOnlyList<SessionEntry>? Entries = null)
+    IReadOnlyList<SessionEntry>? Entries = null,
+    string? MesoId = null)
 {
     /// <summary>
     /// Reads one row of the block's session query.
@@ -855,49 +892,70 @@ public readonly record struct SessionSummary(
     /// on the summary or thrown away once they have been added up. It does not
     /// decide whether they are read: they are on the document either way, and
     /// the totals cannot be derived without walking them.
+    ///
+    /// <paramref name="withBlock"/> is the date-range list's: the row carries
+    /// <c>mesoId</c>, and a row without one is a freestanding session with no
+    /// week or day either. A block's own list leaves it false, and every row
+    /// there must have both, as it always has.
     /// </summary>
-    public static SessionSummary Read(JsonElement document, bool withEntries = false)
+    public static SessionSummary Read(JsonElement document, bool withEntries = false, bool withBlock = false)
     {
         var entries = GymDocument.List(document, "entries", SessionEntry.Read);
+        var mesoId = withBlock ? GymDocument.OptionalString(document, "mesoId") : null;
+        var placed = !withBlock || mesoId is not null;
 
         return new SessionSummary(
             GymDocument.String(document, "id"),
-            GymDocument.Int32(document, "week"),
-            GymDocument.Int32(document, "dayIndex"),
+            placed ? GymDocument.Int32(document, "week") : GymDocument.Absent(document, "week"),
+            placed ? GymDocument.Int32(document, "dayIndex") : GymDocument.Absent(document, "dayIndex"),
             GymDocument.String(document, "status"),
             SessionTotals.Of(entries),
-            withEntries ? entries : null);
+            withEntries ? entries : null,
+            mesoId);
     }
 
     /// <summary>
     /// The wire shape. <c>entries</c> is present only when it was asked for,
     /// rather than sent as null: a client reading the block map should not have
     /// to skip over a key that is never populated for it.
+    ///
+    /// The same rule decides the rest. <c>mesoId</c> is there only on the date
+    /// list, and a freestanding session has <c>freestanding: true</c> in place
+    /// of a week and a day — which is also what tells it apart on that list
+    /// from a session whose block is named.
     /// </summary>
-    public object ToResponse() => Entries is null
-        ? new
+    public object ToResponse()
+    {
+        var response = new Dictionary<string, object?> { ["id"] = Id };
+
+        if (MesoId is not null)
         {
-            id = Id,
-            week = Week,
-            dayIndex = DayIndex,
-            status = Status,
-            exerciseCount = Totals.ExerciseCount,
-            setCount = Totals.SetCount,
-            volumeKg = Totals.VolumeKg,
-            avgRpe = Totals.AverageRpe,
+            response["mesoId"] = MesoId;
         }
-        : new
+
+        if (Week is null)
         {
-            id = Id,
-            week = Week,
-            dayIndex = DayIndex,
-            status = Status,
-            exerciseCount = Totals.ExerciseCount,
-            setCount = Totals.SetCount,
-            volumeKg = Totals.VolumeKg,
-            avgRpe = Totals.AverageRpe,
-            entries = Entries.Select(entry => entry.ToResponse()).ToArray(),
-        };
+            response["freestanding"] = true;
+        }
+        else
+        {
+            response["week"] = Week;
+            response["dayIndex"] = DayIndex;
+        }
+
+        response["status"] = Status;
+        response["exerciseCount"] = Totals.ExerciseCount;
+        response["setCount"] = Totals.SetCount;
+        response["volumeKg"] = Totals.VolumeKg;
+        response["avgRpe"] = Totals.AverageRpe;
+
+        if (Entries is not null)
+        {
+            response["entries"] = Entries.Select(entry => entry.ToResponse()).ToArray();
+        }
+
+        return response;
+    }
 }
 
 /// <summary>
@@ -949,6 +1007,19 @@ internal static class GymDocument
             : null;
 
     /// <summary>
+    /// A whole number that must not be there — a freestanding session's
+    /// <c>week</c> and <c>dayIndex</c>. It reads as null, and a document that
+    /// has one anyway is half a session in a block, which is exactly the kind
+    /// of disagreement this class exists to report rather than paper over.
+    /// </summary>
+    public static int? Absent(JsonElement document, string name) =>
+        document.TryGetProperty(name, out var property) && property.ValueKind != JsonValueKind.Null
+            ? throw new InvalidOperationException(
+                $"'{name}' is on {Identify(document)} in db/gym, which has no 'mesoId'. A session is "
+                + "either in a block, with all three, or freestanding, with none of them.")
+            : null;
+
+    /// <summary>
     /// An array field, read element by element. Absent reads as empty, and that
     /// is the whole migration for every array here: a document written before
     /// the field existed — a day from before planning, most of all — simply has
@@ -959,15 +1030,13 @@ internal static class GymDocument
             ? property.EnumerateArray().Select(read).ToArray()
             : [];
 
-    private static InvalidOperationException Missing(JsonElement document, string name, string expected)
-    {
-        var id = document.TryGetProperty("id", out var stored) && stored.ValueKind == JsonValueKind.String
-            ? stored.GetString()
-            : "an unidentified document";
+    private static InvalidOperationException Missing(JsonElement document, string name, string expected) =>
+        new($"'{name}' is missing from {Identify(document)} in db/gym, or is not {expected}. The document "
+            + "does not match the shape this app writes, which means it was written by something else or "
+            + "by an older version of this code.");
 
-        return new InvalidOperationException(
-            $"'{name}' is missing from {id} in db/gym, or is not {expected}. The document does not "
-            + "match the shape this app writes, which means it was written by something else or by "
-            + "an older version of this code.");
-    }
+    private static string Identify(JsonElement document) =>
+        document.TryGetProperty("id", out var stored) && stored.ValueKind == JsonValueKind.String
+            ? stored.GetString()!
+            : "an unidentified document";
 }

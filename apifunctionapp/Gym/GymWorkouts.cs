@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Azure.Cosmos;
@@ -44,13 +45,22 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
                 if (!GymRequests.TryReadWorkoutStart(
                         body,
                         out var date,
-                        out var week,
-                        out var dayIndex,
+                        out var freestanding,
+                        out var requestedWeek,
+                        out var requestedDay,
+                        out var exercises,
                         out var error))
                 {
                     return GymEndpoint.Invalid(error);
                 }
 
+                if (freestanding)
+                {
+                    return await StartFreestandingAsync(objectId, date, exercises, token);
+                }
+
+                var week = requestedWeek!.Value;
+                var dayIndex = requestedDay!.Value;
                 var mesoId = await store.ReadCurrentMesoIdAsync(objectId, token);
 
                 if (mesoId is null)
@@ -123,13 +133,7 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
 
                 if (creation.Session is not { } session)
                 {
-                    return GymEndpoint.Failure(
-                        HttpStatusCode.Conflict,
-                        "date_full",
-                        $"There are already as many sessions filed under {date:yyyy-MM-dd} as this API "
-                        + "will suffix. A second workout in a day is ordinary and gets its own id; ten "
-                        + "is a client that has lost the id it was handed. Read the day back with "
-                        + "GET /api/gym/workouts before starting another.");
+                    return DateFull(date);
                 }
 
                 logger.LogInformation(
@@ -140,16 +144,75 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
                     dayIndex,
                     mesoId);
 
-                return new ObjectResult(new
-                {
-                    ok = true,
-                    resumed = creation.Resumed,
-                    workout = session.ToResponse(),
-                })
-                {
-                    StatusCode = (int)(creation.Resumed ? HttpStatusCode.OK : HttpStatusCode.Created),
-                };
+                return Started(creation, session);
             }));
+
+    /// <summary>
+    /// Start, for a workout in no block.
+    ///
+    /// Everything the block's Start reads is absent here, which is the point of
+    /// it: no pointer, so it works for someone who has never planned a block
+    /// and works the same for someone who has; no week, so nothing ramps and
+    /// nothing deloads; no day, so no plan to seed from. What opens it is the
+    /// exercises the client sent, if any — a template it already holds — with
+    /// no sets against them, exactly as a planned day's are.
+    ///
+    /// A freestanding session submitted later plans nothing, because there is
+    /// no day to plan; it still counts toward recently used, because the
+    /// picker does not care where an exercise was lifted.
+    /// </summary>
+    private async Task<IActionResult> StartFreestandingAsync(
+        string objectId,
+        DateOnly date,
+        IReadOnlyList<string> exercises,
+        CancellationToken cancellationToken)
+    {
+        var seed = exercises.Select(name => new SessionEntry(name, [])).ToArray();
+
+        var creation = await store.CreateSessionAsync(
+            objectId,
+            date,
+            mesoId: null,
+            week: null,
+            dayIndex: null,
+            seed,
+            cancellationToken);
+
+        if (creation.Session is not { } session)
+        {
+            return DateFull(date);
+        }
+
+        logger.LogInformation(
+            "{Verb} freestanding session {SessionId}.",
+            creation.Resumed ? "Resumed" : "Started",
+            session.Id);
+
+        return Started(creation, session);
+    }
+
+    /// <summary>
+    /// 201 for a new draft, 200 for one that was already open — see
+    /// <see cref="Start"/>.
+    /// </summary>
+    private static ObjectResult Started(SessionCreation creation, GymSession session) =>
+        new(new
+        {
+            ok = true,
+            resumed = creation.Resumed,
+            workout = session.ToResponse(),
+        })
+        {
+            StatusCode = (int)(creation.Resumed ? HttpStatusCode.OK : HttpStatusCode.Created),
+        };
+
+    private static IActionResult DateFull(DateOnly date) => GymEndpoint.Failure(
+        HttpStatusCode.Conflict,
+        "date_full",
+        $"There are already as many sessions filed under {date:yyyy-MM-dd} as this API "
+        + "will suffix. A second workout in a day is ordinary and gets its own id; ten "
+        + "is a client that has lost the id it was handed. Read the day back with "
+        + "GET /api/gym/workouts before starting another.");
 
     /// <summary>
     /// One workout in full — entries, sets and derived totals.
@@ -229,6 +292,14 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
                     + "'entries'. Leave it off for the totals alone.");
             }
 
+            var from = request.Query["from"].FirstOrDefault();
+            var to = request.Query["to"].FirstOrDefault();
+
+            if (from is not null || to is not null)
+            {
+                return await ListBetweenAsync(objectId, requested, from, to, include == "entries", token);
+            }
+
             var mesoId = requested ?? await store.ReadCurrentMesoIdAsync(objectId, token);
 
             if (mesoId is null)
@@ -254,6 +325,96 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
                 sessions = sessions.Select(session => session.ToResponse()).ToArray(),
             });
         });
+
+    /// <summary>
+    /// The longest range <c>?from=&amp;to=</c> may span, both days included.
+    ///
+    /// A year is what History scrolls back through at most in one read, and the
+    /// bound is what keeps the answer one page of small documents — two hundred
+    /// workouts in a year is a lot of training and around 400 KB of sets, which
+    /// is already more than a phone wants with <c>include=entries</c>.
+    /// </summary>
+    private const int MaxRangeDays = 366;
+
+    /// <summary>
+    /// <c>GET /gym/workouts?from=&amp;to=</c>: every session logged in a date
+    /// range, newest first — freestanding ones and those in any block, side by
+    /// side, each naming its block when it has one.
+    ///
+    /// It is History for a lifter who does not train in blocks, and the reason
+    /// it is a date range rather than "the freestanding ones": the block list
+    /// can only find sessions by their block, so without this a freestanding
+    /// session would be reachable only by guessing its id. Someone who used to
+    /// run blocks and stopped gets one history rather than two.
+    ///
+    /// Both ends are required and are the phone's local dates, the same as
+    /// Start's. <c>mesoId</c> alongside them is refused rather than combined: a
+    /// client that wants one block's sessions has the route for that.
+    /// </summary>
+    private async Task<IActionResult> ListBetweenAsync(
+        string objectId,
+        string? mesoId,
+        string? fromText,
+        string? toText,
+        bool withEntries,
+        CancellationToken cancellationToken)
+    {
+        if (mesoId is not null)
+        {
+            return GymEndpoint.Invalid(
+                "'mesoId' and a date range are two different lists. Send 'mesoId' for one block's "
+                + "sessions, or 'from' and 'to' for every session in that range, block or not.");
+        }
+
+        if (!TryReadRangeDate("from", fromText, out var from, out var error)
+            || !TryReadRangeDate("to", toText, out var to, out error))
+        {
+            return GymEndpoint.Invalid(error);
+        }
+
+        if (to < from)
+        {
+            return GymEndpoint.Invalid($"'to' is {to:yyyy-MM-dd}, before 'from' at {from:yyyy-MM-dd}.");
+        }
+
+        if (to.DayNumber - from.DayNumber + 1 > MaxRangeDays)
+        {
+            return GymEndpoint.Invalid(
+                $"{from:yyyy-MM-dd} to {to:yyyy-MM-dd} is {to.DayNumber - from.DayNumber + 1} days, over "
+                + $"the {MaxRangeDays} one read covers. Ask for it a year at a time.");
+        }
+
+        var sessions = await store.ListSessionsBetweenAsync(objectId, from, to, cancellationToken, withEntries);
+
+        return new OkObjectResult(new
+        {
+            ok = true,
+            from = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            to = to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            sessions = sessions.Select(session => session.ToResponse()).ToArray(),
+        });
+    }
+
+    private static bool TryReadRangeDate(string name, string? value, out DateOnly date, out string error)
+    {
+        error = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            date = default;
+            error = $"'{name}' is missing. A date range needs both 'from' and 'to', as YYYY-MM-DD in "
+                + "the phone's own timezone, the same date Start files a workout under.";
+            return false;
+        }
+
+        if (!DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out date))
+        {
+            error = $"'{name}' is '{value}', which is not YYYY-MM-DD.";
+            return false;
+        }
+
+        return true;
+    }
 
     /// <summary>
     /// Finish and submit: the status set, and the block's submitted count with
@@ -385,6 +546,12 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
         GymSession session,
         CancellationToken cancellationToken)
     {
+        // In no block, so there is no day to plan.
+        if (session.MesoId is not { } mesoId || session.DayIndex is not { } dayIndex)
+        {
+            return false;
+        }
+
         var plan = session.AsPlan();
 
         if (plan.Count == 0)
@@ -394,26 +561,26 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
             return false;
         }
 
-        var meso = await store.ReadMesocycleAsync(objectId, session.MesoId, cancellationToken);
+        var meso = await store.ReadMesocycleAsync(objectId, mesoId, cancellationToken);
 
         // A block deleted under a session that was still open, or a day the
         // block no longer has — editing a block does not move the sessions
         // logged in it, so a session can outlive its own cell. Neither is worth
         // an error on a submit that has already succeeded.
-        if (meso is null || session.DayIndex >= meso.Days.Count)
+        if (meso is null || dayIndex >= meso.Days.Count)
         {
             return false;
         }
 
-        if (meso.Days[session.DayIndex].Plan.Count > 0)
+        if (meso.Days[dayIndex].Plan.Count > 0)
         {
             return false;
         }
 
         var planned = await store.CaptureDayPlanAsync(
             objectId,
-            session.MesoId,
-            session.DayIndex,
+            mesoId,
+            dayIndex,
             plan,
             cancellationToken);
 
@@ -421,8 +588,8 @@ public class GymWorkouts(GymStore store, ILogger<GymWorkouts> logger)
         {
             logger.LogInformation(
                 "Planned day {DayIndex} of {MesoId} from session {SessionId}: {Count} exercises.",
-                session.DayIndex,
-                session.MesoId,
+                dayIndex,
+                mesoId,
                 session.Id,
                 plan.Count);
         }

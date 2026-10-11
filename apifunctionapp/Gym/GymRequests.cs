@@ -323,32 +323,93 @@ internal static class GymRequests
     /// is making anyway and one fewer thing a client can get wrong. What the
     /// client does have to send is the date, because only the phone knows what
     /// day it is where the user is standing.
+    ///
+    /// <c>freestanding: true</c> starts a workout in no block: no week, no day,
+    /// and no pointer read. It is a flag rather than the absence of a week and
+    /// a day on purpose — a block client that dropped its week by mistake
+    /// should get a 400, not a workout quietly filed outside its block. So a
+    /// freestanding start that also names a week or a day is refused, and so
+    /// is a block start without them.
+    ///
+    /// <c>exercises</c> is the freestanding start's seed: names to open the
+    /// session with, no sets against them — a saved or built-in template, as
+    /// the client holds it. A block's seed is the day's plan and comes from the
+    /// block, so there it is refused rather than ignored.
     /// </summary>
     public static bool TryReadWorkoutStart(
         JsonElement body,
         out DateOnly date,
-        out int week,
-        out int dayIndex,
+        out bool freestanding,
+        out int? week,
+        out int? dayIndex,
+        out IReadOnlyList<string> exercises,
         out string error)
     {
         date = default;
-        week = 0;
-        dayIndex = 0;
+        freestanding = false;
+        week = null;
+        dayIndex = null;
+        exercises = [];
 
         var value = body.TryGetProperty("date", out var stored) && stored.ValueKind == JsonValueKind.String
             ? stored.GetString()
             : null;
 
-        if (!GymIds.TryReadDate(value, out date, out error))
+        if (!GymIds.TryReadDate(value, out date, out error)
+            || !GymJson.TryReadOptionalBool(body, "freestanding", out freestanding, out error))
         {
+            return false;
+        }
+
+        if (freestanding)
+        {
+            foreach (var name in new[] { "week", "dayIndex" })
+            {
+                if (body.TryGetProperty(name, out var placed) && placed.ValueKind != JsonValueKind.Null)
+                {
+                    error = $"'{name}' is on a freestanding start. A freestanding workout is in no block, "
+                        + "so it has no week and no day; leave both off, or leave off 'freestanding'.";
+                    return false;
+                }
+            }
+
+            if (body.TryGetProperty("exercises", out var seed)
+                && seed.ValueKind == JsonValueKind.Array
+                && seed.GetArrayLength() > GymLimits.MaxPlannedPerDay)
+            {
+                error = $"'exercises' has {seed.GetArrayLength()} names, over the "
+                    + $"{GymLimits.MaxPlannedPerDay} a day can plan.";
+                return false;
+            }
+
+            return GymJson.TryReadStringList(
+                body,
+                "exercises",
+                GymLimits.MaxPlannedPerDay,
+                GymLimits.MaxExerciseNameLength,
+                out exercises,
+                out error);
+        }
+
+        if (body.TryGetProperty("exercises", out var unwanted) && unwanted.ValueKind != JsonValueKind.Null)
+        {
+            error = "'exercises' is on a start in a block. A block's workout opens with its day's plan; "
+                + "'exercises' seeds a freestanding one, so send 'freestanding': true with it.";
             return false;
         }
 
         // The upper bound on the week is the block's, which is not known here.
         // This is the shape check; the endpoint reads the mesocycle and checks
         // the week against its actual length.
-        return GymJson.TryReadInt(body, "week", 1, GymLimits.MaxWeeks, out week, out error)
-            && GymJson.TryReadInt(body, "dayIndex", 0, GymLimits.MaxDays - 1, out dayIndex, out error);
+        if (!GymJson.TryReadInt(body, "week", 1, GymLimits.MaxWeeks, out var readWeek, out error)
+            || !GymJson.TryReadInt(body, "dayIndex", 0, GymLimits.MaxDays - 1, out var readDay, out error))
+        {
+            return false;
+        }
+
+        week = readWeek;
+        dayIndex = readDay;
+        return true;
     }
 
     /// <summary>
