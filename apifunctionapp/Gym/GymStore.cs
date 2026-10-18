@@ -176,14 +176,15 @@ public sealed class GymStore(Container container)
         """;
 
     /// <summary>
-    /// How many templates this user has, for the cap in front of a save.
+    /// How many documents of one type this user has, for the caps in front of
+    /// saving a template or describing an exercise — see <see cref="CountAsync"/>.
     ///
     /// Counted server-side rather than by listing and measuring: the answer is
-    /// one number on a page of one, where the list itself is every template's
-    /// exercises. Saving is rare enough that a query in front of the write costs
-    /// nothing anyone notices.
+    /// one number on a page of one, where the list is every document in full.
+    /// Saving is rare enough that a query in front of the write costs nothing
+    /// anyone notices.
     /// </summary>
-    private const string TemplateCountQuery = """
+    private const string CountOfTypeQuery = """
         SELECT VALUE COUNT(1)
         FROM c
         WHERE c.type = @type
@@ -277,17 +278,16 @@ public sealed class GymStore(Container container)
     /// </summary>
     public async Task<string?> ReadCurrentMesoIdAsync(string objectId, CancellationToken cancellationToken)
     {
-        using var document = await ReadDocumentAsync(objectId, GymIds.User(objectId), cancellationToken);
+        var pointer = await PointReadAsync(
+            objectId,
+            GymIds.User(objectId),
+            user => user.TryGetProperty("currentMesoId", out var current)
+                && current.ValueKind == JsonValueKind.String
+                    ? current.GetString()
+                    : null,
+            cancellationToken);
 
-        if (document is null)
-        {
-            return null;
-        }
-
-        return document.RootElement.TryGetProperty("currentMesoId", out var current)
-            && current.ValueKind == JsonValueKind.String
-                ? current.GetString()
-                : null;
+        return pointer?.Value;
     }
 
     // -----------------------------------------------------------------------
@@ -297,15 +297,8 @@ public sealed class GymStore(Container container)
     public async Task<Mesocycle?> ReadMesocycleAsync(
         string objectId,
         string mesoId,
-        CancellationToken cancellationToken)
-    {
-        using var document = await ReadDocumentAsync(
-            objectId,
-            GymIds.Mesocycle(mesoId),
-            cancellationToken);
-
-        return document is null ? null : Mesocycle.Read(document.RootElement);
-    }
+        CancellationToken cancellationToken) =>
+        (await PointReadAsync(objectId, GymIds.Mesocycle(mesoId), Mesocycle.Read, cancellationToken))?.Value;
 
     /// <summary>
     /// Writes a new block and points the user at it, in one transaction.
@@ -572,9 +565,8 @@ public sealed class GymStore(Container container)
 
         for (var attempt = 0; attempt < MaxCountAttempts; attempt++)
         {
-            var (stored, etag) = await ReadCountsWithETagAsync(objectId, mesoId, cancellationToken);
-
-            if (stored is not { } current)
+            if (await PointReadAsync(objectId, GymIds.Mesocycle(mesoId), MesocycleCounts.Read, cancellationToken)
+                is not (var current, var etag))
             {
                 return null;
             }
@@ -638,36 +630,6 @@ public sealed class GymStore(Container container)
         }
 
         return (mesoId, counted with { Verified = false });
-    }
-
-    /// <summary>
-    /// A block's stored counters and the ETag they were read under, for
-    /// <see cref="VerifyCountsAsync"/>. Null counters mean there is no such
-    /// block.
-    /// </summary>
-    private async Task<(MesocycleCounts? Counts, string? ETag)> ReadCountsWithETagAsync(
-        string objectId,
-        string mesoId,
-        CancellationToken cancellationToken)
-    {
-        using var response = await container.ReadItemStreamAsync(
-            GymIds.Mesocycle(mesoId),
-            new PartitionKey(objectId),
-            cancellationToken: cancellationToken);
-
-        if (response.StatusCode == HttpStatusCode.NotFound)
-        {
-            return (null, null);
-        }
-
-        if (!response.IsSuccessStatusCode)
-        {
-            throw Failure(response, $"Reading mesocycle {mesoId} failed.");
-        }
-
-        using var document = await JsonDocument.ParseAsync(response.Content, cancellationToken: cancellationToken);
-
-        return (MesocycleCounts.Read(document.RootElement), response.Headers.ETag);
     }
 
     /// <summary>
@@ -894,13 +856,10 @@ public sealed class GymStore(Container container)
         IReadOnlyList<PlannedExercise> plan,
         CancellationToken cancellationToken)
     {
-        var count = 0;
-
-        await RunQueryAsync(
+        var count = await CountAsync(
             objectId,
-            new QueryDefinition(TemplateCountQuery).WithParameter("@type", GymIds.TemplateType),
+            GymIds.TemplateType,
             "Counting this user's day templates failed.",
-            document => count += document.GetInt32(),
             cancellationToken);
 
         if (count >= GymLimits.MaxTemplatesPerUser)
@@ -1009,12 +968,10 @@ public sealed class GymStore(Container container)
     /// </summary>
     public async Task<ExercisePreferences> ReadPreferencesAsync(
         string objectId,
-        CancellationToken cancellationToken)
-    {
-        using var document = await ReadDocumentAsync(objectId, GymIds.Preferences(objectId), cancellationToken);
-
-        return document is null ? ExercisePreferences.Empty : ExercisePreferences.Read(document.RootElement);
-    }
+        CancellationToken cancellationToken) =>
+        (await PointReadAsync(objectId, GymIds.Preferences(objectId), ExercisePreferences.Read, cancellationToken))
+            ?.Value
+        ?? ExercisePreferences.Empty;
 
     /// <summary>Replaces the favourites, leaving the rest of the document as it is.</summary>
     public Task SetFavoritesAsync(
@@ -1176,15 +1133,10 @@ public sealed class GymStore(Container container)
         CustomExercise exercise,
         CancellationToken cancellationToken)
     {
-        var count = 0;
-
-        // The template count's query: it counts documents of one type, and
-        // the type is the parameter.
-        await RunQueryAsync(
+        var count = await CountAsync(
             objectId,
-            new QueryDefinition(TemplateCountQuery).WithParameter("@type", GymIds.ExerciseType),
+            GymIds.ExerciseType,
             "Counting this user's custom exercises failed.",
-            document => count += document.GetInt32(),
             cancellationToken);
 
         if (count >= GymLimits.MaxExercisesPerUser)
@@ -1281,12 +1233,8 @@ public sealed class GymStore(Container container)
     public async Task<GymSession?> ReadSessionAsync(
         string objectId,
         string sessionId,
-        CancellationToken cancellationToken)
-    {
-        using var document = await ReadDocumentAsync(objectId, sessionId, cancellationToken);
-
-        return document is null ? null : GymSession.Read(document.RootElement);
-    }
+        CancellationToken cancellationToken) =>
+        (await PointReadAsync(objectId, sessionId, GymSession.Read, cancellationToken))?.Value;
 
     /// <summary>
     /// Starts a workout, or hands back the one already open for today.
@@ -1560,9 +1508,8 @@ public sealed class GymStore(Container container)
     {
         for (var attempt = 0; attempt < 2; attempt++)
         {
-            var (session, etag) = await ReadSessionWithETagAsync(objectId, sessionId, cancellationToken);
-
-            if (session is null)
+            if (await PointReadAsync(objectId, sessionId, GymSession.Read, cancellationToken)
+                is not (var session, var etag))
             {
                 return false;
             }
@@ -1708,9 +1655,8 @@ public sealed class GymStore(Container container)
         int expectedEntryCount,
         CancellationToken cancellationToken)
     {
-        var (session, etag) = await ReadSessionWithETagAsync(objectId, sessionId, cancellationToken);
-
-        if (session is null)
+        if (await PointReadAsync(objectId, sessionId, GymSession.Read, cancellationToken)
+            is not (var session, var etag))
         {
             return new ReorderOutcome(ReorderResult.SessionNotFound, null);
         }
@@ -1809,9 +1755,8 @@ public sealed class GymStore(Container container)
         int expectedEntryCount,
         CancellationToken cancellationToken)
     {
-        var (session, etag) = await ReadSessionWithETagAsync(objectId, sessionId, cancellationToken);
-
-        if (session is null)
+        if (await PointReadAsync(objectId, sessionId, GymSession.Read, cancellationToken)
+            is not (var session, var etag))
         {
             return new RemoveEntryOutcome(RemoveEntryResult.SessionNotFound, null);
         }
@@ -1903,9 +1848,8 @@ public sealed class GymStore(Container container)
         bool withSets,
         CancellationToken cancellationToken)
     {
-        var (session, etag) = await ReadSessionWithETagAsync(objectId, sessionId, cancellationToken);
-
-        if (session is null)
+        if (await PointReadAsync(objectId, sessionId, GymSession.Read, cancellationToken)
+            is not (var session, var etag))
         {
             return SwapOutcome.SessionNotFound;
         }
@@ -1991,9 +1935,8 @@ public sealed class GymStore(Container container)
         WorkSet set,
         CancellationToken cancellationToken)
     {
-        var (session, etag) = await ReadSessionWithETagAsync(objectId, sessionId, cancellationToken);
-
-        if (session is null)
+        if (await PointReadAsync(objectId, sessionId, GymSession.Read, cancellationToken)
+            is not (var session, var etag))
         {
             return new EditSetOutcome(EditSetResult.SessionNotFound, null);
         }
@@ -2057,35 +2000,6 @@ public sealed class GymStore(Container container)
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// A point read that also hands back the ETag, for the writes in this file
-    /// that go through optimistic concurrency instead of a guarded patch.
-    /// </summary>
-    private async Task<(GymSession? Session, string? ETag)> ReadSessionWithETagAsync(
-        string objectId,
-        string sessionId,
-        CancellationToken cancellationToken)
-    {
-        using var response = await container.ReadItemStreamAsync(
-            sessionId,
-            new PartitionKey(objectId),
-            cancellationToken: cancellationToken);
-
-        if (response.StatusCode == HttpStatusCode.NotFound)
-        {
-            return (null, null);
-        }
-
-        if (!response.IsSuccessStatusCode)
-        {
-            throw Failure(response, $"Reading session {sessionId} failed.");
-        }
-
-        using var document = await JsonDocument.ParseAsync(response.Content, cancellationToken: cancellationToken);
-
-        return (GymSession.Read(document.RootElement), response.Headers.ETag);
     }
 
     // -----------------------------------------------------------------------
@@ -2382,11 +2296,42 @@ public sealed class GymStore(Container container)
     }
 
     /// <summary>
-    /// A point read, or null when there is nothing there. The caller disposes.
+    /// How many documents of <paramref name="type"/> this user has. See
+    /// <see cref="CountOfTypeQuery"/>.
     /// </summary>
-    private async Task<JsonDocument?> ReadDocumentAsync(
+    private async Task<int> CountAsync(
+        string objectId,
+        string type,
+        string failureMessage,
+        CancellationToken cancellationToken)
+    {
+        var count = 0;
+
+        await RunQueryAsync(
+            objectId,
+            new QueryDefinition(CountOfTypeQuery).WithParameter("@type", type),
+            failureMessage,
+            document => count += document.GetInt32(),
+            cancellationToken);
+
+        return count;
+    }
+
+    /// <summary>
+    /// A point read, or null when there is nothing there — read by
+    /// <paramref name="read"/> while the document is alive, for the reason
+    /// <see cref="RunQueryAsync"/> gives, and handed back with the ETag it was
+    /// read under.
+    ///
+    /// Every point read in this file comes through here. The ETag is for the
+    /// writes that go through optimistic concurrency instead of a guarded
+    /// patch — a read-then-replace, or the counters' verification — and the
+    /// plain reads drop it.
+    /// </summary>
+    private async Task<(T Value, string? ETag)?> PointReadAsync<T>(
         string objectId,
         string documentId,
+        Func<JsonElement, T> read,
         CancellationToken cancellationToken)
     {
         using var response = await container.ReadItemStreamAsync(
@@ -2404,7 +2349,9 @@ public sealed class GymStore(Container container)
             throw Failure(response, $"Reading {documentId} from db/gym failed.");
         }
 
-        return await JsonDocument.ParseAsync(response.Content, cancellationToken: cancellationToken);
+        using var document = await JsonDocument.ParseAsync(response.Content, cancellationToken: cancellationToken);
+
+        return (read(document.RootElement), response.Headers.ETag);
     }
 
     /// <summary>
