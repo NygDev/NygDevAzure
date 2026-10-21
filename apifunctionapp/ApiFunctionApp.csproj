@@ -51,9 +51,9 @@
          Azure.Monitor.OpenTelemetry.AspNetCore distro: the distro turns on
          ASP.NET Core instrumentation, and since the host already emits a
          request per invocation, every call would be reported twice. -->
-    <PackageReference Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.9.0" />
+    <PackageReference Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.10.0" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
-    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.63.1" />
+    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.63.2" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.52.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.1.1" />
     <!-- Teaches the OpenTelemetry pipeline about the worker: it activates the
@@ -68,7 +68,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <!-- Brings AddOpenTelemetry() and the hosted service that owns the tracer
          and logger providers, so they are started and flushed with the host. -->
-    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.19.1" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.20.1" />
   </ItemGroup>
 
   <ItemGroup>
