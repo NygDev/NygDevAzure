@@ -86,3 +86,22 @@ jobs:
             -var="home_ip=$HOME_IP" \
             -var="ssh_public_key=$SSH_PUBLIC_KEY" \
             -var="admin_username=${{ secrets.AZURE_VM_USERNAME }}"
+
+      # azurerm_storage_blob cannot set Content-Encoding, so the gzipped CDN
+      # JSON gets it here (see terraform/cdn.tf). Runs on every apply because a
+      # re-upload clears it. Set Blob Properties replaces every content header,
+      # so the ones terraform set are passed again unchanged — the MD5 among
+      # them, or the next plan would see it gone and upload the blob again.
+      - name: 'Mark the CDN JSON as gzip'
+        run: |
+          for f in exercises templates; do
+            az storage blob update \
+              --account-name nygdevcdn \
+              --auth-mode login \
+              --container-name data \
+              --name "gym-$f.json" \
+              --content-type application/json \
+              --content-encoding gzip \
+              --content-cache-control 'public, max-age=86400' \
+              --content-md5 "$(openssl md5 -binary "gym/dist/$f.json.gz" | base64)"
+          done

@@ -98,8 +98,10 @@ resource "azurerm_storage_blob" "gym_exercises" {
   # by hand — it downloads rather than displays.
   content_type = "application/json"
 
-  # What the stored bytes are; see above. A browser undoes it transparently.
-  content_encoding = "gzip"
+  # Content-Encoding: gzip is not set here: azurerm_storage_blob has no
+  # argument for it. The "Mark the CDN JSON as gzip" step in
+  # terraform-apply.yml sets it after every apply, so a blob this resource has
+  # just re-uploaded without the header gets it back in the same run.
 
   # A day, because the library changes only on a deploy and the front end
   # should not re-fetch it on every cold load. Not longer: the front end has no
@@ -139,8 +141,8 @@ resource "azurerm_storage_blob" "gym_templates" {
   source      = "${path.module}/../gym/dist/templates.json.gz"
   content_md5 = filemd5("${path.module}/../gym/dist/templates.json.gz")
 
-  content_type     = "application/json"
-  content_encoding = "gzip"
+  # Content-Encoding is set by terraform-apply.yml, as for the exercise library.
+  content_type = "application/json"
 
   # The same day the exercise library gets, and for the same reason — these two
   # files are fetched together on a cold load and change on the same deploys.
