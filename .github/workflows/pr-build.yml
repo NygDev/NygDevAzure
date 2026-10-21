@@ -1,0 +1,127 @@
+name: PR build
+
+# Builds everything on each PR into master, so a PR shows whether it breaks the
+# build before merging it deploys. The deploy workflows only run after merge.
+#
+# Dependabot PRs for minor and patch updates are then merged here, once every
+# build passes. Majors are left for a human.
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  # The solution builds the API app and its tests together.
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+          cache: true
+          cache-dependency-path: apifunctionapp/packages.lock.json
+
+      - name: Test
+        run: dotnet test apifunctionapp/ApiFunctionApp.slnx -c Release
+
+  integrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build
+        run: dotnet build integrationsfunctionapp/IntegrationsFunctionApp.slnx -c Release
+
+  # Same steps as deploy-likec4.yml up to the deploy.
+  likec4:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: c4/LikeC4
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: c4/LikeC4/package-lock.json
+
+      - run: npm ci
+      - run: npx likec4 validate
+      - run: npx likec4 build -o dist --base /
+
+  # No backend and no Azure login: this checks the configuration against the
+  # providers in the lock file, not against what is deployed.
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.16.0
+          terraform_wrapper: false
+
+      # The gzipped copies cdn.tf reads, made the same way terraform-apply.yml
+      # makes them.
+      - name: Gzip the CDN JSON
+        run: |
+          mkdir -p gym/dist
+          for f in exercises templates; do
+            gzip -n -9 -c "gym/$f.json" > "gym/dist/$f.json.gz"
+          done
+
+      - name: Validate
+        working-directory: terraform
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  automerge:
+    needs: [api, integrations, likec4, terraform]
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      PR_URL: ${{ github.event.pull_request.html_url }}
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@v2
+
+      # --match-head-commit: merge only the commit that was just built. If
+      # Dependabot rebased in the meantime, that push starts a new run.
+      #
+      # A merge made with GITHUB_TOKEN does not fire the push-triggered deploys,
+      # so the ones whose paths the PR touched are dispatched on master
+      # explicitly. Terraform is never applied from here.
+      - name: Merge and deploy
+        if: >-
+          steps.meta.outputs.update-type == 'version-update:semver-minor' ||
+          steps.meta.outputs.update-type == 'version-update:semver-patch'
+        run: |
+          files=$(gh pr diff "$PR_URL" --name-only)
+          gh pr merge "$PR_URL" --merge --match-head-commit "${{ github.event.pull_request.head.sha }}"
+
+          if grep -q '^apifunctionapp/' <<<"$files"; then
+            gh workflow run deploy-api-function-app.yml --ref master
+          fi
+          if grep -q '^integrationsfunctionapp/' <<<"$files"; then
+            gh workflow run deploy-integrations-function-app.yml --ref master
+          fi
+          if grep -q '^c4/LikeC4/' <<<"$files"; then
+            gh workflow run deploy-likec4.yml --ref master
+          fi

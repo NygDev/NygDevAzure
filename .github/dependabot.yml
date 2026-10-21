@@ -1,0 +1,62 @@
+# Weekly dependency updates. Minor and patch bumps arrive as one grouped PR per
+# folder and are merged by pr-build.yml once the build passes; major bumps get a
+# PR of their own and wait for a human.
+version: 2
+updates:
+  # Azure SDKs, Functions Worker, Cosmos, OpenTelemetry, xunit.
+  - package-ecosystem: nuget
+    directories:
+      - /apifunctionapp
+      - /apifunctionapp-tests
+      - /integrationsfunctionapp
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Oslo
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]
+
+  - package-ecosystem: npm
+    directory: /c4/LikeC4
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Oslo
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]
+
+  # Provider bumps only change the code and lock file; nothing is applied until
+  # terraform-apply.yml is run by hand.
+  - package-ecosystem: terraform
+    directory: /terraform
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Oslo
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Oslo
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]
