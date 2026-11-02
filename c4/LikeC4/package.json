@@ -11,7 +11,7 @@
     "export:png": "likec4 export png -o ./png"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "likec4": "^1.60.0",
     "typescript": "^7.0.2"
   }
