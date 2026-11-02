@@ -53,7 +53,7 @@
          request per invocation, every call would be reported twice. -->
     <PackageReference Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.10.0" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
-    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.63.2" />
+    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.63.3" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.52.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.1.1" />
     <!-- Teaches the OpenTelemetry pipeline about the worker: it activates the
