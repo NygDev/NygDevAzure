@@ -1,0 +1,435 @@
+// Journey four again, as a process rather than as a system: what happens to a
+// logged set between the thumb and the database, written so somebody who has
+// never heard of a token or a partition can follow it.
+//
+// Five pages. `loggerJourney` is the short version and the place to start;
+// each of its stations links on to the page that opens it up. The other four
+// are the ordinary tap in full, the tap with no signal, the tap from an
+// out-of-date screen, and finishing the workout.
+//
+// Every page uses the same running example — 100 kg for 5 on a squat that
+// already has two sets — so the numbers on one page can be checked against
+// the next.
+//
+// The stations are declared in ../logger.c4. The vocabulary is held fixed
+// across all five: the token is "the pass", Easy Auth is "the door check",
+// the guard count is "the count", Cosmos is "the training log".
+views {
+
+  // =======================================================================
+  // The short version
+  // =======================================================================
+
+  dynamic view loggerJourney {
+    title 'Logging a set — the short version'
+    description '
+      What happens between tapping "Log set" and the set being safely stored,
+      in nine steps. Start here.
+
+      Three ideas carry the whole design, and every other page in this group
+      is one of them in detail:
+
+      1. The screen does not wait. The set appears the instant it is tapped,
+         and a queue in the page does the waiting instead.
+
+      2. Every set carries a count — "this exercise had two sets before this
+         one". The database only adds the set while that is still true. That
+         one rule is why sending the same set twice can never log it twice,
+         and why the queue can keep retrying on bad wifi without fear.
+
+      3. Nothing on the request says whose log it is. The pass from signing
+         in does, and the server reads it from there and nowhere else.
+
+      Click a step to read more about it. The steps that link onwards open
+      the page that covers them in detail.
+    '
+
+    user -> gym.screen 'Taps "Log set": 100 kg × 5' {
+      notes '
+        A squat that already has two sets logged. This is the third.
+      '
+    }
+
+    gym.screen -> gym.outbox 'Shows the set straight away, and queues it with the count: "this squat had 2 sets"' {
+      notes '
+        The row is on screen before anything has left the phone. The count
+        is taken from what the screen shows, which already includes every
+        earlier tap — so by the time this set reaches the server, the count
+        is the one the server holds.
+      '
+      navigateTo loggerTap
+    }
+
+    gym.outbox -> gym.signin 'Asks for a valid pass' {
+      notes '
+        Asked for on every send rather than kept, so it is never the expired
+        one an hour into a session.
+      '
+    }
+
+    gym.signin -> entra.gymlog 'Renews the pass, only when it is about to run out' {
+      notes '
+        Most taps never get this far — the pass is reused until near its
+        expiry. How the pass was obtained in the first place is `gymSignIn`.
+      '
+      navigateTo gymSignIn
+    }
+
+    gym.outbox -> api.gate 'Sends the set over the internet, with the pass' {
+      notes '
+        If this does not get through — the dead spot by the squat rack — the
+        set stays on screen and in the queue, and is sent again.
+      '
+      navigateTo loggerOffline
+    }
+
+    api.gate -> api.sets 'The pass is good: lets the request in' {
+      notes '
+        A missing or expired pass is turned away here, before any of our code
+        runs at all.
+      '
+    }
+
+    api.sets -> cosmos 'Adds the set to your log — only if the squat still has 2 sets' {
+      notes '
+        Whose log is read off the pass. The "only if" is the count, checked
+        by the database in the same step as the write, so nothing can slip
+        in between.
+      '
+      navigateTo loggerStale
+    }
+
+    gym.outbox <- api.sets 'Recorded' {
+      notes '
+        Or "already recorded", which means the same thing: this set had been
+        sent before and the first attempt landed. Either way it is success.
+      '
+    }
+
+    gym.screen <- gym.outbox 'Header changes to "Saved 19:42"' {
+      notes '
+        The queue moves on to the next change, if there is one. When the
+        workout is done, Finish waits for this queue to be empty — see
+        `loggerFinish`.
+      '
+      navigateTo loggerFinish
+    }
+
+    autoLayout LeftRight 120 90
+
+    style entra, entra.gymlog {
+      color muted
+    }
+  }
+
+  // =======================================================================
+  // The ordinary tap, in full
+  // =======================================================================
+
+  dynamic view loggerTap {
+    title 'Logging a set — every step, when all goes well'
+    description '
+      The same tap as `loggerJourney`, with nothing left out. Read it top to
+      bottom; each arrow is one thing happening, in order.
+
+      Two steps here surprise people. The first is the browser asking
+      permission before every send: a page may only send a signed-in request
+      to another website once that website says it accepts them, and the
+      platform cannot be told to let the browser remember the answer, so it
+      asks every time. The second is the set handler never being told whose
+      log to write to. It works that out from the pass, because anything the
+      request says about itself could have been typed by anybody.
+
+      The whole round trip is normally well under a second, and the lifter
+      sees none of it — the row was on screen at step two.
+    '
+
+    variant sequence
+
+    user -> gym.screen 'Taps "Log set": 100 kg × 5, effort 8' {
+      notes 'Effort (RPE) is optional, between 5 and 10 on a half step.'
+    }
+
+    gym.screen -> gym.screen 'Draws the new row and updates the totals at once'
+
+    gym.screen -> gym.outbox 'Queues the set: squat, 100 kg, 5 reps, effort 8 — and "this squat had 2 sets"' {
+      notes '
+        Changes go out one at a time, oldest first. If an earlier change is
+        still on its way, this one waits behind it, because its count assumes
+        that earlier change has already landed.
+      '
+    }
+
+    gym.outbox -> gym.signin 'Needs a pass'
+
+    gym.outbox <- gym.signin 'Here is a valid one (renewed with Entra if it was about to expire)'
+
+    gym.outbox -> api.gate 'Browser asks first: may this page send signed-in requests to you?' {
+      notes '
+        The CORS preflight. Answered by the platform, before the door check
+        and before any of our code. It costs one extra round trip per tap and
+        cannot be switched off from our side.
+      '
+    }
+
+    gym.outbox <- api.gate 'Yes — gym.nygard.dev is on the list'
+
+    gym.outbox -> api.gate 'The set itself, with the pass attached'
+
+    api.gate -> api.gate 'Checks the pass: genuine, from our tenant, made for GymLog, and obtained by GymLog' {
+      notes '
+        Fail any of these and the answer is a 401 or 403 from the platform,
+        and the page asks the lifter to sign in again. Nothing reaches the
+        set handler.
+      '
+    }
+
+    api.gate -> api.sets 'Lets it in, with the person the pass belongs to'
+
+    api.sets -> api.sets 'Reads whose log this is from the pass, and checks the numbers are sensible' {
+      notes '
+        Weight between 0 and the limit, at least one rep, effort on a half
+        step. A request with nonsense in it is answered with a 400 that
+        explains which value, and nothing is written.
+      '
+    }
+
+    api.sets -> cosmos 'In your log, on today’s session: add this set to the squat — only if it still has 2' {
+      notes '
+        One write. No read first: the "only if" is checked by the database
+        itself as part of the write, so two phones logging at once cannot
+        both slip in at position three.
+      '
+    }
+
+    api.sets <- cosmos 'Done — the squat now has 3 sets'
+
+    gym.outbox <- api.sets 'Recorded: set 3 of the squat'
+
+    gym.screen <- gym.outbox 'Header: "Saved 19:42"'
+
+    gym.outbox -> gym.outbox 'Next change in the queue, if any'
+  }
+
+  // =======================================================================
+  // No signal
+  // =======================================================================
+
+  dynamic view loggerOffline {
+    title 'Logging a set with no signal'
+    description '
+      Gym wifi drops out. This page is what the lifter sees when it does, and
+      why it is safe to keep tapping.
+
+      The set stays on screen and stays in the queue. The queue tries again
+      after one second, then two, four, eight, fifteen and thirty — about a
+      minute in all, which outlasts most dead spots without leaving a change
+      retrying long after anybody is looking. Meanwhile the header says how
+      many changes are waiting, and anything tapped in the meantime joins the
+      back of the queue.
+
+      The tricky case is a set that did arrive but whose answer was lost on
+      the way back. Sending it again is safe because of the count: the server
+      sees the squat already has three sets, not two, finds that the third is
+      exactly this set, and answers "already recorded". One set, not two.
+
+      If a minute passes with no signal, or the session is closed while
+      changes are still waiting, the queue gives up honestly: the unsaved
+      changes come back off the screen and a banner says so. The screen never
+      claims a set is logged when it is not.
+    '
+
+    variant sequence
+
+    user -> gym.screen 'Taps "Log set": 100 kg × 5'
+
+    gym.screen -> gym.outbox 'Shows the row at once; queues it with "this squat had 2 sets"'
+
+    gym.outbox -> api.sets 'Sends the set' {
+      notes '
+        The pass and the door check are left out of this page — they happen
+        exactly as on `loggerTap`, on every attempt.
+      '
+    }
+
+    api.sets -> cosmos 'Adds the set — the squat had 2, so it goes in'
+
+    api.sets <- cosmos 'Done: 3 sets'
+
+    gym.outbox <- api.sets 'Recorded… but the answer is lost on the way back' {
+      notes '
+        From the phone this looks the same as the set never arriving at all.
+        It cannot tell the two apart, and it does not need to.
+      '
+    }
+
+    gym.screen <- gym.outbox 'Header: "1 set waiting to save"'
+
+    user -> gym.screen 'Keeps training, taps the next set' {
+      notes '
+        Allowed, and safe. The new set joins the queue behind the first one
+        and waits for it, so it is never sent with a count the server does
+        not hold yet.
+      '
+    }
+
+    gym.screen -> gym.outbox 'Queues set 4 behind it; header: "2 sets waiting to save"'
+
+    gym.outbox -> gym.outbox 'Waits 1 s, then 2 s, then 4 s… up to about a minute in all'
+
+    gym.outbox -> api.sets 'Signal is back: sends set 3 again, still saying "had 2 sets"'
+
+    api.sets -> cosmos 'Add this set — only if the squat still has 2'
+
+    api.sets <- cosmos 'Refused: it has 3' {
+      notes '
+        The database refuses rather than adding a duplicate. The handler then
+        looks once at what is stored, to tell "this already landed" apart from
+        "this screen is out of date".
+      '
+    }
+
+    api.sets -> cosmos 'Looks: is the third set exactly 100 kg × 5?'
+
+    api.sets <- cosmos 'Yes'
+
+    gym.outbox <- api.sets 'Already recorded — the first attempt landed' {
+      notes '
+        Treated as success, because it is. Nothing to undo, nothing to merge,
+        and no rule to write about which of two answers to believe.
+      '
+    }
+
+    gym.outbox -> api.sets 'Set 4, saying "had 3 sets"'
+
+    gym.outbox <- api.sets 'Recorded'
+
+    gym.screen <- gym.outbox 'Header: "Saved 19:44"'
+  }
+
+  // =======================================================================
+  // An out-of-date screen
+  // =======================================================================
+
+  dynamic view loggerStale {
+    title 'Logging a set from an out-of-date screen'
+    description '
+      The phone believed the squat had two sets, but the stored session has
+      moved on without it — most often because the same workout was changed
+      on another device, such as the planner open on a laptop.
+
+      The count is what catches it. The set is counted from a screen that no
+      longer matches what is stored, so the database refuses it, nothing is
+      written, and the server answers with what the count really is.
+
+      The page does not show that as an error. It throws away the queued
+      changes that were counted from the same stale screen, fetches the
+      session as it really is, and shows a short notice that it reloaded. The
+      lifter looks at the fresh screen and logs again from there.
+
+      This is the one case where a tap visibly does something other than
+      what was tapped, which is why it says so out loud.
+    '
+
+    variant sequence
+
+    user -> gym.screen 'Taps "Log set": 100 kg × 5'
+
+    gym.screen -> gym.outbox 'Shows the row; queues it with "this squat had 2 sets"'
+
+    gym.outbox -> api.sets 'Sends the set'
+
+    api.sets -> cosmos 'Add this set — only if the squat still has 2'
+
+    api.sets <- cosmos 'Refused: it has 4' {
+      notes '
+        Someone — usually the same lifter on another screen — added or
+        removed sets since this phone last looked.
+      '
+    }
+
+    api.sets -> cosmos 'Looks: did this exact set already land as the third?'
+
+    api.sets <- cosmos 'No'
+
+    gym.outbox <- api.sets 'Out of date: you said 2, it has 4. Nothing was written' {
+      notes '
+        A 409 "count_mismatch", carrying the real count. Not a failure to
+        write — the guard doing its job.
+      '
+    }
+
+    gym.outbox -> gym.outbox 'Drops everything queued from the same stale screen'
+
+    gym.outbox -> api.sets 'Fetches the whole session as it really is'
+
+    gym.outbox <- api.sets 'The session, with its 4 squat sets'
+
+    gym.screen <- gym.outbox 'Redraws from that, with a notice: "This session had changed elsewhere. Reloaded from the server."'
+
+    user -> gym.screen 'Checks the fresh screen, and logs again if the set is still missing'
+  }
+
+  // =======================================================================
+  // Finishing
+  // =======================================================================
+
+  dynamic view loggerFinish {
+    title 'Finishing a workout'
+    description '
+      The last payload a session sends, and the only one not protected by a
+      count — so it is protected by waiting instead.
+
+      Finish holds until the save queue is empty. Filing a workout ahead of a
+      set still on its way would file it without that set, so a set in flight
+      is waited for (normally a moment), and while anything is being retried
+      Finish refuses with a note to try again once the header says saved —
+      rather than sitting behind a spinner for a minute of retries.
+
+      Filing is then a single change from "draft" to "submitted", which can
+      safely be sent twice. Two small things ride along after it has landed:
+      if this day of the block had nothing planned, what was just lifted
+      becomes its plan, so next week opens with those exercises already in
+      place; and the exercises lifted move to the front of "recently used".
+      Neither can undo the filing if it goes wrong.
+    '
+
+    variant sequence
+
+    user -> gym.screen 'Taps Finish'
+
+    gym.screen -> gym.outbox 'Is anything still waiting to save?'
+
+    gym.screen <- gym.outbox 'All saved' {
+      notes '
+        If something were still being retried, the answer would be "2 sets
+        still waiting to save. Finish once the header says saved." and
+        nothing would be filed.
+      '
+    }
+
+    gym.screen -> api.sets 'File this workout' {
+      notes '
+        Strictly, a sibling route in the same API — POST …/submit. Drawn on
+        the same box because to the lifter it is the same place.
+      '
+    }
+
+    api.sets -> cosmos 'Mark the session submitted'
+
+    api.sets <- cosmos 'Done'
+
+    api.sets -> cosmos 'If this day had no plan: make what was just lifted its plan' {
+      notes '
+        Only an empty plan is ever filled, and only from exercises that got
+        at least one set. A plan someone typed in is never overwritten.
+      '
+    }
+
+    api.sets -> cosmos 'Move the exercises just lifted to the front of "recently used"'
+
+    gym.screen <- api.sets 'Filed — and whether this day just got a plan'
+
+    gym.screen -> user 'The Done screen, with the session totals'
+  }
+}

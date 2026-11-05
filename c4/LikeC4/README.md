@@ -35,12 +35,14 @@ src/
   _spec.c4              element kinds, their colours, and the tags
   model.c4              what runs, and what talks to what
   delivery.c4           the repo, the five workflows, and the OIDC identity
+  logger.c4             the stations inside the logger and the API a set passes through
   views/
     landscape.c4        the whole estate — logical, then deployed
     apex.c4             journey 1 — nygard.dev
     running.c4          journey 2 — run.nygard.dev, and the WHOOP chain
     rpg.c4              journey 3 — rpg.nygard.dev, its infrastructure, its terraform
     gym.c4              journey 4 — the training log, its sign-in, and one guarded write
+    logger.c4           journey 4 as a process — one logged set, tap to database, in plain language
     delivery.c4         GitHub to Azure
   deployment/
     _spec.c4            deployment node kinds — the Azure containment hierarchy
@@ -100,6 +102,28 @@ app.
 | `gym` | The logger, the planner, the one registration they share, and what comes from a blob rather than the API |
 | `gymSignIn` | How a page ends up holding a token the API accepts, and the two checks Easy Auth makes on it |
 | `gymSet` | One logged set, and why sending it twice cannot record it twice |
+
+### Journey 4, as a process — how a logged set travels
+
+Written for a reader who has never heard of a token or a partition: the pass,
+the door check, the count and the training log, the same words on every page,
+with one running example (100 kg × 5 on a squat that already has two sets).
+Each step carries notes for the walkthrough, and the dynamic views other than the
+overview are sequence diagrams.
+
+| View | What it answers |
+| --- | --- |
+| `loggerJourney` | Start here: tap to stored set in nine steps, linking onwards to each page below |
+| `loggerTap` | Every step of an ordinary tap, permission check and pass check included |
+| `loggerOffline` | No signal: the save queue, the retries, and why a resent set is not logged twice |
+| `loggerStale` | A screen that is out of date: refused, nothing written, re-read and redrawn |
+| `loggerFinish` | Finishing a workout: waiting for the queue, filing, and the plan it can seed |
+
+The stations those pages need — the logging screen, the save queue and the
+sign-in keeper inside `gym`, the door check and the set handler inside `api` —
+are declared in `logger.c4` with no relationships of their own. Every leg
+between them is a dynamic step, so nothing rolls up onto `gym -> api` and the
+other pages draw exactly as before.
 
 ### The plane that builds it
 
