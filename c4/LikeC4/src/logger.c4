@@ -1,0 +1,87 @@
+// The training log, opened up far enough to follow one logged set from a
+// thumb to the database — for the payload walkthrough in views/logger.c4.
+//
+// These are the stations a set passes through, named for what they do rather
+// than for the library that does it, so the walkthrough reads as a process.
+// No relationships are declared on them here, on purpose: every leg between
+// them is a step in a dynamic view. Declared in the model, the legs that cross
+// from the page to the API would roll up onto `gym -> api` on every other page
+// and turn its one plain label into a bundle.
+model {
+
+  extend gym {
+
+    screen = webapp 'Logging screen' {
+      technology 'React, in the phone browser'
+      description '
+        What the lifter looks at and taps between sets. A logged set appears
+        on it the moment it is tapped, before the server has heard about it —
+        a third of a second of waiting with a bar in your hands is the
+        difference between a logbook and a form.
+
+        The header is where it owns up to the truth: "Saved 19:42" once the
+        server has every change, "2 sets waiting to save" while some have not
+        got through, and a red banner if one could not be saved at all and was
+        taken back off the screen.
+      '
+    }
+
+    outbox = browser-queue 'Save queue' {
+      technology 'In memory, in the page (hooks/useSession)'
+      description '
+        Every change waits here until the server has confirmed it — a logged
+        set, a corrected one, an exercise added or dragged. One goes at a time,
+        in the order they were tapped, and the one at the front holds the rest
+        while it is being retried.
+
+        Each change carries a count with it: how many sets the screen believed
+        that exercise already had. That count is what lets the server tell a
+        new set from the same set sent twice.
+
+        In memory only. A change that outlives the page is one nobody is
+        looking at to see whether it landed, so closing the page ends the
+        queue rather than leaving it to finish unseen.
+      '
+    }
+
+    signin = page-part 'Sign-in keeper' {
+      technology 'MSAL, in the page'
+      description '
+        Holds the pass the server asks for — a short-lived access token —
+        and quietly renews it with Entra before it runs out. Asked for it
+        fresh on every send, so the pass on a set logged an hour into a
+        session is still a valid one.
+      '
+    }
+  }
+
+  extend api {
+
+    gate = platform-gate 'Door check' {
+      technology 'Easy Auth — App Service authentication'
+      description '
+        The platform, not our code. Checks every request carries a valid pass
+        from GymLog, and turns anything else away with a 401 before a single
+        line of the API runs.
+
+        In front of it sits the browser permission check (CORS): because each
+        request carries a pass, the browser first asks whether this page may
+        send to the API at all, and the platform answers that too.
+      '
+    }
+
+    sets = job 'Set handler' {
+      technology 'POST /gym/workouts/{id}/sets — GymSets.cs'
+      description '
+        Our code. Works out whose log this is from the pass alone — never from
+        anything the request says about itself — checks the numbers are
+        sensible, and files the set with one write to the database.
+
+        That write only goes through while the count the set carried is still
+        true. So the same set arriving twice is answered "already recorded"
+        instead of being written twice, and a set counted from an out-of-date
+        screen is turned back with nothing written.
+      '
+    }
+  }
+}

@@ -35,7 +35,39 @@ specification {
     }
   }
 
+  // A holding area inside the page: work waiting its turn to be sent. Used
+  // only on the payload walkthrough, where where a set sits while the signal
+  // is gone is the whole story.
+  element browser-queue {
+    notation 'Queue in the browser'
+    style {
+      shape queue
+      color sky
+    }
+  }
+
+  // A part of a page that does one job — the screen someone taps, or the
+  // piece that keeps them signed in. Same colour as the page it lives in.
+  element page-part {
+    notation 'Part of a web page'
+    style {
+      color sky
+      opacity 40%
+    }
+  }
+
   // --- what Azure runs for us --------------------------------------------
+
+  // The platform's own check in front of a function app, which answers
+  // before any of our code runs.
+  element platform-gate {
+    notation 'Platform check (before our code)'
+    style {
+      shape rectangle
+      color primary
+      opacity 40%
+    }
+  }
 
   element function-app {
     notation 'Azure Function App'
