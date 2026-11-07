@@ -91,7 +91,7 @@ resource "azurerm_storage_container" "azadmin" {
   container_access_type = "private"
 }
 
-# Azure admin automation — PowerShell 7.4 on Flex Consumption
+# Azure admin automation — PowerShell 7.6 on Flex Consumption
 resource "azurerm_function_app_flex_consumption" "azadmin" {
   name                = "func-nygdev-azadmin"
   resource_group_name = azurerm_resource_group.consumption.name
@@ -104,7 +104,7 @@ resource "azurerm_function_app_flex_consumption" "azadmin" {
   storage_access_key          = azurerm_storage_account.consumption.primary_access_key
 
   runtime_name    = "powershell"
-  runtime_version = "7.4"
+  runtime_version = "7.6"
 
   instance_memory_in_mb  = 512
   maximum_instance_count = 1
