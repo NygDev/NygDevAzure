@@ -69,7 +69,9 @@ public class WhoopSync(
         var budget = ResolveBudget(request.Query["seconds"].FirstOrDefault());
 
         // ?days= widens how far back an incremental run re-reads. The default
-        // catches ordinary rescoring; a longer outage needs more.
+        // catches ordinary rescoring. A gap in syncing no longer needs it: the
+        // window is measured back from the last complete run, so it stretches
+        // over an outage by itself.
         var refreshWindow = ResolveRefreshWindow(request.Query["days"].FirstOrDefault());
 
         // ?reset=true drops the cursors and backfills from scratch. The records

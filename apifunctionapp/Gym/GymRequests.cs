@@ -697,7 +697,11 @@ internal static class GymRequests
             return false;
         }
 
-        rpe = value;
+        // The half step itself, not whatever was inside the tolerance of one.
+        // The check above forgives 7.50004 as float noise; stored as sent it
+        // would still be 7.50004 in every average, and a retry that sent a
+        // clean 7.5 would not compare equal to the set it was retrying.
+        rpe = Math.Round(value * 2, MidpointRounding.AwayFromZero) / 2;
         return true;
     }
 

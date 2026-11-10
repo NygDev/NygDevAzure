@@ -42,6 +42,22 @@ public sealed record WhoopSyncState
     [JsonPropertyName("last_run_at")]
     public DateTimeOffset? LastRunAt { get; init; }
 
+    /// <summary>
+    /// The instant up to which this collection is known to be covered: when
+    /// the latest run that read its window to the end began, or — until the
+    /// first incremental run — when the backfill's page sequence was started.
+    ///
+    /// It is what the next incremental window reaches back from, which is what
+    /// makes a gap in syncing close by itself. <c>last_run_at</c> cannot stand
+    /// in for it: that is stamped by every run that finishes, including one
+    /// that ran out of budget before reaching the end of its window.
+    ///
+    /// Null on a cursor written before this existed, where
+    /// <c>last_run_at</c> is the nearest thing to it.
+    /// </summary>
+    [JsonPropertyName("synced_through")]
+    public DateTimeOffset? SyncedThrough { get; init; }
+
     [JsonPropertyName("records_written")]
     public long RecordsWritten { get; init; }
 

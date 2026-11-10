@@ -2261,10 +2261,16 @@ public sealed class GymStore(Container container)
         {
             PartitionKey = new PartitionKey(objectId),
 
-            // A block is 48 documents at the outside — eight weeks of six days
-            // — so one page is usually the whole answer and the iterator below
-            // runs once.
-            MaxItemCount = 100,
+            // One page is the whole answer, so the iterator below runs once.
+            // That was true at 100 for a block's own list — 48 cells at the
+            // outside — but not for the reads that came later: a year of
+            // History by date is a few hundred sessions, and a block delete
+            // reads up to 480 ids. At 100 those were three to five round
+            // trips made one after another for what Cosmos will hand over in
+            // one. The RU is the same either way; a page costs what its
+            // documents cost. Cosmos still caps a page at 4 MB on its own, so
+            // this is a ceiling on the count rather than on the size.
+            MaxItemCount = 1000,
         };
 
         using var iterator = container.GetItemQueryStreamIterator(query, requestOptions: options);
