@@ -68,15 +68,15 @@ resource "azurerm_cosmosdb_sql_container" "primary" {
   partition_key_version = 2
 
   # Indexed for exactly one query: the running dashboard reading the scored
-  # runs out of the whoop_workout partition. Two paths, and nothing else.
+  # runs out of the whoop_workout partition. Two paths, plus the partition
+  # key, and nothing else.
   #
   # Opt-in rather than opt-out — /* excluded, the filter's own paths included —
   # because almost nothing in this container is ever filtered on. A WHOOP
   # record is stored field for field as WHOOP sends it, most of it properties
   # no query will ever mention; indexing all of them would be paid on every
   # record of every sync to earn nothing back. Under this policy a sync pays
-  # for two properties per record and the cursors, which carry neither
-  # included path, still write at the price they did with indexing off.
+  # for at most three properties per record, and the cursors only for /type.
   #
   # Adding a path here is what a new query needs. Without one Cosmos refuses
   # the filter outright rather than quietly scanning the partition, which is
@@ -94,6 +94,15 @@ resource "azurerm_cosmosdb_sql_container" "primary" {
 
     included_path {
       path = "/score_state/?"
+    }
+
+    # The partition key. Every query here is scoped to one /type, but on a
+    # 1000 RU/s account the WHOOP types share a physical partition, and the
+    # partition key's own index is what keeps a query inside its logical
+    # partition rather than touching its neighbours. One short string per
+    # document to maintain; Azure Advisor flags its absence.
+    included_path {
+      path = "/type/?"
     }
 
     excluded_path {
@@ -170,6 +179,13 @@ resource "azurerm_cosmosdb_sql_container" "gym" {
 
     included_path {
       path = "/mesoId/?"
+    }
+
+    # The partition key, for the same reason as /type on primary: it is what
+    # keeps a query inside the caller's logical partition when several users'
+    # partitions share a physical one.
+    included_path {
+      path = "/objectId/?"
     }
 
     excluded_path {
