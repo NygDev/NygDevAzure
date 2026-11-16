@@ -68,7 +68,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <!-- Brings AddOpenTelemetry() and the hosted service that owns the tracer
          and logger providers, so they are started and flushed with the host. -->
-    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.20.1" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.21.0" />
   </ItemGroup>
 
   <ItemGroup>
