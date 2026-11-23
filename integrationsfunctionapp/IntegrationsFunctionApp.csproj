@@ -43,7 +43,7 @@
     <!-- The running dashboard is published as a JSON blob on nygdevcdn, which
          the run.nygard.dev page fetches directly. Written as the app's managed
          identity — the account holds no key this app is given. -->
-    <PackageReference Include="Azure.Storage.Blobs" Version="12.30.1" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.30.2" />
     <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.64.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.52.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.1.1" />
