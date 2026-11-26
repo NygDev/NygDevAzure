@@ -17,8 +17,8 @@ That is why Easy Auth on the api app ran with `require_authentication = false`
 and the gym endpoints were gated in code alone — correct, but resting on the
 auth module staying on, since stripping a forgeable `X-MS-CLIENT-PRINCIPAL` is
 what the module is doing for us. With these endpoints moved here the api app
-has nothing anonymous left on it, so the platform gate is on with no exclusion
-list at all.
+has nothing anonymous left on it, so the platform gate is on. Its one exempt
+path is `/api/health`, a warm-up ping that reads no data.
 
 ## What this app holds
 
@@ -40,8 +40,9 @@ on the vault — the last granted out of band, for the reason given at the end o
 ## What is left on the api app
 
 `func-nygdev-api` is the gym logger and nothing else. Its Easy Auth gate is on —
-`require_authentication = true` with `Return401`, no `excluded_paths`, which is
-what moving this code bought — and its Cosmos grant is scoped to `db/gym`.
+`require_authentication = true` with `Return401`, which is what moving this
+code bought, with only the data-free `/api/health` ping excluded — and its
+Cosmos grant is scoped to `db/gym`.
 
 One thing remains there: **revoking the two grants `id-nygdev-api` no longer
 needs** — Storage Blob Data Contributor on the CDN `data` container, and Key

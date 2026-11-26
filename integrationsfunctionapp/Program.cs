@@ -11,7 +11,7 @@
 // authenticates as something other than an Entra user — WHOOP redirects a
 // browser to the callback, the phone holds a function key — so Easy Auth
 // cannot be required in front of it, while the api app has nothing anonymous
-// left and runs with the platform gate on.
+// left (bar a data-free health ping) and runs with the platform gate on.
 
 using ApiFunctionApp.Gps;
 using ApiFunctionApp.Running;
