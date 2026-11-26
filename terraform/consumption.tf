@@ -290,15 +290,28 @@ resource "azurerm_function_app_flex_consumption" "api" {
   # exposed scope, the redirect URIs. The gymlog_easy_auth_redirect_uri output
   # exists because of that, the same way whoop_redirect_uri does.
   #
-  # Enforced, finally, and with no excluded_paths — which is what the split was
-  # for. This ran with require_authentication = false for as long as the WHOOP
-  # callback, the phone's GPS upload and the dashboard trigger shared the app:
-  # none of them can present a token, so the gate would have shut the door on
-  # them in the same instant. Exempting them by path was the alternative, and a
-  # poor one, because excluded_paths is documented against the login redirect
-  # rather than a 401 — relying on it would have meant proving by experiment
-  # that it does anything at all here. Moving them to func-nygdev-integrations
-  # left nothing to exempt.
+  # Enforced, finally — which is what the split was for. This ran with
+  # require_authentication = false for as long as the WHOOP callback, the
+  # phone's GPS upload and the dashboard trigger shared the app: none of them
+  # can present a token, so the gate would have shut the door on them in the
+  # same instant. Moving them to func-nygdev-integrations left nothing that
+  # needs a token-less caller to reach data.
+  #
+  # One path is exempt, and it reaches no data: /api/health, the gym front
+  # end's warm-up ping (apifunctionapp/Health.cs). The ping used to go to a
+  # gym route with no token, which woke the instance just as well but left a
+  # 401 in Application Insights for every app open. It is a fixed path, not a
+  # prefix, so no future endpoint can be written into the exemption by
+  # accident.
+  #
+  # Microsoft documents excluded_paths for the login redirect rather than
+  # Return401, so check it after applying:
+  #
+  #   curl -i https://func-nygdev-api.azurewebsites.net/api/health
+  #
+  # 204 means the exemption holds. 401 means it does not. Nothing breaks
+  # either way, because a 401 still wakes the instance; only the clean
+  # Failures blade is lost.
   #
   # Return401 rather than RedirectToLoginPage because every caller is a fetch
   # from a front end that already holds a token. A redirect would arrive at the
@@ -332,6 +345,7 @@ resource "azurerm_function_app_flex_consumption" "api" {
     require_authentication = true
     unauthenticated_action = "Return401"
     require_https          = true
+    excluded_paths         = ["/api/health"]
 
     active_directory_v2 {
       client_id = var.gymlog_client_id
@@ -505,10 +519,8 @@ resource "azurerm_role_assignment" "api_cdn_data" {
 # by WHOOP, and the GPS upload by a phone holding a function key — so the
 # platform gate could not be turned on for the gym endpoints without shutting
 # the door on both in the same instant. With those callers here, that app has
-# nothing anonymous left and its gate is on, with no exclusions at all: no
-# excludedPaths list, whose documented behaviour covers the login redirect
-# rather than a 401 and would have had to be verified by experiment, and no
-# exempt path for a future endpoint to be written into by accident.
+# no anonymous caller that needs data and its gate is on. Its one exempt path
+# is /api/health, a warm-up ping that reads nothing; see the auth block above.
 #
 # The code has moved and so have the callers: the WHOOP developer dashboard's
 # redirect URL and the phone's GPS upload URL both name this app now, and

@@ -32,7 +32,7 @@ namespace ApiFunctionApp.Gym;
 /// bounced, and refusing it is this class's job.
 ///
 /// Those callers now live on func-nygdev-integrations, nothing anonymous is
-/// left here, and the platform gate is on: require_authentication = true with
+/// left here bar the data-free /api/health ping, and the platform gate is on: require_authentication = true with
 /// Return401, in the Easy Auth block in terraform/consumption.tf. So an
 /// unauthenticated request no longer reaches this class at all — the platform
 /// turns it away first.
